@@ -1,0 +1,32 @@
+<mvc:View
+    controllerName="dealerportal.controller.Campaigns"
+    xmlns="sap.m"
+    xmlns:mvc="sap.ui.core.mvc">
+    <Page title="Campaign Management" showNavButton="true" navButtonPress="onNavBack">
+        <headerContent>
+            <Button icon="sap-icon://refresh" press="onRefresh"/>
+            <Button text="Create Campaign" icon="sap-icon://add" press="onCreateCampaign" visible="{= ${app>/user/role} === 'admin' || ${app>/user/role} === 'key_user'}"/>
+        </headerContent>
+        <content>
+            <List items="{campaigns>/campaigns}">
+                <items>
+                    <ObjectListItem
+                        title="{campaigns>campaignName}"
+                        number="{campaigns>discountPercentage}%"
+                        numberUnit="Discount"
+                        intro="{campaigns>campaignType}"
+                        press="onViewCampaign">
+                        <attributes>
+                            <ObjectAttribute text="Start: {path: 'campaigns>startDate', formatter: '.formatter.formatDate'}"/>
+                            <ObjectAttribute text="End: {path: 'campaigns>endDate', formatter: '.formatter.formatDate'}"/>
+                            <ObjectAttribute text="Product Group: {campaigns>productGroup}"/>
+                        </attributes>
+                        <firstStatus>
+                            <ObjectStatus text="{campaigns>isActive}" state="{= ${campaigns>isActive} ? 'Success' : 'Error'}"/>
+                        </firstStatus>
+                    </ObjectListItem>
+                </items>
+            </List>
+        </content>
+    </Page>
+</mvc:View>

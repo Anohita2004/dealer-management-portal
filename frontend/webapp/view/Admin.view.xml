@@ -1,0 +1,68 @@
+<mvc:View
+    controllerName="dealerportal.controller.Admin"
+    xmlns="sap.m"
+    xmlns:mvc="sap.ui.core.mvc">
+    <Page title="Admin Panel" showNavButton="true" navButtonPress="onNavBack">
+        <headerContent>
+            <Button icon="sap-icon://refresh" press="onRefresh"/>
+        </headerContent>
+        <content>
+            <IconTabBar id="adminTabs" select="onTabSelect">
+                <items>
+                    <IconTabFilter text="Dealers" key="dealers" icon="sap-icon://customer">
+                        <Table id="dealerTable" items="{admin>/dealers}" growing="true" growingThreshold="20">
+                            <columns>
+                                <Column><Text text="Dealer Code"/></Column>
+                                <Column><Text text="Business Name"/></Column>
+                                <Column><Text text="State"/></Column>
+                                <Column><Text text="Outstanding"/></Column>
+                                <Column><Text text="Status"/></Column>
+                                <Column><Text text="Actions"/></Column>
+                            </columns>
+                            <items>
+                                <ColumnListItem>
+                                    <cells>
+                                        <Text text="{admin>dealerCode}"/>
+                                        <Text text="{admin>businessName}"/>
+                                        <Text text="{admin>state}"/>
+                                        <Text text="₹{admin>outstandingAmount}"/>
+                                        <ObjectStatus text="{= ${admin>isBlocked} ? 'Blocked' : 'Active'}" state="{= ${admin>isBlocked} ? 'Error' : 'Success'}"/>
+                                        <HBox>
+                                            <Button icon="sap-icon://edit" press="onEditDealer" tooltip="Edit"/>
+                                            <Button icon="{= ${admin>isBlocked} ? 'sap-icon://unlock' : 'sap-icon://locked'}" press="onToggleBlock" tooltip="{= ${admin>isBlocked} ? 'Unblock' : 'Block'}"/>
+                                        </HBox>
+                                    </cells>
+                                </ColumnListItem>
+                            </items>
+                        </Table>
+                    </IconTabFilter>
+                    
+                    <IconTabFilter text="Users" key="users" icon="sap-icon://employee">
+                        <Table id="userTable" items="{admin>/users}" growing="true" growingThreshold="20">
+                            <columns>
+                                <Column><Text text="Username"/></Column>
+                                <Column><Text text="Email"/></Column>
+                                <Column><Text text="Role"/></Column>
+                                <Column><Text text="Status"/></Column>
+                                <Column><Text text="Actions"/></Column>
+                            </columns>
+                            <items>
+                                <ColumnListItem>
+                                    <cells>
+                                        <Text text="{admin>username}"/>
+                                        <Text text="{admin>email}"/>
+                                        <Text text="{admin>role}"/>
+                                        <ObjectStatus text="{= ${admin>isActive} ? 'Active' : 'Inactive'}" state="{= ${admin>isActive} ? 'Success' : 'Error'}"/>
+                                        <HBox>
+                                            <Button icon="sap-icon://reset" press="onResetPassword" tooltip="Reset Password"/>
+                                        </HBox>
+                                    </cells>
+                                </ColumnListItem>
+                            </items>
+                        </Table>
+                    </IconTabFilter>
+                </items>
+            </IconTabBar>
+        </content>
+    </Page>
+</mvc:View>

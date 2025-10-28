@@ -1,0 +1,62 @@
+<mvc:View
+    controllerName="dealerportal.controller.Dashboard"
+    xmlns="sap.m"
+    xmlns:mvc="sap.ui.core.mvc"
+    xmlns:l="sap.ui.layout"
+    xmlns:f="sap.ui.layout.form">
+    <Page title="Dashboard" showNavButton="false">
+        <headerContent>
+            <Button icon="sap-icon://log" text="Logout" press="onLogout"/>
+        </headerContent>
+        <content>
+            <l:VerticalLayout width="100%" class="sapUiContentPadding">
+                <Title text="Welcome, {app>/user/username}" level="H2" class="sapUiSmallMarginBottom"/>
+                <Text text="Role: {app>/user/role}" class="sapUiSmallMarginBottom"/>
+                
+                <l:Grid defaultSpan="L4 M6 S12" class="sapUiSmallMarginTop">
+                    <GenericTile header="Invoices" subheader="View and manage invoices" press="onNavigateToInvoices">
+                        <TileContent>
+                            <NumericContent value="{dashboard>/invoiceCount}" icon="sap-icon://document"/>
+                        </TileContent>
+                    </GenericTile>
+                    
+                    <GenericTile header="Documents" subheader="Upload and download documents" press="onNavigateToDocuments">
+                        <TileContent>
+                            <NumericContent value="{dashboard>/documentCount}" icon="sap-icon://attachment"/>
+                        </TileContent>
+                    </GenericTile>
+                    
+                    <GenericTile header="Campaigns" subheader="View active campaigns" press="onNavigateToCampaigns">
+                        <TileContent>
+                            <NumericContent value="{dashboard>/campaignCount}" icon="sap-icon://marketing-campaign"/>
+                        </TileContent>
+                    </GenericTile>
+                    
+                    <GenericTile header="Reports" subheader="Generate and view reports" press="onNavigateToReports">
+                        <TileContent>
+                            <NumericContent icon="sap-icon://bar-chart"/>
+                        </TileContent>
+                    </GenericTile>
+                    
+                    <GenericTile header="Outstanding Amount" subheader="Total outstanding" visible="{= ${app>/user/role} === 'dealer'}">
+                        <TileContent>
+                            <NumericContent value="{dashboard>/outstandingAmount}" valueColor="Error" scale="₹"/>
+                        </TileContent>
+                    </GenericTile>
+                    
+                    <GenericTile header="Admin Panel" subheader="Manage users and dealers" press="onNavigateToAdmin" visible="{= ${app>/user/role} === 'admin' || ${app>/user/role} === 'key_user'}">
+                        <TileContent>
+                            <NumericContent icon="sap-icon://settings"/>
+                        </TileContent>
+                    </GenericTile>
+                </l:Grid>
+                
+                <Panel headerText="Recent Activity" class="sapUiMediumMarginTop">
+                    <List items="{dashboard>/recentActivity}">
+                        <StandardListItem title="{dashboard>title}" description="{dashboard>description}" icon="{dashboard>icon}"/>
+                    </List>
+                </Panel>
+            </l:VerticalLayout>
+        </content>
+    </Page>
+</mvc:View>

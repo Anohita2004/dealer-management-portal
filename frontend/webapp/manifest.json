@@ -1,0 +1,122 @@
+{
+  "_version": "1.12.0",
+  "sap.app": {
+    "id": "dealerportal",
+    "type": "application",
+    "title": "Dealer Management Portal",
+    "description": "Comprehensive dealer management system with SAP integration",
+    "applicationVersion": {
+      "version": "1.0.0"
+    }
+  },
+  "sap.ui": {
+    "technology": "UI5",
+    "deviceTypes": {
+      "desktop": true,
+      "tablet": true,
+      "phone": true
+    }
+  },
+  "sap.ui5": {
+    "rootView": {
+      "viewName": "dealerportal.view.App",
+      "type": "XML",
+      "async": true,
+      "id": "app"
+    },
+    "dependencies": {
+      "minUI5Version": "1.60.0",
+      "libs": {
+        "sap.ui.core": {},
+        "sap.m": {},
+        "sap.ui.layout": {},
+        "sap.ui.table": {}
+      }
+    },
+    "models": {
+      "i18n": {
+        "type": "sap.ui.model.resource.ResourceModel",
+        "settings": {
+          "bundleName": "dealerportal.i18n.i18n"
+        }
+      }
+    },
+    "routing": {
+      "config": {
+        "routerClass": "sap.m.routing.Router",
+        "viewType": "XML",
+        "viewPath": "dealerportal.view",
+        "controlId": "app",
+        "controlAggregation": "pages",
+        "async": true
+      },
+      "routes": [
+        {
+          "pattern": "",
+          "name": "login",
+          "target": "login"
+        },
+        {
+          "pattern": "dashboard",
+          "name": "dashboard",
+          "target": "dashboard"
+        },
+        {
+          "pattern": "invoices",
+          "name": "invoices",
+          "target": "invoices"
+        },
+        {
+          "pattern": "documents",
+          "name": "documents",
+          "target": "documents"
+        },
+        {
+          "pattern": "campaigns",
+          "name": "campaigns",
+          "target": "campaigns"
+        },
+        {
+          "pattern": "reports",
+          "name": "reports",
+          "target": "reports"
+        },
+        {
+          "pattern": "admin",
+          "name": "admin",
+          "target": "admin"
+        }
+      ],
+      "targets": {
+        "login": {
+          "viewName": "Login",
+          "viewLevel": 1
+        },
+        "dashboard": {
+          "viewName": "Dashboard",
+          "viewLevel": 2
+        },
+        "invoices": {
+          "viewName": "Invoices",
+          "viewLevel": 2
+        },
+        "documents": {
+          "viewName": "Documents",
+          "viewLevel": 2
+        },
+        "campaigns": {
+          "viewName": "Campaigns",
+          "viewLevel": 2
+        },
+        "reports": {
+          "viewName": "Reports",
+          "viewLevel": 2
+        },
+        "admin": {
+          "viewName": "Admin",
+          "viewLevel": 2
+        }
+      }
+    }
+  }
+}

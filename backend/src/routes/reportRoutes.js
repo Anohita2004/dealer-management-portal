@@ -1,0 +1,13 @@
+const express = require('express');
+const router = express.Router();
+const reportController = require('../controllers/reportController');
+const { authenticate } = require('../middleware/auth');
+
+router.get('/dealer-performance', authenticate, reportController.getDealerPerformanceReport);
+router.get('/account-statement', authenticate, reportController.getAccountStatementReport);
+router.get('/invoice-register', authenticate, reportController.getInvoiceRegisterReport);
+router.get('/credit-debit-notes', authenticate, reportController.getCreditDebitNoteReport);
+router.get('/outstanding-receivables', authenticate, reportController.getOutstandingReceivablesReport);
+router.get('/territory', authenticate, reportController.getTerritoryReport);
+
+module.exports = router;

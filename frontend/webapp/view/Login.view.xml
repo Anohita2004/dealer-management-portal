@@ -1,0 +1,37 @@
+<mvc:View
+    controllerName="dealerportal.controller.Login"
+    xmlns="sap.m"
+    xmlns:mvc="sap.ui.core.mvc"
+    xmlns:f="sap.ui.layout.form">
+    <Page title="Dealer Management Portal - Login" showNavButton="false">
+        <content>
+            <VBox alignItems="Center" justifyContent="Center" class="sapUiMediumMarginTop">
+                <VBox width="400px" class="sapUiMediumMargin">
+                    <Title text="Login" level="H2" class="sapUiSmallMarginBottom"/>
+                    
+                    <VBox visible="{= !${/otpSent}}">
+                        <Label text="Username" required="true"/>
+                        <Input id="usernameInput" value="{/username}" placeholder="Enter username"/>
+                        
+                        <Label text="Password" required="true" class="sapUiSmallMarginTop"/>
+                        <Input id="passwordInput" type="Password" value="{/password}" placeholder="Enter password"/>
+                        
+                        <Button text="Login" type="Emphasized" press="onLogin" class="sapUiSmallMarginTop" width="100%"/>
+                    </VBox>
+                    
+                    <VBox visible="{/otpSent}">
+                        <MessageStrip text="OTP has been sent. Please enter the OTP to continue." type="Success" class="sapUiSmallMarginBottom"/>
+                        
+                        <Label text="Enter OTP" required="true"/>
+                        <Input id="otpInput" value="{/otp}" placeholder="Enter 6-digit OTP" maxLength="6"/>
+                        
+                        <Button text="Verify OTP" type="Emphasized" press="onVerifyOTP" class="sapUiSmallMarginTop" width="100%"/>
+                        <Button text="Resend OTP" type="Ghost" press="onLogin" class="sapUiTinyMarginTop" width="100%"/>
+                    </VBox>
+                    
+                    <Link text="Forgot Password?" press="onForgotPassword" class="sapUiSmallMarginTop"/>
+                </VBox>
+            </VBox>
+        </content>
+    </Page>
+</mvc:View>

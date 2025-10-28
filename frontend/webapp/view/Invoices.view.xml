@@ -1,0 +1,45 @@
+<mvc:View
+    controllerName="dealerportal.controller.Invoices"
+    xmlns="sap.m"
+    xmlns:mvc="sap.ui.core.mvc"
+    xmlns:core="sap.ui.core">
+    <Page title="Invoice Management" showNavButton="true" navButtonPress="onNavBack">
+        <headerContent>
+            <Button icon="sap-icon://refresh" press="onRefresh"/>
+        </headerContent>
+        <subHeader>
+            <Toolbar>
+                <SearchField width="50%" search="onSearch" placeholder="Search invoices..."/>
+                <ToolbarSpacer/>
+                <Button text="Filter" icon="sap-icon://filter" press="onOpenFilterDialog"/>
+            </Toolbar>
+        </subHeader>
+        <content>
+            <Table id="invoiceTable" items="{invoices>/invoices}" growing="true" growingThreshold="20">
+                <columns>
+                    <Column><Text text="Invoice Number"/></Column>
+                    <Column><Text text="Date"/></Column>
+                    <Column><Text text="Dealer"/></Column>
+                    <Column><Text text="Amount"/></Column>
+                    <Column><Text text="Status"/></Column>
+                    <Column><Text text="Actions"/></Column>
+                </columns>
+                <items>
+                    <ColumnListItem>
+                        <cells>
+                            <Text text="{invoices>invoiceNumber}"/>
+                            <Text text="{path: 'invoices>invoiceDate', formatter: '.formatter.formatDate'}"/>
+                            <Text text="{invoices>dealer/businessName}"/>
+                            <Text text="₹{invoices>totalAmount}"/>
+                            <ObjectStatus text="{invoices>status}" state="{path: 'invoices>status', formatter: '.formatter.formatStatus'}"/>
+                            <HBox>
+                                <Button icon="sap-icon://detail-view" press="onViewInvoice" tooltip="View Details"/>
+                                <Button icon="sap-icon://pdf-attachment" press="onDownloadPDF" tooltip="Download PDF"/>
+                            </HBox>
+                        </cells>
+                    </ColumnListItem>
+                </items>
+            </Table>
+        </content>
+    </Page>
+</mvc:View>

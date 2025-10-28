@@ -1,0 +1,37 @@
+<mvc:View
+    controllerName="dealerportal.controller.Documents"
+    xmlns="sap.m"
+    xmlns:mvc="sap.ui.core.mvc"
+    xmlns:u="sap.ui.unified">
+    <Page title="Document Management" showNavButton="true" navButtonPress="onNavBack">
+        <headerContent>
+            <Button icon="sap-icon://refresh" press="onRefresh"/>
+            <Button text="Upload" icon="sap-icon://upload" press="onUploadDocument"/>
+        </headerContent>
+        <content>
+            <Table id="documentTable" items="{documents>/documents}" growing="true" growingThreshold="20">
+                <columns>
+                    <Column><Text text="Document Name"/></Column>
+                    <Column><Text text="Type"/></Column>
+                    <Column><Text text="Upload Date"/></Column>
+                    <Column><Text text="Uploaded By"/></Column>
+                    <Column><Text text="Actions"/></Column>
+                </columns>
+                <items>
+                    <ColumnListItem>
+                        <cells>
+                            <Text text="{documents>documentName}"/>
+                            <Text text="{documents>documentType}"/>
+                            <Text text="{path: 'documents>createdAt', formatter: '.formatter.formatDate'}"/>
+                            <Text text="{documents>uploadedBy}"/>
+                            <HBox>
+                                <Button icon="sap-icon://download" press="onDownloadDocument" tooltip="Download"/>
+                                <Button icon="sap-icon://delete" press="onDeleteDocument" tooltip="Delete" type="Reject"/>
+                            </HBox>
+                        </cells>
+                    </ColumnListItem>
+                </items>
+            </Table>
+        </content>
+    </Page>
+</mvc:View>

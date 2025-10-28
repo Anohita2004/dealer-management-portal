@@ -1,0 +1,58 @@
+<mvc:View
+    controllerName="dealerportal.controller.Reports"
+    xmlns="sap.m"
+    xmlns:mvc="sap.ui.core.mvc"
+    xmlns:l="sap.ui.layout">
+    <Page title="Reports" showNavButton="true" navButtonPress="onNavBack">
+        <content>
+            <l:VerticalLayout width="100%" class="sapUiContentPadding">
+                <Title text="Available Reports" level="H2" class="sapUiSmallMarginBottom"/>
+                
+                <List>
+                    <StandardListItem
+                        title="Dealer Performance Report"
+                        description="Sales vs targets, product-wise volumes"
+                        icon="sap-icon://performance"
+                        type="Navigation"
+                        press="onGenerateDealerPerformance"/>
+                    
+                    <StandardListItem
+                        title="Account Statement Report"
+                        description="Customer ledger with opening/closing balance"
+                        icon="sap-icon://account"
+                        type="Navigation"
+                        press="onGenerateAccountStatement"/>
+                    
+                    <StandardListItem
+                        title="Invoice Register Report"
+                        description="Invoice-wise list of sales to dealer"
+                        icon="sap-icon://document"
+                        type="Navigation"
+                        press="onGenerateInvoiceRegister"/>
+                    
+                    <StandardListItem
+                        title="Credit/Debit Note Report"
+                        description="Notes generated against dealer"
+                        icon="sap-icon://receipt"
+                        type="Navigation"
+                        press="onGenerateCreditDebitNote"/>
+                    
+                    <StandardListItem
+                        title="Outstanding Receivables Report"
+                        description="Aging analysis of dealer outstanding amounts"
+                        icon="sap-icon://money-bills"
+                        type="Navigation"
+                        press="onGenerateOutstandingReceivables"/>
+                    
+                    <StandardListItem
+                        title="Territory/Region Report"
+                        description="Consolidated sales & receivables by geography"
+                        icon="sap-icon://map"
+                        type="Navigation"
+                        press="onGenerateTerritoryReport"
+                        visible="{= ${app>/user/role} !== 'dealer'}"/>
+                </List>
+            </l:VerticalLayout>
+        </content>
+    </Page>
+</mvc:View>
