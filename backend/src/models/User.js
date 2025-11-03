@@ -71,11 +71,16 @@ module.exports = (sequelize) => {
   };
 
   User.prototype.generateOTP = function() {
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    this.otp = otp;
-    this.otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
-    return otp;
-  };
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  this.otp = otp;
+  this.otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+
+  // 👇 Log OTP for development/testing
+  console.log(`🔐 OTP for user '${this.username}': ${otp}`);
+
+  return otp;
+};
+
 
   User.prototype.validateOTP = function(otp) {
     if (!this.otp || !this.otpExpiry) return false;
