@@ -7,15 +7,28 @@ const getAllDealers = async (req, res) => {
     const offset = (page - 1) * limit;
 
     const where = {};
+
+    // 🔍 Search filter
     if (search) {
       where[Op.or] = [
         { dealerCode: { [Op.like]: `%${search}%` } },
         { businessName: { [Op.like]: `%${search}%` } }
       ];
     }
+
+    // 🌍 State filter
     if (state) where.state = state;
+
+    // ✅ Active/inactive filter
     if (isActive !== undefined) where.isActive = isActive === 'true';
 
+    // 👇 Restrict data visibility for TM / AM users
+    if (req.user.role === 'tm' || req.user.role === 'am') {
+      if (req.user.region) where.region = req.user.region;
+      if (req.user.territory) where.territory = req.user.territory;
+    }
+
+    // 📊 Pagination and ordering
     const { count, rows } = await Dealer.findAndCountAll({
       where,
       limit: parseInt(limit),
@@ -23,6 +36,7 @@ const getAllDealers = async (req, res) => {
       order: [['createdAt', 'DESC']]
     });
 
+    // 🧾 Response
     res.json({
       dealers: rows,
       total: count,

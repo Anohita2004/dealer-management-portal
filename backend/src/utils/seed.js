@@ -140,6 +140,15 @@ const seedData = async () => {
       isActive: true,
       phoneNumber: '9999999997'
     });
+    const accountsUser = await User.create({
+  username: 'accounts_user',
+  email: 'accounts@dealerportal.com',
+  password: 'Accounts@123',
+  role: 'accounts',
+  isActive: true,
+  phoneNumber: '9999999996'
+});
+
 
     console.log('Users created successfully');
 
