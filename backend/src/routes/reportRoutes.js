@@ -9,5 +9,10 @@ router.get('/invoice-register', authenticate, reportController.getInvoiceRegiste
 router.get('/credit-debit-notes', authenticate, reportController.getCreditDebitNoteReport);
 router.get('/outstanding-receivables', authenticate, reportController.getOutstandingReceivablesReport);
 router.get('/territory', authenticate, reportController.getTerritoryReport);
+router.get("/admin-summary",
+  authenticate,
+  reportController.getAdminSummary
+);
+
 
 module.exports = router;

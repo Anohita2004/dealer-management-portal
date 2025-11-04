@@ -3,6 +3,48 @@ const { Op } = require('sequelize');
 const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
+const { Campaign, Document, Pricing } = require('../models'); // add at the top if not already imported
+
+const getAdminSummary = async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Parallel queries for efficiency
+    const [
+      activeCampaigns,
+      totalDealers,
+      blockedDealers,
+      pendingDocuments,
+      pendingPricing,
+      totalInvoices,
+      totalOutstanding
+    ] = await Promise.all([
+      Campaign.count({ where: { isActive: true } }),
+      Dealer.count(),
+      Dealer.count({ where: { isBlocked: true } }),
+      Document.count({ where: { status: "Pending" } }),
+      Pricing.count({ where: { approvedBy: null } }),
+      Invoice.count(),
+      Invoice.sum('balanceAmount')
+    ]);
+
+    res.json({
+      activeCampaigns,
+      totalDealers,
+      blockedDealers,
+      pendingDocuments,
+      pendingPricing,
+      totalInvoices,
+      totalOutstanding
+    });
+  } catch (error) {
+    console.error("Admin summary error:", error);
+    res.status(500).json({ error: "Failed to fetch admin summary" });
+  }
+};
+
 
 const getDealerPerformanceReport = async (req, res) => {
   try {
@@ -246,5 +288,6 @@ module.exports = {
   getInvoiceRegisterReport,
   getCreditDebitNoteReport,
   getOutstandingReceivablesReport,
-  getTerritoryReport
+  getTerritoryReport,
+  getAdminSummary // 👈 add this
 };

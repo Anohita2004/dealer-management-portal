@@ -34,6 +34,19 @@ const getAllCampaigns = async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch campaigns' });
   }
 };
+// Get active campaigns
+const getActiveCampaigns = async (req, res) => {
+  try {
+    const campaigns = await Campaign.findAll({
+      where: { isActive: true },
+      order: [["createdAt", "DESC"]],
+    });
+    res.status(200).json(campaigns);
+  } catch (error) {
+    console.error("Error fetching active campaigns:", error);
+    res.status(500).json({ error: "Failed to fetch active campaigns" });
+  }
+};
 
 const getCampaignById = async (req, res) => {
   try {
@@ -130,6 +143,7 @@ const deleteCampaign = async (req, res) => {
 
 module.exports = {
   getAllCampaigns,
+  getActiveCampaigns,
   getCampaignById,
   createCampaign,
   updateCampaign,
