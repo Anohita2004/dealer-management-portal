@@ -148,6 +148,14 @@ const seedData = async () => {
   isActive: true,
   phoneNumber: '9999999996'
 });
+const inventoryUser = await User.create({
+  username: 'inventory_user',
+  email: 'inventory@dealerportal.com',
+  password: 'Inventory@123', // will be hashed automatically
+  role: 'inventory',
+  isActive: true,
+  phoneNumber: '9999999976'
+});
 
 
     console.log('Users created successfully');
