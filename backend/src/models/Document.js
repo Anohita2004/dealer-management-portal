@@ -31,12 +31,32 @@ module.exports = (sequelize) => {
     description: {
       type: DataTypes.TEXT
     },
+  // add to Document model definition
+status: {
+  type: DataTypes.ENUM('pending', 'approved', 'rejected'),
+  defaultValue: 'pending'
+},
+approvedBy: {
+  type: DataTypes.UUID, // user id who approved/rejected
+  allowNull: true
+},
+approvedAt: {
+  type: DataTypes.DATE,
+  allowNull: true
+},
+rejectionReason: {
+  type: DataTypes.TEXT,
+  allowNull: true
+},
+
+
     sapDocumentId: {
       type: DataTypes.STRING
     }
   }, {
     timestamps: true
-  });
+  },
+);
 
   return Document;
 };

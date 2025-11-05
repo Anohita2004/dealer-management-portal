@@ -1,9 +1,141 @@
 const { Dealer, Invoice, CreditDebitNote, AccountStatement, AuditLog } = require('../models');
 const { Op } = require('sequelize');
+
+const { Campaign, Document, Pricing } = require('../models');
+const { Order } = require('../models');
+
 const PDFDocument = require('pdfkit');
+const ExcelJS = require('exceljs');
 const fs = require('fs');
 const path = require('path');
-const { Campaign, Document, Pricing } = require('../models'); // add at the top if not already imported
+
+const getDealerPerformanceReport = async (req, res) => {
+  try {
+    const { dealerId, startDate, endDate, format } = req.query;
+    const where = {};
+
+    if (dealerId) where.dealerId = dealerId;
+    if (startDate && endDate) {
+      where.invoiceDate = { [Op.between]: [new Date(startDate), new Date(endDate)] };
+    }
+
+    // Restrict for dealer users
+    if (req.user.role === 'dealer') {
+      where.dealerId = req.user.dealerId;
+    }
+
+    // 🔹 Fetch all dealers with their invoices
+    const dealers = await Dealer.findAll({
+      where: dealerId ? { id: dealerId } : {},
+      include: [{ model: Invoice, as: 'invoices' }],
+    });
+
+    // 🔹 Prepare the report data
+    const reportData = dealers.map((dealer) => {
+      const invoices = dealer.invoices || [];
+      const totalSales = invoices.reduce((sum, inv) => sum + (parseFloat(inv.totalAmount) || 0), 0);
+      const deliveredOrders = invoices.filter((i) => i.status === 'Delivered').length;
+      const pendingOrders = invoices.filter((i) => i.status === 'Pending').length;
+
+      // Assuming you have targets set per dealer (or default to demo values)
+      const monthlyTarget = dealer.monthlyTarget || 200000;
+      const quarterlyTarget = monthlyTarget * 3;
+      const yearlyTarget = monthlyTarget * 12;
+
+      // Product group-wise sales
+      const productGroups = {};
+      invoices.forEach((inv) => {
+        const group = inv.productGroup || 'Others';
+        if (!productGroups[group]) productGroups[group] = 0;
+        productGroups[group] += parseFloat(inv.totalAmount);
+      });
+
+      return {
+        dealerName: dealer.businessName,
+        dealerCode: dealer.dealerCode,
+        totalSales,
+        monthlyTarget,
+        quarterlyTarget,
+        yearlyTarget,
+        deliveredOrders,
+        pendingOrders,
+        productGroups,
+      };
+    });
+
+    // 🔹 Export as PDF
+    if (format === 'pdf') {
+      const doc = new PDFDocument({ margin: 40, size: 'A4' });
+      const filePath = path.join(__dirname, '../../reports/dealer_performance.pdf');
+      const stream = fs.createWriteStream(filePath);
+      doc.pipe(stream);
+
+      doc.fontSize(20).fillColor('#003366').text('Dealer Performance Report', { align: 'center' });
+      doc.moveDown(2);
+
+      reportData.forEach((r, i) => {
+        doc.fontSize(14).fillColor('#111').text(`${i + 1}. ${r.dealerName} (${r.dealerCode})`);
+        doc.fontSize(12).text(`Total Sales: ₹${r.totalSales.toFixed(2)}`);
+        doc.text(`Targets - M: ₹${r.monthlyTarget}, Q: ₹${r.quarterlyTarget}, Y: ₹${r.yearlyTarget}`);
+        doc.text(`Delivered Orders: ${r.deliveredOrders}`);
+        doc.text(`Pending Orders: ${r.pendingOrders}`);
+        doc.moveDown(0.5);
+        doc.fontSize(11).fillColor('#333').text('Product Group Sales:');
+        for (const [group, value] of Object.entries(r.productGroups)) {
+          doc.text(` - ${group}: ₹${value.toFixed(2)}`);
+        }
+        doc.moveDown(1.5);
+      });
+
+      doc.end();
+      stream.on('finish', () => res.download(filePath));
+      return;
+    }
+
+    // 🔹 Export as Excel
+    if (format === 'excel') {
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet('Dealer Performance');
+
+      sheet.columns = [
+        { header: 'Dealer Code', key: 'dealerCode', width: 15 },
+        { header: 'Dealer Name', key: 'dealerName', width: 30 },
+        { header: 'Total Sales', key: 'totalSales', width: 15 },
+        { header: 'Monthly Target', key: 'monthlyTarget', width: 18 },
+        { header: 'Quarterly Target', key: 'quarterlyTarget', width: 18 },
+        { header: 'Yearly Target', key: 'yearlyTarget', width: 18 },
+        { header: 'Delivered Orders', key: 'deliveredOrders', width: 18 },
+        { header: 'Pending Orders', key: 'pendingOrders', width: 18 },
+        { header: 'Product Groups', key: 'productGroups', width: 40 },
+      ];
+
+      reportData.forEach((r) =>
+        sheet.addRow({
+          dealerCode: r.dealerCode,
+          dealerName: r.dealerName,
+          totalSales: r.totalSales,
+          monthlyTarget: r.monthlyTarget,
+          quarterlyTarget: r.quarterlyTarget,
+          yearlyTarget: r.yearlyTarget,
+          deliveredOrders: r.deliveredOrders,
+          pendingOrders: r.pendingOrders,
+          productGroups: JSON.stringify(r.productGroups),
+        })
+      );
+
+      const filePath = path.join(__dirname, '../../reports/dealer_performance.xlsx');
+      await workbook.xlsx.writeFile(filePath);
+      return res.download(filePath);
+    }
+
+    // 🔹 Default: JSON (for preview)
+    res.json(reportData);
+  } catch (error) {
+    console.error('Dealer performance report error:', error);
+    res.status(500).json({ error: 'Failed to generate dealer performance report' });
+  }
+};
+ // add at the top if not already imported
 
 const getAdminSummary = async (req, res) => {
   try {
@@ -46,47 +178,7 @@ const getAdminSummary = async (req, res) => {
 };
 
 
-const getDealerPerformanceReport = async (req, res) => {
-  try {
-    const { dealerId, startDate, endDate, productGroup } = req.query;
 
-    const where = {};
-    if (dealerId) where.dealerId = dealerId;
-    if (productGroup) where.productGroup = productGroup;
-    if (startDate && endDate) {
-      where.invoiceDate = {
-        [Op.between]: [new Date(startDate), new Date(endDate)]
-      };
-    }
-
-    if (req.user.role === 'dealer') {
-      where.dealerId = req.user.dealerId;
-    }
-
-    const invoices = await Invoice.findAll({
-      where,
-      include: [{ model: Dealer, as: 'dealer' }],
-      order: [['invoiceDate', 'DESC']]
-    });
-
-    const totalSales = invoices.reduce((sum, inv) => sum + parseFloat(inv.totalAmount), 0);
-    const paidAmount = invoices.reduce((sum, inv) => sum + parseFloat(inv.paidAmount), 0);
-    const pendingAmount = totalSales - paidAmount;
-
-    const report = {
-      totalInvoices: invoices.length,
-      totalSales,
-      paidAmount,
-      pendingAmount,
-      invoices
-    };
-
-    res.json(report);
-  } catch (error) {
-    console.error('Dealer performance report error:', error);
-    res.status(500).json({ error: 'Failed to generate dealer performance report' });
-  }
-};
 
 const getAccountStatementReport = async (req, res) => {
   try {

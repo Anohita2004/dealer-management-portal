@@ -65,15 +65,50 @@ app.use((req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
-// 🚀 Start Server
+// 🚀 Start Server with Socket.IO
+const http = require('http');
+const { Server } = require('socket.io');
+
 const startServer = async () => {
   try {
     await sequelize.authenticate();
     console.log('✅ Database connection established successfully.');
     await syncDatabase();
-    
-    app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
+
+    // Create HTTP server and wrap Express app
+    const server = http.createServer(app);
+
+    // 🔌 Initialize Socket.IO
+    const io = new Server(server, {
+      cors: {
+        origin: process.env.CORS_ORIGIN || '*',
+        methods: ['GET', 'POST', 'PATCH'],
+        credentials: true
+      }
+    });
+
+    // ✅ Make io available inside controllers
+    app.set('io', io);
+
+    // 🔐 Handle connections
+    io.on('connection', (socket) => {
+      console.log(`⚡ User connected: ${socket.id}`);
+
+      // When frontend authenticates, join rooms based on user and role
+      socket.on('authenticate', ({ userId, role }) => {
+        if (userId) socket.join(`user:${userId}`);
+        if (role) socket.join(`role:${role}`);
+        console.log(`✅ Socket joined rooms: user:${userId}, role:${role}`);
+      });
+
+      socket.on('disconnect', () => {
+        console.log(`❌ User disconnected: ${socket.id}`);
+      });
+    });
+
+    // Start HTTP + Socket.IO server
+    server.listen(PORT, () => {
+      console.log(`🚀 Server + Socket.IO running on port ${PORT}`);
       console.log(`🌍 Health check: http://localhost:${PORT}/health`);
     });
   } catch (error) {
@@ -85,3 +120,6 @@ const startServer = async () => {
 startServer();
 
 module.exports = app;
+
+
+

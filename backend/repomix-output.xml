@@ -47,7 +47,10 @@ src/controllers/authController.js
 src/controllers/campaignController.js
 src/controllers/dealerController.js
 src/controllers/documentController.js
+src/controllers/inventoryController.js
 src/controllers/invoiceController.js
+src/controllers/messageController.js
+src/controllers/notificationsController.js
 src/controllers/reportController.js
 src/controllers/sapController.js
 src/middleware/auth.js
@@ -58,13 +61,18 @@ src/models/CreditDebitNote.js
 src/models/Dealer.js
 src/models/Document.js
 src/models/index.js
+src/models/Inventory.js
 src/models/Invoice.js
+src/models/Product.js
 src/models/User.js
 src/routes/authRoutes.js
 src/routes/campaignRoutes.js
 src/routes/dealerRoutes.js
 src/routes/documentRoutes.js
+src/routes/inventoryRoutes.js
 src/routes/invoiceRoutes.js
+src/routes/messageRoutes.js
+src/routes/notificationRoutes.js
 src/routes/reportRoutes.js
 src/routes/sapRoutes.js
 src/server.js
@@ -136,6 +144,7 @@ CORS_ORIGIN=http://localhost:8080
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
+    "exceljs": "^4.4.0",
     "express": "^5.1.0",
     "express-rate-limit": "^8.1.0",
     "express-validator": "^7.3.0",
@@ -148,6 +157,8 @@ CORS_ORIGIN=http://localhost:8080
     "pg": "^8.16.3",
     "pg-hstore": "^2.3.4",
     "sequelize": "^6.37.7",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1",
     "sqlite3": "^5.1.7",
     "winston": "^3.18.3"
   },
@@ -398,6 +409,19 @@ const getAllCampaigns = async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch campaigns' });
   }
 };
+// Get active campaigns
+const getActiveCampaigns = async (req, res) => {
+  try {
+    const campaigns = await Campaign.findAll({
+      where: { isActive: true },
+      order: [["createdAt", "DESC"]],
+    });
+    res.status(200).json(campaigns);
+  } catch (error) {
+    console.error("Error fetching active campaigns:", error);
+    res.status(500).json({ error: "Failed to fetch active campaigns" });
+  }
+};
 
 const getCampaignById = async (req, res) => {
   try {
@@ -494,6 +518,7 @@ const deleteCampaign = async (req, res) => {
 
 module.exports = {
   getAllCampaigns,
+  getActiveCampaigns,
   getCampaignById,
   createCampaign,
   updateCampaign,
@@ -511,15 +536,28 @@ const getAllDealers = async (req, res) => {
     const offset = (page - 1) * limit;
 
     const where = {};
+
+    // 🔍 Search filter
     if (search) {
       where[Op.or] = [
         { dealerCode: { [Op.like]: `%${search}%` } },
         { businessName: { [Op.like]: `%${search}%` } }
       ];
     }
+
+    // 🌍 State filter
     if (state) where.state = state;
+
+    // ✅ Active/inactive filter
     if (isActive !== undefined) where.isActive = isActive === 'true';
 
+    // 👇 Restrict data visibility for TM / AM users
+    if (req.user.role === 'tm' || req.user.role === 'am') {
+      if (req.user.region) where.region = req.user.region;
+      if (req.user.territory) where.territory = req.user.territory;
+    }
+
+    // 📊 Pagination and ordering
     const { count, rows } = await Dealer.findAndCountAll({
       where,
       limit: parseInt(limit),
@@ -527,6 +565,7 @@ const getAllDealers = async (req, res) => {
       order: [['createdAt', 'DESC']]
     });
 
+    // 🧾 Response
     res.json({
       dealers: rows,
       total: count,
@@ -669,6 +708,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
+// ========================= Multer Storage Config =========================
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const uploadPath = path.join(__dirname, '../../uploads');
@@ -678,25 +718,24 @@ const storage = multer.diskStorage({
     cb(null, uploadPath);
   },
   filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
     cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
   }
 });
 
 const upload = multer({
-  storage: storage,
-  limits: { fileSize: 10 * 1024 * 1024 },
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
   fileFilter: (req, file, cb) => {
     const allowedTypes = /pdf|doc|docx|jpg|jpeg|png/;
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
     const mimetype = allowedTypes.test(file.mimetype);
-    if (mimetype && extname) {
-      return cb(null, true);
-    }
-    cb(new Error('Only PDF, DOC, DOCX, JPG, JPEG, PNG files are allowed'));
+    if (mimetype && extname) cb(null, true);
+    else cb(new Error('Only PDF, DOC, DOCX, JPG, JPEG, PNG files are allowed'));
   }
 });
 
+// ========================= Get All Documents =========================
 const getAllDocuments = async (req, res) => {
   try {
     const { page = 1, limit = 10, dealerId, documentType } = req.query;
@@ -705,10 +744,7 @@ const getAllDocuments = async (req, res) => {
     const where = {};
     if (dealerId) where.dealerId = dealerId;
     if (documentType) where.documentType = documentType;
-
-    if (req.user.role === 'dealer') {
-      where.dealerId = req.user.dealerId;
-    }
+    if (req.user.role === 'dealer') where.dealerId = req.user.dealerId;
 
     const { count, rows } = await Document.findAndCountAll({
       where,
@@ -730,11 +766,10 @@ const getAllDocuments = async (req, res) => {
   }
 };
 
+// ========================= Upload Document =========================
 const uploadDocument = async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
-    }
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
     const { documentType, description, dealerId } = req.body;
 
@@ -759,6 +794,13 @@ const uploadDocument = async (req, res) => {
       userAgent: req.headers['user-agent']
     });
 
+    // 🔌 Emit socket event to TM/AM dashboards
+    const io = req.app.get('io');
+    if (io) {
+      io.to('role:tm').emit('document:new', { dealerId: document.dealerId });
+      io.to('role:am').emit('document:new', { dealerId: document.dealerId });
+    }
+
     res.status(201).json(document);
   } catch (error) {
     console.error('Upload document error:', error);
@@ -766,24 +808,17 @@ const uploadDocument = async (req, res) => {
   }
 };
 
+// ========================= Download Document =========================
 const downloadDocument = async (req, res) => {
   try {
     const { id } = req.params;
     const where = { id };
-
-    if (req.user.role === 'dealer') {
-      where.dealerId = req.user.dealerId;
-    }
+    if (req.user.role === 'dealer') where.dealerId = req.user.dealerId;
 
     const document = await Document.findOne({ where });
-
-    if (!document) {
-      return res.status(404).json({ error: 'Document not found' });
-    }
-
-    if (!fs.existsSync(document.filePath)) {
+    if (!document) return res.status(404).json({ error: 'Document not found' });
+    if (!fs.existsSync(document.filePath))
       return res.status(404).json({ error: 'File not found on server' });
-    }
 
     await AuditLog.create({
       userId: req.user.id,
@@ -801,19 +836,14 @@ const downloadDocument = async (req, res) => {
   }
 };
 
+// ========================= Delete Document =========================
 const deleteDocument = async (req, res) => {
   try {
     const { id } = req.params;
     const document = await Document.findByPk(id);
+    if (!document) return res.status(404).json({ error: 'Document not found' });
 
-    if (!document) {
-      return res.status(404).json({ error: 'Document not found' });
-    }
-
-    if (fs.existsSync(document.filePath)) {
-      fs.unlinkSync(document.filePath);
-    }
-
+    if (fs.existsSync(document.filePath)) fs.unlinkSync(document.filePath);
     await document.destroy();
 
     await AuditLog.create({
@@ -832,12 +862,109 @@ const deleteDocument = async (req, res) => {
   }
 };
 
+// ========================= Approve / Reject Document =========================
+const approveDocument = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { action, reason } = req.body;
+    if (!['approve', 'reject'].includes(action))
+      return res.status(400).json({ error: 'Invalid action' });
+
+    const document = await Document.findByPk(id);
+    if (!document) return res.status(404).json({ error: 'Document not found' });
+
+    document.status = action === 'approve' ? 'approved' : 'rejected';
+    document.approvedBy = req.user.id;
+    document.approvedAt = new Date();
+    document.rejectionReason = action === 'reject' ? reason : null;
+    await document.save();
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: action === 'approve' ? 'APPROVE_DOCUMENT' : 'REJECT_DOCUMENT',
+      entity: 'Document',
+      entityId: document.id,
+      changes: { status: document.status, reason },
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent']
+    });
+
+    // 🔌 Emit socket updates
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user:${document.dealerId}`).emit('document:update', {
+        id: document.id,
+        status: document.status,
+        fileName: document.documentName,
+        message:
+          document.status === 'approved'
+            ? `✅ Your document "${document.documentName}" has been approved.`
+            : `❌ Your document "${document.documentName}" was rejected. Reason: ${document.rejectionReason || 'N/A'}`
+      });
+
+      io.to('role:tm').emit('document:pending:update');
+      io.to('role:am').emit('document:pending:update');
+    }
+
+    res.json({ message: `Document ${document.status}`, document });
+  } catch (err) {
+    console.error('Approve document error:', err);
+    res.status(500).json({ error: 'Failed to update document status' });
+  }
+};
+
 module.exports = {
+  upload,
   getAllDocuments,
   uploadDocument,
   downloadDocument,
   deleteDocument,
-  upload
+  approveDocument
+};
+</file>
+
+<file path="src/controllers/inventoryController.js">
+const { Dealer, Invoice, Campaign } = require("../models");
+
+exports.getInventorySummary = async (req, res) => {
+  try {
+    // Simulated inventory summary — later can pull from SAP or DB
+    const totalDealers = await Dealer.count();
+    const activeCampaigns = await Campaign.count({ where: { isActive: true } });
+    const totalInvoices = await Invoice.count();
+
+    const mockInventory = [
+      { product: "Laptops", available: 120, plant: "Mumbai" },
+      { product: "Desktops", available: 75, plant: "Pune" },
+      { product: "Printers", available: 30, plant: "Delhi" },
+      { product: "Monitors", available: 200, plant: "Bangalore" },
+    ];
+
+    res.json({
+      summary: {
+        totalDealers,
+        totalInvoices,
+        activeCampaigns,
+      },
+      inventory: mockInventory,
+    });
+  } catch (error) {
+    console.error("Error fetching inventory summary:", error);
+    res.status(500).json({ error: "Failed to fetch inventory data" });
+  }
+};
+
+exports.getInventoryDetails = async (req, res) => {
+  try {
+    const mockData = [
+      { id: 1, product: "Laptop", stock: 100, location: "Mumbai", updatedAt: "2025-11-01" },
+      { id: 2, product: "Printer", stock: 50, location: "Pune", updatedAt: "2025-11-02" },
+    ];
+    res.json(mockData);
+  } catch (error) {
+    console.error("Error fetching inventory details:", error);
+    res.status(500).json({ error: "Failed to fetch detailed inventory" });
+  }
 };
 </file>
 
@@ -1051,54 +1178,285 @@ module.exports = {
 };
 </file>
 
+<file path="src/controllers/messageController.js">
+const { Message, Dealer } = require('../models');
+
+// ========================= Get Messages =========================
+exports.getManagerMessages = async (req, res) => {
+  try {
+    const { id, role } = req.user;
+
+    const messages = await Message.findAll({
+      where: { [role === 'dealer' ? 'dealerId' : 'managerId']: id },
+      include: [{ model: Dealer, as: 'dealer', attributes: ['businessName'] }],
+      order: [['createdAt', 'DESC']]
+    });
+
+    res.json(messages);
+  } catch (err) {
+    console.error('Fetch messages error:', err);
+    res.status(500).json({ error: 'Failed to fetch messages' });
+  }
+};
+
+// ========================= Send Message =========================
+exports.sendManagerMessage = async (req, res) => {
+  try {
+    const { receiverId, content } = req.body;
+    const { id, role } = req.user;
+
+    const msg = await Message.create({
+      senderId: id,
+      receiverId,
+      content,
+      senderRole: role
+    });
+
+    // 🔌 SOCKET: Notify recipients
+    const io = req.app.get('io');
+    if (io) {
+      if (role === 'dealer') {
+        // Dealer → TM/AM
+        io.to('role:tm').emit('message:new', msg);
+        io.to('role:am').emit('message:new', msg);
+      } else {
+        // TM/AM/Admin → Dealer
+        io.to(`user:${receiverId}`).emit('message:reply', msg);
+      }
+    }
+
+    res.status(201).json(msg);
+  } catch (err) {
+    console.error('Send message error:', err);
+    res.status(500).json({ error: 'Failed to send message' });
+  }
+};
+</file>
+
+<file path="src/controllers/notificationsController.js">
+const { Dealer, Document } = require('../models');
+const { Op } = require('sequelize');
+
+// ========================= Get Manager Notifications =========================
+exports.getManagerNotifications = async (req, res) => {
+  try {
+    const { role, region, territory, id } = req.user;
+    const whereDealer = {};
+    if (region) whereDealer.region = region;
+    if (territory) whereDealer.territory = territory;
+
+    const expiringLicenses = await Dealer.count({
+      where: {
+        ...whereDealer,
+        licenses: { [Op.ne]: null },
+        updatedAt: { [Op.lt]: new Date(Date.now() - 330 * 24 * 60 * 60 * 1000) } // older than 11 months
+      }
+    });
+
+    const pendingDocs = await Document.count({
+      where: { status: 'pending', ...whereDealer }
+    });
+
+    const data = {
+      expiringLicenses,
+      pendingDocs,
+      message: 'Notifications fetched successfully'
+    };
+
+    // 🔌 SOCKET: emit real-time update to TM/AM dashboard
+    const io = req.app.get('io');
+    if (io) io.to(`user:${id}`).emit('notification:update', data);
+
+    res.json(data);
+  } catch (error) {
+    console.error('Manager notifications error:', error);
+    res.status(500).json({ error: 'Failed to fetch notifications' });
+  }
+};
+</file>
+
 <file path="src/controllers/reportController.js">
 const { Dealer, Invoice, CreditDebitNote, AccountStatement, AuditLog } = require('../models');
 const { Op } = require('sequelize');
+
+const { Campaign, Document, Pricing } = require('../models');
+const { Order } = require('../models');
+
 const PDFDocument = require('pdfkit');
+const ExcelJS = require('exceljs');
 const fs = require('fs');
 const path = require('path');
 
 const getDealerPerformanceReport = async (req, res) => {
   try {
-    const { dealerId, startDate, endDate, productGroup } = req.query;
-
+    const { dealerId, startDate, endDate, format } = req.query;
     const where = {};
+
     if (dealerId) where.dealerId = dealerId;
-    if (productGroup) where.productGroup = productGroup;
     if (startDate && endDate) {
-      where.invoiceDate = {
-        [Op.between]: [new Date(startDate), new Date(endDate)]
-      };
+      where.invoiceDate = { [Op.between]: [new Date(startDate), new Date(endDate)] };
     }
 
+    // Restrict for dealer users
     if (req.user.role === 'dealer') {
       where.dealerId = req.user.dealerId;
     }
 
-    const invoices = await Invoice.findAll({
-      where,
-      include: [{ model: Dealer, as: 'dealer' }],
-      order: [['invoiceDate', 'DESC']]
+    // 🔹 Fetch all dealers with their invoices
+    const dealers = await Dealer.findAll({
+      where: dealerId ? { id: dealerId } : {},
+      include: [{ model: Invoice, as: 'invoices' }],
     });
 
-    const totalSales = invoices.reduce((sum, inv) => sum + parseFloat(inv.totalAmount), 0);
-    const paidAmount = invoices.reduce((sum, inv) => sum + parseFloat(inv.paidAmount), 0);
-    const pendingAmount = totalSales - paidAmount;
+    // 🔹 Prepare the report data
+    const reportData = dealers.map((dealer) => {
+      const invoices = dealer.invoices || [];
+      const totalSales = invoices.reduce((sum, inv) => sum + (parseFloat(inv.totalAmount) || 0), 0);
+      const deliveredOrders = invoices.filter((i) => i.status === 'Delivered').length;
+      const pendingOrders = invoices.filter((i) => i.status === 'Pending').length;
 
-    const report = {
-      totalInvoices: invoices.length,
-      totalSales,
-      paidAmount,
-      pendingAmount,
-      invoices
-    };
+      // Assuming you have targets set per dealer (or default to demo values)
+      const monthlyTarget = dealer.monthlyTarget || 200000;
+      const quarterlyTarget = monthlyTarget * 3;
+      const yearlyTarget = monthlyTarget * 12;
 
-    res.json(report);
+      // Product group-wise sales
+      const productGroups = {};
+      invoices.forEach((inv) => {
+        const group = inv.productGroup || 'Others';
+        if (!productGroups[group]) productGroups[group] = 0;
+        productGroups[group] += parseFloat(inv.totalAmount);
+      });
+
+      return {
+        dealerName: dealer.businessName,
+        dealerCode: dealer.dealerCode,
+        totalSales,
+        monthlyTarget,
+        quarterlyTarget,
+        yearlyTarget,
+        deliveredOrders,
+        pendingOrders,
+        productGroups,
+      };
+    });
+
+    // 🔹 Export as PDF
+    if (format === 'pdf') {
+      const doc = new PDFDocument({ margin: 40, size: 'A4' });
+      const filePath = path.join(__dirname, '../../reports/dealer_performance.pdf');
+      const stream = fs.createWriteStream(filePath);
+      doc.pipe(stream);
+
+      doc.fontSize(20).fillColor('#003366').text('Dealer Performance Report', { align: 'center' });
+      doc.moveDown(2);
+
+      reportData.forEach((r, i) => {
+        doc.fontSize(14).fillColor('#111').text(`${i + 1}. ${r.dealerName} (${r.dealerCode})`);
+        doc.fontSize(12).text(`Total Sales: ₹${r.totalSales.toFixed(2)}`);
+        doc.text(`Targets - M: ₹${r.monthlyTarget}, Q: ₹${r.quarterlyTarget}, Y: ₹${r.yearlyTarget}`);
+        doc.text(`Delivered Orders: ${r.deliveredOrders}`);
+        doc.text(`Pending Orders: ${r.pendingOrders}`);
+        doc.moveDown(0.5);
+        doc.fontSize(11).fillColor('#333').text('Product Group Sales:');
+        for (const [group, value] of Object.entries(r.productGroups)) {
+          doc.text(` - ${group}: ₹${value.toFixed(2)}`);
+        }
+        doc.moveDown(1.5);
+      });
+
+      doc.end();
+      stream.on('finish', () => res.download(filePath));
+      return;
+    }
+
+    // 🔹 Export as Excel
+    if (format === 'excel') {
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet('Dealer Performance');
+
+      sheet.columns = [
+        { header: 'Dealer Code', key: 'dealerCode', width: 15 },
+        { header: 'Dealer Name', key: 'dealerName', width: 30 },
+        { header: 'Total Sales', key: 'totalSales', width: 15 },
+        { header: 'Monthly Target', key: 'monthlyTarget', width: 18 },
+        { header: 'Quarterly Target', key: 'quarterlyTarget', width: 18 },
+        { header: 'Yearly Target', key: 'yearlyTarget', width: 18 },
+        { header: 'Delivered Orders', key: 'deliveredOrders', width: 18 },
+        { header: 'Pending Orders', key: 'pendingOrders', width: 18 },
+        { header: 'Product Groups', key: 'productGroups', width: 40 },
+      ];
+
+      reportData.forEach((r) =>
+        sheet.addRow({
+          dealerCode: r.dealerCode,
+          dealerName: r.dealerName,
+          totalSales: r.totalSales,
+          monthlyTarget: r.monthlyTarget,
+          quarterlyTarget: r.quarterlyTarget,
+          yearlyTarget: r.yearlyTarget,
+          deliveredOrders: r.deliveredOrders,
+          pendingOrders: r.pendingOrders,
+          productGroups: JSON.stringify(r.productGroups),
+        })
+      );
+
+      const filePath = path.join(__dirname, '../../reports/dealer_performance.xlsx');
+      await workbook.xlsx.writeFile(filePath);
+      return res.download(filePath);
+    }
+
+    // 🔹 Default: JSON (for preview)
+    res.json(reportData);
   } catch (error) {
     console.error('Dealer performance report error:', error);
     res.status(500).json({ error: 'Failed to generate dealer performance report' });
   }
 };
+ // add at the top if not already imported
+
+const getAdminSummary = async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Parallel queries for efficiency
+    const [
+      activeCampaigns,
+      totalDealers,
+      blockedDealers,
+      pendingDocuments,
+      pendingPricing,
+      totalInvoices,
+      totalOutstanding
+    ] = await Promise.all([
+      Campaign.count({ where: { isActive: true } }),
+      Dealer.count(),
+      Dealer.count({ where: { isBlocked: true } }),
+      Document.count({ where: { status: "Pending" } }),
+      Pricing.count({ where: { approvedBy: null } }),
+      Invoice.count(),
+      Invoice.sum('balanceAmount')
+    ]);
+
+    res.json({
+      activeCampaigns,
+      totalDealers,
+      blockedDealers,
+      pendingDocuments,
+      pendingPricing,
+      totalInvoices,
+      totalOutstanding
+    });
+  } catch (error) {
+    console.error("Admin summary error:", error);
+    res.status(500).json({ error: "Failed to fetch admin summary" });
+  }
+};
+
+
+
 
 const getAccountStatementReport = async (req, res) => {
   try {
@@ -1300,7 +1658,8 @@ module.exports = {
   getInvoiceRegisterReport,
   getCreditDebitNoteReport,
   getOutstandingReceivablesReport,
-  getTerritoryReport
+  getTerritoryReport,
+  getAdminSummary // 👈 add this
 };
 </file>
 
@@ -1915,12 +2274,32 @@ module.exports = (sequelize) => {
     description: {
       type: DataTypes.TEXT
     },
+  // add to Document model definition
+status: {
+  type: DataTypes.ENUM('pending', 'approved', 'rejected'),
+  defaultValue: 'pending'
+},
+approvedBy: {
+  type: DataTypes.UUID, // user id who approved/rejected
+  allowNull: true
+},
+approvedAt: {
+  type: DataTypes.DATE,
+  allowNull: true
+},
+rejectionReason: {
+  type: DataTypes.TEXT,
+  allowNull: true
+},
+
+
     sapDocumentId: {
       type: DataTypes.STRING
     }
   }, {
     timestamps: true
-  });
+  },
+);
 
   return Document;
 };
@@ -1937,7 +2316,9 @@ const Campaign = require('./Campaign')(sequelize);
 const CreditDebitNote = require('./CreditDebitNote')(sequelize);
 const AuditLog = require('./AuditLog')(sequelize);
 const AccountStatement = require('./AccountStatement')(sequelize);
+const Product = require('./Product')(sequelize); // ✅ NEW
 
+// Relationships
 User.belongsTo(Dealer, { foreignKey: 'dealerId', as: 'dealer' });
 Dealer.hasOne(User, { foreignKey: 'dealerId', as: 'user' });
 
@@ -1952,6 +2333,10 @@ Dealer.hasMany(CreditDebitNote, { foreignKey: 'dealerId', as: 'creditDebitNotes'
 
 AccountStatement.belongsTo(Dealer, { foreignKey: 'dealerId', as: 'dealer' });
 Dealer.hasMany(AccountStatement, { foreignKey: 'dealerId', as: 'accountStatements' });
+
+// ✅ Optional relation if you want products mapped to dealers or plants later
+// Product.belongsTo(Dealer, { foreignKey: 'dealerId', as: 'dealer' });
+// Dealer.hasMany(Product, { foreignKey: 'dealerId', as: 'products' });
 
 const syncDatabase = async () => {
   try {
@@ -1972,7 +2357,50 @@ module.exports = {
   CreditDebitNote,
   AuditLog,
   AccountStatement,
-  syncDatabase
+  Product, // ✅ Export new model
+  syncDatabase,
+};
+</file>
+
+<file path="src/models/Inventory.js">
+const { DataTypes } = require('sequelize');
+
+module.exports = (sequelize) => {
+  const Inventory = sequelize.define('Inventory', {
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true
+    },
+    name: {
+      type: DataTypes.STRING,
+      allowNull: false
+    },
+    plant: {
+      type: DataTypes.STRING,
+      allowNull: false
+    },
+    stock: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0
+    },
+    uom: {
+      type: DataTypes.STRING,
+      defaultValue: 'Units'
+    },
+    lastUpdatedAt: {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW
+    },
+    sapMaterialNumber: {
+      type: DataTypes.STRING
+    }
+  }, {
+    timestamps: true
+  });
+
+  return Inventory;
 };
 </file>
 
@@ -2044,6 +2472,43 @@ module.exports = (sequelize) => {
 };
 </file>
 
+<file path="src/models/Product.js">
+const { DataTypes } = require("sequelize");
+
+module.exports = (sequelize) => {
+  const Product = sequelize.define("Product", {
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true,
+    },
+    name: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
+    plant: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
+    stock: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0,
+    },
+    uom: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    lastUpdatedAt: {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
+    },
+  });
+
+  return Product;
+};
+</file>
+
 <file path="src/models/User.js">
 const { DataTypes } = require('sequelize');
 const bcrypt = require('bcryptjs');
@@ -2073,10 +2538,11 @@ module.exports = (sequelize) => {
       allowNull: false
     },
     role: {
-      type: DataTypes.ENUM('dealer', 'tm', 'am', 'sm', 'admin', 'key_user'),
-      allowNull: false,
-      defaultValue: 'dealer'
-    },
+  type: DataTypes.ENUM('dealer', 'tm', 'am', 'sm', 'admin', 'key_user', 'accounts', 'inventory'),
+  allowNull: false,
+  defaultValue: 'dealer'
+},
+
     isActive: {
       type: DataTypes.BOOLEAN,
       defaultValue: true
@@ -2159,7 +2625,19 @@ const campaignController = require('../controllers/campaignController');
 const { authenticate, authorize } = require('../middleware/auth');
 
 router.get('/', authenticate, campaignController.getAllCampaigns);
-router.get('/:id', authenticate, campaignController.getCampaignById);
+router.get(
+  "/active",
+  authenticate,
+  authorize("dealer", "tm", "am", "admin"),
+  campaignController.getActiveCampaigns
+);
+//router.get('/:id', authenticate, campaignController.getCampaignById);
+router.get(
+  "/:id",
+  authenticate,
+  authorize("dealer", "tm", "am", "admin"),
+  campaignController.getCampaignById
+);
 router.post('/', authenticate, authorize('admin', 'key_user'), campaignController.createCampaign);
 router.put('/:id', authenticate, authorize('admin', 'key_user'), campaignController.updateCampaign);
 router.delete('/:id', authenticate, authorize('admin', 'key_user'), campaignController.deleteCampaign);
@@ -2187,12 +2665,29 @@ module.exports = router;
 const express = require('express');
 const router = express.Router();
 const documentController = require('../controllers/documentController');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, authorize } = require('../middleware/auth');
 
 router.get('/', authenticate, documentController.getAllDocuments);
 router.post('/', authenticate, documentController.upload.single('file'), documentController.uploadDocument);
 router.get('/:id/download', authenticate, documentController.downloadDocument);
 router.delete('/:id', authenticate, documentController.deleteDocument);
+router.patch('/:id/status', authenticate, authorize('admin','tm','am'), documentController.approveDocument);
+
+
+module.exports = router;
+</file>
+
+<file path="src/routes/inventoryRoutes.js">
+const express = require("express");
+const router = express.Router();
+const { authenticate, authorize } = require("../middleware/auth");
+const inventoryController = require("../controllers/inventoryController");
+
+// ✅ Main route for fetching inventory summary
+router.get("/", authenticate, authorize("inventory", "admin", "key_user"), inventoryController.getInventorySummary);
+
+// Optional: detailed endpoints
+router.get("/details", authenticate, authorize("inventory", "admin"), inventoryController.getInventoryDetails);
 
 module.exports = router;
 </file>
@@ -2212,11 +2707,37 @@ router.put('/:id', authenticate, authorize('admin', 'key_user'), invoiceControll
 module.exports = router;
 </file>
 
+<file path="src/routes/messageRoutes.js">
+// routes/messageRoutes.js
+const express = require('express');
+const router = express.Router();
+const { getManagerMessages, sendManagerMessage } = require('../controllers/messageController');
+const { authenticate, authorize } = require('../middleware/auth');
+
+router.get('/', authenticate, authorize('tm', 'am', 'dealer'), getManagerMessages);
+router.post('/', authenticate, authorize('tm', 'am', 'dealer'), sendManagerMessage);
+
+module.exports = router;
+</file>
+
+<file path="src/routes/notificationRoutes.js">
+// routes/notificationRoutes.js
+const express = require('express');
+const router = express.Router();
+const { getManagerNotifications } = require('../controllers/notificationController');
+const { authenticate, authorize } = require('../middleware/auth');
+
+router.get('/manager', authenticate, authorize('tm', 'am'), getManagerNotifications);
+
+module.exports = router;
+</file>
+
 <file path="src/routes/reportRoutes.js">
 const express = require('express');
 const router = express.Router();
 const reportController = require('../controllers/reportController');
 const { authenticate } = require('../middleware/auth');
+//router.get('/dealer-performance', verifyToken, reportController.getDealerPerformanceReport);
 
 router.get('/dealer-performance', authenticate, reportController.getDealerPerformanceReport);
 router.get('/account-statement', authenticate, reportController.getAccountStatementReport);
@@ -2224,6 +2745,11 @@ router.get('/invoice-register', authenticate, reportController.getInvoiceRegiste
 router.get('/credit-debit-notes', authenticate, reportController.getCreditDebitNoteReport);
 router.get('/outstanding-receivables', authenticate, reportController.getOutstandingReceivablesReport);
 router.get('/territory', authenticate, reportController.getTerritoryReport);
+router.get("/admin-summary",
+  authenticate,
+  reportController.getAdminSummary
+);
+
 
 module.exports = router;
 </file>
@@ -2259,10 +2785,12 @@ const documentRoutes = require('./routes/documentRoutes');
 const campaignRoutes = require('./routes/campaignRoutes');
 const reportRoutes = require('./routes/reportRoutes');
 const sapRoutes = require('./routes/sapRoutes');
+const inventoryRoutes = require('./routes/inventoryRoutes'); // ✅ correct path only once
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// 🔒 Security and Middleware
 app.use(helmet());
 app.use(cors({
   origin: process.env.CORS_ORIGIN || '*',
@@ -2278,13 +2806,14 @@ app.use('/api/', limiter);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
 app.use(morgan('combined'));
 
+// 🩺 Health Check
 app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
+// 🧩 Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/dealers', dealerRoutes);
 app.use('/api/invoices', invoiceRoutes);
@@ -2292,7 +2821,9 @@ app.use('/api/documents', documentRoutes);
 app.use('/api/campaigns', campaignRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/sap', sapRoutes);
+app.use('/api/inventory', inventoryRoutes); // ✅ keep only this one
 
+// 🧨 Error Handling
 app.use((err, req, res, next) => {
   console.error('Error:', err);
   res.status(err.status || 500).json({
@@ -2301,23 +2832,59 @@ app.use((err, req, res, next) => {
   });
 });
 
+// ❌ Route Not Found
 app.use((req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
+// 🚀 Start Server with Socket.IO
+const http = require('http');
+const { Server } = require('socket.io');
+
 const startServer = async () => {
   try {
     await sequelize.authenticate();
-    console.log('Database connection established successfully.');
+    console.log('✅ Database connection established successfully.');
     await syncDatabase();
-    
-    app.listen(PORT, () => {
-      console.log(`Server is running on port ${PORT}`);
-      console.log(`Environment: ${process.env.NODE_ENV}`);
-      console.log(`Health check: http://localhost:${PORT}/health`);
+
+    // Create HTTP server and wrap Express app
+    const server = http.createServer(app);
+
+    // 🔌 Initialize Socket.IO
+    const io = new Server(server, {
+      cors: {
+        origin: process.env.CORS_ORIGIN || '*',
+        methods: ['GET', 'POST', 'PATCH'],
+        credentials: true
+      }
+    });
+
+    // ✅ Make io available inside controllers
+    app.set('io', io);
+
+    // 🔐 Handle connections
+    io.on('connection', (socket) => {
+      console.log(`⚡ User connected: ${socket.id}`);
+
+      // When frontend authenticates, join rooms based on user and role
+      socket.on('authenticate', ({ userId, role }) => {
+        if (userId) socket.join(`user:${userId}`);
+        if (role) socket.join(`role:${role}`);
+        console.log(`✅ Socket joined rooms: user:${userId}, role:${role}`);
+      });
+
+      socket.on('disconnect', () => {
+        console.log(`❌ User disconnected: ${socket.id}`);
+      });
+    });
+
+    // Start HTTP + Socket.IO server
+    server.listen(PORT, () => {
+      console.log(`🚀 Server + Socket.IO running on port ${PORT}`);
+      console.log(`🌍 Health check: http://localhost:${PORT}/health`);
     });
   } catch (error) {
-    console.error('Failed to start server:', error);
+    console.error('❌ Failed to start server:', error);
     process.exit(1);
   }
 };
@@ -2493,6 +3060,23 @@ const seedData = async () => {
       isActive: true,
       phoneNumber: '9999999997'
     });
+    const accountsUser = await User.create({
+  username: 'accounts_user',
+  email: 'accounts@dealerportal.com',
+  password: 'Accounts@123',
+  role: 'accounts',
+  isActive: true,
+  phoneNumber: '9999999996'
+});
+const inventoryUser = await User.create({
+  username: 'inventory_user',
+  email: 'inventory@dealerportal.com',
+  password: 'Inventory@123', // will be hashed automatically
+  role: 'inventory',
+  isActive: true,
+  phoneNumber: '9999999976'
+});
+
 
     console.log('Users created successfully');
 

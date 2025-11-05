@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const reportController = require('../controllers/reportController');
 const { authenticate } = require('../middleware/auth');
+//router.get('/dealer-performance', verifyToken, reportController.getDealerPerformanceReport);
 
 router.get('/dealer-performance', authenticate, reportController.getDealerPerformanceReport);
 router.get('/account-statement', authenticate, reportController.getAccountStatementReport);
