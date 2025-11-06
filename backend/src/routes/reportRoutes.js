@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const reportController = require('../controllers/reportController');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, authorize } = require('../middleware/auth');
 //router.get('/dealer-performance', verifyToken, reportController.getDealerPerformanceReport);
 
 router.get('/dealer-performance', authenticate, reportController.getDealerPerformanceReport);
@@ -14,6 +14,13 @@ router.get("/admin-summary",
   authenticate,
   reportController.getAdminSummary
 );
+router.get(
+  "/pending-approvals",
+  authenticate,
+  authorize("tm", "am", "admin"),
+  reportController.getPendingApprovals
+);
+
 
 
 module.exports = router;

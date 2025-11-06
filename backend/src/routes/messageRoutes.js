@@ -1,10 +1,14 @@
 // routes/messageRoutes.js
 const express = require('express');
 const router = express.Router();
-const { getManagerMessages, sendManagerMessage } = require('../controllers/messageController');
+const messageController = require("../controllers/messageController");
 const { authenticate, authorize } = require('../middleware/auth');
 
-router.get('/', authenticate, authorize('tm', 'am', 'dealer'), getManagerMessages);
-router.post('/', authenticate, authorize('tm', 'am', 'dealer'), sendManagerMessage);
+
+// 📨 List all messages for TM/AM/Admin
+router.get("/", authenticate, authorize("tm", "am", "admin"), messageController.getMessages);
+
+// 📨 Dealer sends a new message
+router.post("/", authenticate, authorize("dealer"), messageController.sendMessage);
 
 module.exports = router;

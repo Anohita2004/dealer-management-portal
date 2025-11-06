@@ -13,7 +13,10 @@ const documentRoutes = require('./routes/documentRoutes');
 const campaignRoutes = require('./routes/campaignRoutes');
 const reportRoutes = require('./routes/reportRoutes');
 const sapRoutes = require('./routes/sapRoutes');
-const inventoryRoutes = require('./routes/inventoryRoutes'); // ✅ correct path only once
+const inventoryRoutes = require('./routes/inventoryRoutes');
+const messageRoutes = require('./routes/messageRoutes');
+
+ // ✅ correct path only once
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -49,7 +52,8 @@ app.use('/api/documents', documentRoutes);
 app.use('/api/campaigns', campaignRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/sap', sapRoutes);
-app.use('/api/inventory', inventoryRoutes); // ✅ keep only this one
+app.use('/api/inventory', inventoryRoutes);
+app.use('/api/messages', messageRoutes); // ✅ keep only this one
 
 // 🧨 Error Handling
 app.use((err, req, res, next) => {

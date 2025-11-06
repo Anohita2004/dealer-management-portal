@@ -8,7 +8,8 @@ const Campaign = require('./Campaign')(sequelize);
 const CreditDebitNote = require('./CreditDebitNote')(sequelize);
 const AuditLog = require('./AuditLog')(sequelize);
 const AccountStatement = require('./AccountStatement')(sequelize);
-const Product = require('./Product')(sequelize); // ✅ NEW
+const Product = require('./Product')(sequelize);
+const Message = require('./Message')(sequelize); // ✅ NEW
 
 // Relationships
 User.belongsTo(Dealer, { foreignKey: 'dealerId', as: 'dealer' });
@@ -26,9 +27,11 @@ Dealer.hasMany(CreditDebitNote, { foreignKey: 'dealerId', as: 'creditDebitNotes'
 AccountStatement.belongsTo(Dealer, { foreignKey: 'dealerId', as: 'dealer' });
 Dealer.hasMany(AccountStatement, { foreignKey: 'dealerId', as: 'accountStatements' });
 
-// ✅ Optional relation if you want products mapped to dealers or plants later
-// Product.belongsTo(Dealer, { foreignKey: 'dealerId', as: 'dealer' });
-// Dealer.hasMany(Product, { foreignKey: 'dealerId', as: 'products' });
+// ✅ Message relationships
+Message.belongsTo(User, { foreignKey: 'senderId', as: 'sender' });
+Message.belongsTo(User, { foreignKey: 'recipientId', as: 'recipient' });
+User.hasMany(Message, { foreignKey: 'senderId', as: 'sentMessages' });
+User.hasMany(Message, { foreignKey: 'recipientId', as: 'receivedMessages' });
 
 const syncDatabase = async () => {
   try {
@@ -49,6 +52,7 @@ module.exports = {
   CreditDebitNote,
   AuditLog,
   AccountStatement,
-  Product, // ✅ Export new model
+  Product,
+  Message, // ✅ Export Message model
   syncDatabase,
 };

@@ -373,6 +373,36 @@ const getTerritoryReport = async (req, res) => {
     res.status(500).json({ error: 'Failed to generate territory report' });
   }
 };
+const getPendingApprovals = async (req, res, next) => {
+  try {
+    const pendingDocs = await Document.findAll({
+      where: { status: "pending" },
+      include: [
+        {
+          model: Dealer,
+          as: "dealer", // ✅ alias must match your model association
+          attributes: ["id", "businessName"],
+        },
+      ],
+    });
+
+    const formatted = pendingDocs.map((doc) => ({
+      id: doc.id,
+      dealerId: doc.dealer?.id,
+      dealerName: doc.dealer?.businessName || "Unknown Dealer",
+      documentType: doc.documentType,
+      createdAt: doc.createdAt,
+      status: doc.status,
+    }));
+
+    res.status(200).json(formatted);
+  } catch (err) {
+    console.error("Error fetching pending approvals:", err);
+    next(err);
+  }
+};
+
+
 
 module.exports = {
   getDealerPerformanceReport,
@@ -381,5 +411,6 @@ module.exports = {
   getCreditDebitNoteReport,
   getOutstandingReceivablesReport,
   getTerritoryReport,
-  getAdminSummary // 👈 add this
+  getAdminSummary ,
+  getPendingApprovals// 👈 add this
 };

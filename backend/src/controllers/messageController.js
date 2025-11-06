@@ -1,52 +1,77 @@
-const { Message, Dealer } = require('../models');
+const { Message, User } = require("../models");
+const { Op } = require("sequelize");
 
-// ========================= Get Messages =========================
-exports.getManagerMessages = async (req, res) => {
+// 📩 Get messages for the logged-in user
+exports.getMessages = async (req, res) => {
   try {
-    const { id, role } = req.user;
+    const userId = req.user.id;
 
     const messages = await Message.findAll({
-      where: { [role === 'dealer' ? 'dealerId' : 'managerId']: id },
-      include: [{ model: Dealer, as: 'dealer', attributes: ['businessName'] }],
-      order: [['createdAt', 'DESC']]
+      where: {
+        [Op.or]: [
+          { senderId: userId },
+          { recipientId: userId }
+        ]
+      },
+      include: [
+        {
+          model: User,
+          as: "sender",
+          attributes: ["id", "username", "email", "role"] // ✅ username instead of name
+        },
+        {
+          model: User,
+          as: "recipient",
+          attributes: ["id", "username", "email", "role"] // ✅ username instead of name
+        }
+      ],
+      order: [["createdAt", "DESC"]],
     });
 
-    res.json(messages);
-  } catch (err) {
-    console.error('Fetch messages error:', err);
-    res.status(500).json({ error: 'Failed to fetch messages' });
+    res.json({ messages });
+  } catch (error) {
+    console.error("Error fetching messages:", error);
+    res.status(500).json({ error: error.message });
   }
 };
 
-// ========================= Send Message =========================
-exports.sendManagerMessage = async (req, res) => {
+// 📨 Send a new message
+exports.sendMessage = async (req, res) => {
   try {
-    const { receiverId, content } = req.body;
-    const { id, role } = req.user;
+    const { recipientId, subject, body } = req.body;
+    const senderId = req.user.id;
 
-    const msg = await Message.create({
-      senderId: id,
-      receiverId,
-      content,
-      senderRole: role
+    const message = await Message.create({
+      senderId,
+      recipientId,
+      subject,
+      body,
+      status: "unread"
     });
 
-    // 🔌 SOCKET: Notify recipients
-    const io = req.app.get('io');
-    if (io) {
-      if (role === 'dealer') {
-        // Dealer → TM/AM
-        io.to('role:tm').emit('message:new', msg);
-        io.to('role:am').emit('message:new', msg);
-      } else {
-        // TM/AM/Admin → Dealer
-        io.to(`user:${receiverId}`).emit('message:reply', msg);
-      }
+    res.status(201).json({ message });
+  } catch (error) {
+    console.error("Error sending message:", error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// ✅ Mark a message as read
+exports.markAsRead = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const message = await Message.findByPk(id);
+
+    if (!message) {
+      return res.status(404).json({ error: "Message not found" });
     }
 
-    res.status(201).json(msg);
-  } catch (err) {
-    console.error('Send message error:', err);
-    res.status(500).json({ error: 'Failed to send message' });
+    message.status = "read";
+    await message.save();
+
+    res.json({ message });
+  } catch (error) {
+    console.error("Error marking message as read:", error);
+    res.status(500).json({ error: error.message });
   }
 };
