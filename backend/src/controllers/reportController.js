@@ -139,44 +139,91 @@ const getDealerPerformanceReport = async (req, res) => {
 
 const getAdminSummary = async (req, res) => {
   try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Access denied' });
+    let totalDealers = 0;
+    let blockedDealers = 0;
+    let totalInvoices = 0;
+    let totalOutstanding = 0;
+    let pendingDocuments = 0;
+    let pendingPricing = 0;
+
+    // ---- Dealers ----
+    try {
+      totalDealers = await Dealer.count();
+      blockedDealers = await Dealer.count({ where: { status: "BLOCKED" } });
+    } catch (err) {
+      console.warn("[AdminSummary] Dealer count failed:", err.message);
     }
 
-    // Parallel queries for efficiency
-    const [
-      activeCampaigns,
-      totalDealers,
-      blockedDealers,
-      pendingDocuments,
-      pendingPricing,
-      totalInvoices,
-      totalOutstanding
-    ] = await Promise.all([
-      Campaign.count({ where: { isActive: true } }),
-      Dealer.count(),
-      Dealer.count({ where: { isBlocked: true } }),
-      Document.count({ where: { status: "Pending" } }),
-      Pricing.count({ where: { approvedBy: null } }),
-      Invoice.count(),
-      Invoice.sum('balanceAmount')
-    ]);
+    // ---- Invoices ----
+    try {
+      totalInvoices = await Invoice.count();
+      const outstandingInvoices = await Invoice.findAll({
+        attributes: ["balanceAmount"],
+        where: { balanceAmount: { [Op.gt]: 0 } },
+      });
+      totalOutstanding = outstandingInvoices.reduce(
+        (sum, inv) => sum + Number(inv.balanceAmount || 0),
+        0
+      );
+    } catch (err) {
+      console.warn("[AdminSummary] Invoice query failed:", err.message);
+    }
 
+    // ---- Documents ----
+    try {
+      // Handle enum mismatch safely
+      const validStatuses = [
+        "Pending",
+        "PENDING",
+        "UNDER_REVIEW",
+        "WAITING_APPROVAL",
+      ];
+
+      let pendingCount = 0;
+      for (const status of validStatuses) {
+        try {
+          const c = await Document.count({ where: { status } });
+          if (c > 0) {
+            pendingCount += c;
+          }
+        } catch (err) {
+          if (err.message.includes("invalid input value for enum")) {
+            console.warn(`[AdminSummary] Skipped invalid enum status: ${status}`);
+          } else {
+            console.warn(`[AdminSummary] Error counting status ${status}:`, err.message);
+          }
+        }
+      }
+      pendingDocuments = pendingCount;
+    } catch (err) {
+      console.warn("[AdminSummary] Document count failed:", err.message);
+    }
+
+    // ---- Pricing ----
+    try {
+      // if you track pending pricing approvals via Document model or separate model, adjust accordingly
+      pendingPricing = await Document.count({
+        where: { status: { [Op.in]: ["WAITING_PRICE_APPROVAL", "PRICE_REVIEW"] } },
+      }).catch(() => 0);
+    } catch (err) {
+      console.warn("[AdminSummary] Pending pricing count failed:", err.message);
+    }
+
+    // ---- Response ----
     res.json({
-      activeCampaigns,
       totalDealers,
       blockedDealers,
+      totalInvoices,
+      totalOutstanding,
       pendingDocuments,
       pendingPricing,
-      totalInvoices,
-      totalOutstanding
+      activeCampaigns: 0, // placeholder (extend if needed)
     });
-  } catch (error) {
-    console.error("Admin summary error:", error);
-    res.status(500).json({ error: "Failed to fetch admin summary" });
+  } catch (err) {
+    console.error("Error in getAdminSummary:", err);
+    res.status(500).json({ message: "Error generating admin summary" });
   }
 };
-
 
 
 

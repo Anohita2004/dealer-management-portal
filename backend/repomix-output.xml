@@ -63,6 +63,7 @@ src/models/Document.js
 src/models/index.js
 src/models/Inventory.js
 src/models/Invoice.js
+src/models/Message.js
 src/models/Product.js
 src/models/User.js
 src/routes/authRoutes.js
@@ -1179,56 +1180,81 @@ module.exports = {
 </file>
 
 <file path="src/controllers/messageController.js">
-const { Message, Dealer } = require('../models');
+const { Message, User } = require("../models");
+const { Op } = require("sequelize");
 
-// ========================= Get Messages =========================
-exports.getManagerMessages = async (req, res) => {
+// 📩 Get messages for the logged-in user
+exports.getMessages = async (req, res) => {
   try {
-    const { id, role } = req.user;
+    const userId = req.user.id;
 
     const messages = await Message.findAll({
-      where: { [role === 'dealer' ? 'dealerId' : 'managerId']: id },
-      include: [{ model: Dealer, as: 'dealer', attributes: ['businessName'] }],
-      order: [['createdAt', 'DESC']]
+      where: {
+        [Op.or]: [
+          { senderId: userId },
+          { recipientId: userId }
+        ]
+      },
+      include: [
+        {
+          model: User,
+          as: "sender",
+          attributes: ["id", "username", "email", "role"] // ✅ username instead of name
+        },
+        {
+          model: User,
+          as: "recipient",
+          attributes: ["id", "username", "email", "role"] // ✅ username instead of name
+        }
+      ],
+      order: [["createdAt", "DESC"]],
     });
 
-    res.json(messages);
-  } catch (err) {
-    console.error('Fetch messages error:', err);
-    res.status(500).json({ error: 'Failed to fetch messages' });
+    res.json({ messages });
+  } catch (error) {
+    console.error("Error fetching messages:", error);
+    res.status(500).json({ error: error.message });
   }
 };
 
-// ========================= Send Message =========================
-exports.sendManagerMessage = async (req, res) => {
+// 📨 Send a new message
+exports.sendMessage = async (req, res) => {
   try {
-    const { receiverId, content } = req.body;
-    const { id, role } = req.user;
+    const { recipientId, subject, body } = req.body;
+    const senderId = req.user.id;
 
-    const msg = await Message.create({
-      senderId: id,
-      receiverId,
-      content,
-      senderRole: role
+    const message = await Message.create({
+      senderId,
+      recipientId,
+      subject,
+      body,
+      status: "unread"
     });
 
-    // 🔌 SOCKET: Notify recipients
-    const io = req.app.get('io');
-    if (io) {
-      if (role === 'dealer') {
-        // Dealer → TM/AM
-        io.to('role:tm').emit('message:new', msg);
-        io.to('role:am').emit('message:new', msg);
-      } else {
-        // TM/AM/Admin → Dealer
-        io.to(`user:${receiverId}`).emit('message:reply', msg);
-      }
+    res.status(201).json({ message });
+  } catch (error) {
+    console.error("Error sending message:", error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// ✅ Mark a message as read
+exports.markAsRead = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const message = await Message.findByPk(id);
+
+    if (!message) {
+      return res.status(404).json({ error: "Message not found" });
     }
 
-    res.status(201).json(msg);
-  } catch (err) {
-    console.error('Send message error:', err);
-    res.status(500).json({ error: 'Failed to send message' });
+    message.status = "read";
+    await message.save();
+
+    res.json({ message });
+  } catch (error) {
+    console.error("Error marking message as read:", error);
+    res.status(500).json({ error: error.message });
   }
 };
 </file>
@@ -1651,6 +1677,36 @@ const getTerritoryReport = async (req, res) => {
     res.status(500).json({ error: 'Failed to generate territory report' });
   }
 };
+const getPendingApprovals = async (req, res, next) => {
+  try {
+    const pendingDocs = await Document.findAll({
+      where: { status: "pending" },
+      include: [
+        {
+          model: Dealer,
+          as: "dealer", // ✅ alias must match your model association
+          attributes: ["id", "businessName"],
+        },
+      ],
+    });
+
+    const formatted = pendingDocs.map((doc) => ({
+      id: doc.id,
+      dealerId: doc.dealer?.id,
+      dealerName: doc.dealer?.businessName || "Unknown Dealer",
+      documentType: doc.documentType,
+      createdAt: doc.createdAt,
+      status: doc.status,
+    }));
+
+    res.status(200).json(formatted);
+  } catch (err) {
+    console.error("Error fetching pending approvals:", err);
+    next(err);
+  }
+};
+
+
 
 module.exports = {
   getDealerPerformanceReport,
@@ -1659,7 +1715,8 @@ module.exports = {
   getCreditDebitNoteReport,
   getOutstandingReceivablesReport,
   getTerritoryReport,
-  getAdminSummary // 👈 add this
+  getAdminSummary ,
+  getPendingApprovals// 👈 add this
 };
 </file>
 
@@ -2316,7 +2373,8 @@ const Campaign = require('./Campaign')(sequelize);
 const CreditDebitNote = require('./CreditDebitNote')(sequelize);
 const AuditLog = require('./AuditLog')(sequelize);
 const AccountStatement = require('./AccountStatement')(sequelize);
-const Product = require('./Product')(sequelize); // ✅ NEW
+const Product = require('./Product')(sequelize);
+const Message = require('./Message')(sequelize); // ✅ NEW
 
 // Relationships
 User.belongsTo(Dealer, { foreignKey: 'dealerId', as: 'dealer' });
@@ -2334,9 +2392,11 @@ Dealer.hasMany(CreditDebitNote, { foreignKey: 'dealerId', as: 'creditDebitNotes'
 AccountStatement.belongsTo(Dealer, { foreignKey: 'dealerId', as: 'dealer' });
 Dealer.hasMany(AccountStatement, { foreignKey: 'dealerId', as: 'accountStatements' });
 
-// ✅ Optional relation if you want products mapped to dealers or plants later
-// Product.belongsTo(Dealer, { foreignKey: 'dealerId', as: 'dealer' });
-// Dealer.hasMany(Product, { foreignKey: 'dealerId', as: 'products' });
+// ✅ Message relationships
+Message.belongsTo(User, { foreignKey: 'senderId', as: 'sender' });
+Message.belongsTo(User, { foreignKey: 'recipientId', as: 'recipient' });
+User.hasMany(Message, { foreignKey: 'senderId', as: 'sentMessages' });
+User.hasMany(Message, { foreignKey: 'recipientId', as: 'receivedMessages' });
 
 const syncDatabase = async () => {
   try {
@@ -2357,7 +2417,8 @@ module.exports = {
   CreditDebitNote,
   AuditLog,
   AccountStatement,
-  Product, // ✅ Export new model
+  Product,
+  Message, // ✅ Export Message model
   syncDatabase,
 };
 </file>
@@ -2469,6 +2530,61 @@ module.exports = (sequelize) => {
   });
 
   return Invoice;
+};
+</file>
+
+<file path="src/models/Message.js">
+// backend/src/models/Message.js
+const { DataTypes } = require("sequelize");
+
+module.exports = (sequelize) => {
+  const Message = sequelize.define(
+    "Message",
+    {
+      id: {
+        type: DataTypes.UUID,
+        defaultValue: DataTypes.UUIDV4,
+        primaryKey: true,
+      },
+      senderId: {
+        type: DataTypes.UUID,
+        allowNull: false,
+      },
+      recipientId: {
+        type: DataTypes.UUID,
+        allowNull: false,
+      },
+      subject: {
+        type: DataTypes.STRING,
+        allowNull: false,
+      },
+      body: {
+        type: DataTypes.TEXT,
+        allowNull: false,
+      },
+      status: {
+        type: DataTypes.ENUM("unread", "read"),
+        defaultValue: "unread",
+      },
+    },
+    {
+      tableName: "messages",
+      timestamps: true,
+    }
+  );
+
+  Message.associate = (models) => {
+    Message.belongsTo(models.User, {
+      foreignKey: "senderId",
+      as: "sender",
+    });
+    Message.belongsTo(models.User, {
+      foreignKey: "recipientId",
+      as: "recipient",
+    });
+  };
+
+  return Message;
 };
 </file>
 
@@ -2711,11 +2827,15 @@ module.exports = router;
 // routes/messageRoutes.js
 const express = require('express');
 const router = express.Router();
-const { getManagerMessages, sendManagerMessage } = require('../controllers/messageController');
+const messageController = require("../controllers/messageController");
 const { authenticate, authorize } = require('../middleware/auth');
 
-router.get('/', authenticate, authorize('tm', 'am', 'dealer'), getManagerMessages);
-router.post('/', authenticate, authorize('tm', 'am', 'dealer'), sendManagerMessage);
+
+// 📨 List all messages for TM/AM/Admin
+router.get("/", authenticate, authorize("tm", "am", "admin"), messageController.getMessages);
+
+// 📨 Dealer sends a new message
+router.post("/", authenticate, authorize("dealer"), messageController.sendMessage);
 
 module.exports = router;
 </file>
@@ -2736,7 +2856,7 @@ module.exports = router;
 const express = require('express');
 const router = express.Router();
 const reportController = require('../controllers/reportController');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, authorize } = require('../middleware/auth');
 //router.get('/dealer-performance', verifyToken, reportController.getDealerPerformanceReport);
 
 router.get('/dealer-performance', authenticate, reportController.getDealerPerformanceReport);
@@ -2749,6 +2869,13 @@ router.get("/admin-summary",
   authenticate,
   reportController.getAdminSummary
 );
+router.get(
+  "/pending-approvals",
+  authenticate,
+  authorize("tm", "am", "admin"),
+  reportController.getPendingApprovals
+);
+
 
 
 module.exports = router;
@@ -2785,7 +2912,10 @@ const documentRoutes = require('./routes/documentRoutes');
 const campaignRoutes = require('./routes/campaignRoutes');
 const reportRoutes = require('./routes/reportRoutes');
 const sapRoutes = require('./routes/sapRoutes');
-const inventoryRoutes = require('./routes/inventoryRoutes'); // ✅ correct path only once
+const inventoryRoutes = require('./routes/inventoryRoutes');
+const messageRoutes = require('./routes/messageRoutes');
+
+ // ✅ correct path only once
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -2821,7 +2951,8 @@ app.use('/api/documents', documentRoutes);
 app.use('/api/campaigns', campaignRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/sap', sapRoutes);
-app.use('/api/inventory', inventoryRoutes); // ✅ keep only this one
+app.use('/api/inventory', inventoryRoutes);
+app.use('/api/messages', messageRoutes); // ✅ keep only this one
 
 // 🧨 Error Handling
 app.use((err, req, res, next) => {
