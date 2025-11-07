@@ -3,10 +3,52 @@ const router = express.Router();
 const { authenticate, authorize } = require("../middleware/auth");
 const inventoryController = require("../controllers/inventoryController");
 
-// ✅ Main route for fetching inventory summary
-router.get("/", authenticate, authorize("inventory", "admin", "key_user"), inventoryController.getInventorySummary);
+// ✅ Fetch summary — visible to Inventory, Admin, and Key Users
+router.get(
+  "/summary",
+  authenticate,
+  authorize("inventory", "admin", "key_user"),
+  inventoryController.getInventorySummary
+);
 
-// Optional: detailed endpoints
-router.get("/details", authenticate, authorize("inventory", "admin"), inventoryController.getInventoryDetails);
+// ✅ Fetch detailed list — visible to Inventory and Admin
+router.get(
+  "/details",
+  authenticate,
+  authorize("inventory", "admin"),
+  inventoryController.getInventoryDetails
+);
+
+// ✅ Add new inventory item
+router.post(
+  "/",
+  authenticate,
+  authorize("inventory", "admin"),
+  inventoryController.addItem
+);
+
+// ✅ Update existing inventory item
+router.put(
+  "/:id",
+  authenticate,
+  authorize("inventory", "admin"),
+  inventoryController.updateItem
+);
+
+// ✅ Delete inventory item
+router.delete(
+  "/:id",
+  authenticate,
+  authorize("inventory", "admin"),
+  inventoryController.deleteItem
+);
+
+// ✅ Export inventory as Excel or PDF
+router.get(
+  "/export",
+  authenticate,
+  authorize("inventory", "admin", "key_user"),
+  inventoryController.exportInventory
+);
 
 module.exports = router;
