@@ -15,6 +15,9 @@ const reportRoutes = require('./routes/reportRoutes');
 const sapRoutes = require('./routes/sapRoutes');
 const inventoryRoutes = require('./routes/inventoryRoutes');
 const messageRoutes = require('./routes/messageRoutes');
+const accountsRoutes = require("./routes/accountsRoutes");
+
+
 
  // ✅ correct path only once
 
@@ -53,7 +56,8 @@ app.use('/api/campaigns', campaignRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/sap', sapRoutes);
 app.use('/api/inventory', inventoryRoutes);
-app.use('/api/messages', messageRoutes); // ✅ keep only this one
+app.use('/api/messages', messageRoutes); 
+app.use("/api/accounts", accountsRoutes);// ✅ keep only this one
 
 // 🧨 Error Handling
 app.use((err, req, res, next) => {
