@@ -7,7 +7,7 @@ const inventoryController = require("../controllers/inventoryController");
 router.get(
   "/summary",
   authenticate,
-  authorize("inventory", "admin", "key_user","dealer", "manager"),
+  authorize("inventory", "admin", "key_user","dealer", "tm"),
   inventoryController.getInventorySummary
 );
 
