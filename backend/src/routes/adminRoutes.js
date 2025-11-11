@@ -6,6 +6,12 @@ const adminController = require('../controllers/adminController');
 
 // ✅ Destructure authenticate and authorize from your middleware
 const { authenticate, authorize } = require('../middleware/auth');
+const pricingController = require('../controllers/pricingController');
+
+router.get('/pricing-updates', authenticate, authorize('admin'), pricingController.getPricingUpdates);
+router.patch('/pricing-updates/:id/review', authenticate, authorize('admin'), adminController.reviewPricingUpdate);
+
+
 
 // ✅ Apply authentication for all admin routes
 router.use(authenticate);

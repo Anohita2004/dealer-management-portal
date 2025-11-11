@@ -47,6 +47,7 @@ reports/dealer_performance.pdf
 reports/dealer_performance.xlsx
 src/config/database.js
 src/controllers/accountsController.js
+src/controllers/adminController.js
 src/controllers/authController.js
 src/controllers/campaignController.js
 src/controllers/dealerController.js
@@ -55,6 +56,7 @@ src/controllers/inventoryController.js
 src/controllers/invoiceController.js
 src/controllers/messageController.js
 src/controllers/notificationsController.js
+src/controllers/pricingControllers.js
 src/controllers/reportController.js
 src/controllers/sapController.js
 src/middleware/auth.js
@@ -68,9 +70,12 @@ src/models/index.js
 src/models/Inventory.js
 src/models/Invoice.js
 src/models/Message.js
+src/models/PricingUpdate.js
 src/models/Product.js
+src/models/SalesGroup.js
 src/models/User.js
 src/routes/accountsRoutes.js
+src/routes/adminRoutes.js
 src/routes/authRoutes.js
 src/routes/campaignRoutes.js
 src/routes/dealerRoutes.js
@@ -79,6 +84,7 @@ src/routes/inventoryRoutes.js
 src/routes/invoiceRoutes.js
 src/routes/messageRoutes.js
 src/routes/notificationRoutes.js
+src/routes/pricingRoutes.js
 src/routes/reportRoutes.js
 src/routes/sapRoutes.js
 src/server.js
@@ -87,6 +93,9 @@ src/utils/seed.js
 uploads/.gitkeep
 uploads/file-1762338158713-682306011.pdf
 uploads/file-1762510898999-103755803.pdf
+uploads/file-1762847371155-766543299.pdf
+uploads/file-1762847407845-983356133.pdf
+uploads/file-1762848269711-43415571.pdf
 uploads/invoice-INV-2024-002.pdf
 uploads/invoice-INV-2024-004.pdf
 </directory_structure>
@@ -405,6 +414,250 @@ module.exports = {
   createStatement,
   updateStatement,
   getReconciliation,
+};
+</file>
+
+<file path="src/controllers/adminController.js">
+const { Dealer, SalesGroup, PricingUpdate, Document, User, AuditLog, sequelize } = require('../models');
+const { Op } = require('sequelize');
+
+// ✅ Block or unblock dealer with reason
+const blockDealer = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isBlocked, reason } = req.body;
+
+    const dealer = await Dealer.findByPk(id);
+    if (!dealer) return res.status(404).json({ error: 'Dealer not found' });
+
+    await dealer.update({ isBlocked, blockReason: reason });
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: isBlocked ? 'BLOCK_DEALER' : 'UNBLOCK_DEALER',
+      entity: 'Dealer',
+      entityId: dealer.id,
+      changes: { isBlocked, reason },
+      ipAddress: req.ip
+    });
+
+    res.json({ message: `Dealer ${isBlocked ? 'blocked' : 'unblocked'} successfully`, dealer });
+  } catch (err) {
+    console.error('blockDealer:', err);
+    res.status(500).json({ error: 'Failed to update dealer block status' });
+  }
+};
+
+// ✅ Verify onboarding & license
+const verifyDealer = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { licenseNumber, licenseDocument } = req.body;
+
+    const dealer = await Dealer.findByPk(id);
+    if (!dealer) return res.status(404).json({ error: 'Dealer not found' });
+
+    await dealer.update({
+      isVerified: true,
+      licenseNumber,
+      licenseDocument,
+      verifiedBy: req.user.username,
+      verifiedAt: new Date()
+    });
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: 'VERIFY_DEALER',
+      entity: 'Dealer',
+      entityId: dealer.id,
+      changes: { licenseNumber },
+      ipAddress: req.ip
+    });
+
+    res.json({ message: 'Dealer verified successfully', dealer });
+  } catch (err) {
+    console.error('verifyDealer:', err);
+    res.status(500).json({ error: 'Failed to verify dealer' });
+  }
+};
+
+// ✅ Merge or manage sales groups
+const mergeSalesGroups = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const { groupIds = [], newName, region, description } = req.body;
+    if (groupIds.length < 2) return res.status(400).json({ error: 'Need at least two groups to merge' });
+
+    const groups = await SalesGroup.findAll({ where: { id: groupIds }, include: ['dealers'], transaction: t });
+
+    const newGroup = await SalesGroup.create({ name: newName, region, description }, { transaction: t });
+
+    const dealerIds = [...new Set(groups.flatMap(g => g.dealers.map(d => d.id)))];
+    await newGroup.addDealers(dealerIds, { transaction: t });
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: 'MERGE_SALES_GROUPS',
+      entity: 'SalesGroup',
+      entityId: newGroup.id,
+      changes: { groupIds, mergedDealers: dealerIds },
+      ipAddress: req.ip
+    }, { transaction: t });
+
+    await t.commit();
+    res.json({ message: 'Groups merged successfully', newGroup });
+  } catch (err) {
+    await t.rollback();
+    console.error('mergeSalesGroups:', err);
+    res.status(500).json({ error: 'Failed to merge groups' });
+  }
+};
+
+// ✅ Approve or reject documents
+const reviewDocument = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { action, remarks } = req.body;
+    const document = await Document.findByPk(id);
+    if (!document) return res.status(404).json({ error: 'Document not found' });
+
+    const status = action === 'approve' ? 'approved' : 'rejected';
+    await document.update({ status, reviewRemarks: remarks, reviewedBy: req.user.username });
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: `DOCUMENT_${status.toUpperCase()}`,
+      entity: 'Document',
+      entityId: document.id,
+      changes: { status, remarks },
+      ipAddress: req.ip
+    });
+
+    res.json({ message: `Document ${status} successfully`, document });
+  } catch (err) {
+    console.error('reviewDocument:', err);
+    res.status(500).json({ error: 'Failed to review document' });
+  }
+};
+
+// ✅ Oversee pricing distribution (approve/reject updates)
+const reviewPricingUpdate = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const { id } = req.params;
+    const { action, remarks } = req.body;
+    const pricing = await PricingUpdate.findByPk(id, { transaction: t });
+    if (!pricing) return res.status(404).json({ error: 'Pricing update not found' });
+
+    const status = action === 'approve' ? 'approved' : 'rejected';
+    await pricing.update({ status, remarks, approvedBy: req.user.username, approvedAt: new Date() }, { transaction: t });
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: `PRICING_${status.toUpperCase()}`,
+      entity: 'PricingUpdate',
+      entityId: pricing.id,
+      changes: { status, remarks },
+      ipAddress: req.ip
+    }, { transaction: t });
+
+    await t.commit();
+    res.json({ message: `Pricing ${status}`, pricing });
+  } catch (err) {
+    await t.rollback();
+    console.error('reviewPricingUpdate:', err);
+    res.status(500).json({ error: 'Failed to process pricing update' });
+  }
+};
+
+// ✅ User management
+const getAllUsers = async (req, res) => {
+  try {
+    const users = await User.findAll({ order: [['createdAt', 'DESC']] });
+    res.json({ users });
+  } catch (err) {
+    console.error('getAllUsers:', err);
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+};
+
+const updateUserRole = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { role } = req.body;
+    const user = await User.findByPk(id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    await user.update({ role });
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: 'UPDATE_USER_ROLE',
+      entity: 'User',
+      entityId: user.id,
+      changes: { role },
+      ipAddress: req.ip
+    });
+
+    res.json({ message: 'User role updated', user });
+  } catch (err) {
+    console.error('updateUserRole:', err);
+    res.status(500).json({ error: 'Failed to update role' });
+  }
+};
+
+const deleteUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await User.destroy({ where: { id } });
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: 'DELETE_USER',
+      entity: 'User',
+      entityId: id,
+      ipAddress: req.ip
+    });
+
+    res.json({ message: 'User deleted successfully' });
+  } catch (err) {
+    console.error('deleteUser:', err);
+    res.status(500).json({ error: 'Failed to delete user' });
+  }
+};
+
+// ✅ Consolidated reporting for dashboard
+const getAdminReport = async (req, res) => {
+  try {
+    const [dealerCount, blockedCount, verifiedCount, docPending, pricePending] = await Promise.all([
+      Dealer.count(),
+      Dealer.count({ where: { isBlocked: true } }),
+      Dealer.count({ where: { isVerified: true } }),
+      Document.count({ where: { status: 'pending' } }),
+      PricingUpdate.count({ where: { status: 'pending' } })
+    ]);
+
+    res.json({
+      dealers: { total: dealerCount, blocked: blockedCount, verified: verifiedCount },
+      documents: { pending: docPending },
+      pricing: { pending: pricePending }
+    });
+  } catch (err) {
+    console.error('getAdminReport:', err);
+    res.status(500).json({ error: 'Failed to generate report' });
+  }
+};
+
+module.exports = {
+  blockDealer,
+  verifyDealer,
+  mergeSalesGroups,
+  reviewDocument,
+  reviewPricingUpdate,
+  getAllUsers,
+  updateUserRole,
+  deleteUser,
+  getAdminReport
 };
 </file>
 
@@ -1645,6 +1898,87 @@ exports.getManagerNotifications = async (req, res) => {
 };
 </file>
 
+<file path="src/controllers/pricingControllers.js">
+// ==============================
+// FILE: src/controllers/pricingController.js
+// ==============================
+
+
+const { PricingUpdate, AuditLog, Product } = require('../models');
+const { Op } = require('sequelize');
+
+
+module.exports = {
+requestPricingChange: async (req, res) => {
+try {
+const { productId, oldPrice, newPrice, reason } = req.body;
+
+
+if (!productId || newPrice == null) {
+return res.status(400).json({ error: 'productId and newPrice are required' });
+}
+
+
+const product = await Product.findByPk(productId);
+if (!product) return res.status(404).json({ error: 'Product not found' });
+
+
+const update = await PricingUpdate.create({
+productId,
+oldPrice: oldPrice ?? product.price,
+newPrice,
+reason: reason || null,
+requestedBy: req.user.username || req.user.id,
+requestedByUserId: req.user.id,
+status: 'pending'
+});
+
+
+await AuditLog.create({
+userId: req.user.id,
+action: 'PRICING_REQUEST',
+entity: 'PricingUpdate',
+entityId: update.id,
+changes: { newPrice },
+ipAddress: req.ip,
+});
+
+
+res.status(201).json({ message: 'Pricing request submitted', update });
+} catch (err) {
+console.error('requestPricingChange:', err);
+res.status(500).json({ error: 'Failed to submit pricing request' });
+}
+},
+
+
+getPricingUpdates: async (req, res) => {
+try {
+const { mine, page = 1, limit = 50 } = req.query;
+const offset = (page - 1) * limit;
+
+
+const where = {};
+if (mine === 'true') where.requestedByUserId = req.user.id;
+
+
+const { count, rows } = await PricingUpdate.findAndCountAll({
+where,
+limit: parseInt(limit),
+offset: parseInt(offset),
+order: [['createdAt', 'DESC']],
+});
+
+
+res.json({ updates: rows, total: count });
+} catch (err) {
+console.error('getPricingUpdates:', err);
+res.status(500).json({ error: 'Failed to fetch pricing updates' });
+}
+}
+};
+</file>
+
 <file path="src/controllers/reportController.js">
 const { Dealer, Invoice, CreditDebitNote, AccountStatement, AuditLog } = require('../models');
 const { Op } = require('sequelize');
@@ -2346,13 +2680,11 @@ const authenticate = async (req, res, next) => {
     }
 
     const decoded = verifyToken(token);
-    
     if (!decoded) {
       return res.status(401).json({ error: 'Invalid token' });
     }
 
     const user = await User.findByPk(decoded.userId);
-    
     if (!user || !user.isActive || user.isBlocked) {
       return res.status(401).json({ error: 'User not authorized' });
     }
@@ -2360,7 +2692,8 @@ const authenticate = async (req, res, next) => {
     req.user = user;
     next();
   } catch (error) {
-    return res.status(401).json({ error: 'Authentication failed' });
+    console.error('Authentication error:', error);
+    res.status(401).json({ error: 'Authentication failed' });
   }
 };
 
@@ -2677,12 +3010,51 @@ module.exports = (sequelize) => {
       type: DataTypes.BOOLEAN,
       defaultValue: false
     },
+
+    // 🧩 Enhanced Admin Control Fields
+    blockReason: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: 'Reason why dealer was blocked'
+    },
+    isVerified: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+      comment: 'Whether onboarding and license verification is complete'
+    },
+    licenseNumber: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
+    licenseDocument: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'File path or URL of uploaded license document'
+    },
+    verifiedBy: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
+    verifiedAt: {
+      type: DataTypes.DATE,
+      allowNull: true
+    },
+
+    // existing field to hold multiple license details (keep)
     licenses: {
       type: DataTypes.JSON
     }
   }, {
-    timestamps: true
+    timestamps: true,
+    tableName: 'dealers'
   });
+  Dealer.associate = (models) => {
+  Dealer.hasMany(models.User, {
+    foreignKey: 'dealerId',
+    as: 'users'
+  });
+};
+
 
   return Dealer;
 };
@@ -2756,6 +3128,7 @@ rejectionReason: {
 <file path="src/models/index.js">
 const { sequelize } = require('../config/database');
 
+// Models
 const User = require('./User')(sequelize);
 const Dealer = require('./Dealer')(sequelize);
 const Invoice = require('./Invoice')(sequelize);
@@ -2765,21 +3138,41 @@ const CreditDebitNote = require('./CreditDebitNote')(sequelize);
 const AuditLog = require('./AuditLog')(sequelize);
 const AccountStatement = require('./AccountStatement')(sequelize);
 const Product = require('./Product')(sequelize);
-const Message = require('./Message')(sequelize); // ✅ NEW
+const Message = require('./Message')(sequelize);
 
+// =======================
 // Relationships
-User.belongsTo(Dealer, { foreignKey: 'dealerId', as: 'dealer' });
-Dealer.hasOne(User, { foreignKey: 'dealerId', as: 'user' });
+// =======================
 
+// ✅ User ↔ Dealer (fixed)
+User.belongsTo(Dealer, {
+  foreignKey: {
+    name: 'dealerId',
+    allowNull: true,
+  },
+  as: 'dealer',
+  onDelete: 'SET NULL',
+  onUpdate: 'CASCADE'
+});
+
+Dealer.hasMany(User, {
+  foreignKey: 'dealerId',
+  as: 'users'
+});
+
+// Invoice ↔ Dealer
 Invoice.belongsTo(Dealer, { foreignKey: 'dealerId', as: 'dealer' });
 Dealer.hasMany(Invoice, { foreignKey: 'dealerId', as: 'invoices' });
 
+// Document ↔ Dealer
 Document.belongsTo(Dealer, { foreignKey: 'dealerId', as: 'dealer' });
 Dealer.hasMany(Document, { foreignKey: 'dealerId', as: 'documents' });
 
+// CreditDebitNote ↔ Dealer
 CreditDebitNote.belongsTo(Dealer, { foreignKey: 'dealerId', as: 'dealer' });
 Dealer.hasMany(CreditDebitNote, { foreignKey: 'dealerId', as: 'creditDebitNotes' });
 
+// AccountStatement ↔ Dealer
 AccountStatement.belongsTo(Dealer, { foreignKey: 'dealerId', as: 'dealer' });
 Dealer.hasMany(AccountStatement, { foreignKey: 'dealerId', as: 'accountStatements' });
 
@@ -2789,12 +3182,15 @@ Message.belongsTo(User, { foreignKey: 'recipientId', as: 'recipient' });
 User.hasMany(Message, { foreignKey: 'senderId', as: 'sentMessages' });
 User.hasMany(Message, { foreignKey: 'recipientId', as: 'receivedMessages' });
 
+// =======================
+// Database Sync Function
+// =======================
 const syncDatabase = async () => {
   try {
-    await sequelize.sync({ alter: true });
-    console.log('Database synchronized successfully.');
+    await sequelize.sync({ alter: true }); // safe for dev
+    console.log('✅ Database synchronized successfully.');
   } catch (error) {
-    console.error('Error synchronizing database:', error);
+    console.error('❌ Error synchronizing database:', error);
   }
 };
 
@@ -2809,7 +3205,7 @@ module.exports = {
   AuditLog,
   AccountStatement,
   Product,
-  Message, // ✅ Export Message model
+  Message,
   syncDatabase,
 };
 </file>
@@ -2979,6 +3375,30 @@ module.exports = (sequelize) => {
 };
 </file>
 
+<file path="src/models/PricingUpdate.js">
+// src/models/PricingUpdate.js
+module.exports = (sequelize, DataTypes) => {
+  const PricingUpdate = sequelize.define('PricingUpdate', {
+    productId: { type: DataTypes.INTEGER, allowNull: false },
+    oldPrice: { type: DataTypes.DECIMAL(13,2) },
+    newPrice: { type: DataTypes.DECIMAL(13,2), allowNull: false },
+    reason: { type: DataTypes.TEXT },
+    requestedBy: { type: DataTypes.STRING },
+    requestedByUserId: { type: DataTypes.INTEGER },
+    status: { type: DataTypes.ENUM('pending','approved','rejected'), defaultValue: 'pending' },
+    remarks: { type: DataTypes.TEXT },
+    approvedBy: { type: DataTypes.STRING },
+    approvedAt: { type: DataTypes.DATE },
+  });
+
+  PricingUpdate.associate = function(models) {
+    PricingUpdate.belongsTo(models.Product, { foreignKey: 'productId' });
+  };
+
+  return PricingUpdate;
+};
+</file>
+
 <file path="src/models/Product.js">
 const { DataTypes } = require("sequelize");
 
@@ -3013,6 +3433,37 @@ module.exports = (sequelize) => {
   });
 
   return Product;
+};
+</file>
+
+<file path="src/models/SalesGroup.js">
+// src/models/SalesGroup.js
+module.exports = (sequelize, DataTypes) => {
+  const SalesGroup = sequelize.define('SalesGroup', {
+    id: {
+      type: DataTypes.INTEGER,
+      primaryKey: true,
+      autoIncrement: true
+    },
+    name: { type: DataTypes.STRING, allowNull: false },
+    region: { type: DataTypes.STRING },
+    description: { type: DataTypes.TEXT },
+    metadata: { type: DataTypes.JSONB, defaultValue: {} }
+  }, {
+    tableName: 'sales_groups'
+  });
+
+  SalesGroup.associate = (models) => {
+    // Many-to-many with Dealer via SalesGroupMembers
+    SalesGroup.belongsToMany(models.Dealer, {
+      through: 'SalesGroupMembers',
+      as: 'dealers',
+      foreignKey: 'salesGroupId',
+      otherKey: 'dealerId'
+    });
+  };
+
+  return SalesGroup;
 };
 </file>
 
@@ -3107,6 +3558,18 @@ module.exports = (sequelize) => {
     if (new Date() > this.otpExpiry) return false;
     return this.otp === otp;
   };
+  User.associate = (models) => {
+  User.belongsTo(models.Dealer, {
+    foreignKey: {
+      name: 'dealerId',
+      allowNull: true, // ✅ allows admin/key_user/etc. without a dealer
+    },
+    as: 'dealer',
+    onDelete: 'SET NULL',
+    onUpdate: 'CASCADE'
+  });
+};
+
 
   return User;
 };
@@ -3205,6 +3668,49 @@ router.get(
   authorize("accounts", "admin"),
   accountsController.getReconciliation
 );
+
+module.exports = router;
+</file>
+
+<file path="src/routes/adminRoutes.js">
+const express = require('express');
+const router = express.Router();
+
+// ✅ Import the *right* controller (adminController, not authController)
+const adminController = require('../controllers/adminController');
+
+// ✅ Destructure authenticate and authorize from your middleware
+const { authenticate, authorize } = require('../middleware/auth');
+const pricingController = require('../controllers/pricingController');
+
+router.get('/pricing-updates', authenticate, authorize('admin'), pricingController.getPricingUpdates);
+router.patch('/pricing-updates/:id/review', authenticate, authorize('admin'), adminController.reviewPricingUpdate);
+
+
+
+// ✅ Apply authentication for all admin routes
+router.use(authenticate);
+
+// ---------------- Dealer Management ----------------
+router.put('/dealers/:id/block', authorize('admin'), adminController.blockDealer);
+router.put('/dealers/:id/verify', authorize('admin'), adminController.verifyDealer);
+
+// ---------------- Sales Groups ----------------
+router.post('/sales-groups/merge', authorize('admin'), adminController.mergeSalesGroups);
+
+// ---------------- Documents ----------------
+router.put('/documents/:id/review', authorize('admin'), adminController.reviewDocument);
+
+// ---------------- Pricing ----------------
+router.put('/pricing/:id/review', authorize('admin'), adminController.reviewPricingUpdate);
+
+// ---------------- User Management ----------------
+router.get('/users', authorize('admin'), adminController.getAllUsers);
+router.put('/users/:id/role', authorize('admin'), adminController.updateUserRole);
+router.delete('/users/:id', authorize('admin'), adminController.deleteUser);
+
+// ---------------- Reports ----------------
+router.get('/reports', authorize('admin'), adminController.getAdminReport);
 
 module.exports = router;
 </file>
@@ -3382,6 +3888,24 @@ router.get('/manager', authenticate, authorize('tm', 'am'), getManagerNotificati
 module.exports = router;
 </file>
 
+<file path="src/routes/pricingRoutes.js">
+// FILE: src/routes/pricingRoutes.js
+// ==============================
+
+
+const express = require('express');
+const router = express.Router();
+const pricingController = require('../controllers/pricingController');
+const { authenticate, authorize } = require('../middleware/auth');
+
+
+router.post('/request', authenticate, authorize('dealer','am','tm'), pricingController.requestPricingChange);
+router.get('/', authenticate, authorize('admin','am','tm','dealer'), pricingController.getPricingUpdates);
+
+
+module.exports = router;
+</file>
+
 <file path="src/routes/reportRoutes.js">
 const express = require('express');
 const router = express.Router();
@@ -3445,6 +3969,8 @@ const sapRoutes = require('./routes/sapRoutes');
 const inventoryRoutes = require('./routes/inventoryRoutes');
 const messageRoutes = require('./routes/messageRoutes');
 const accountsRoutes = require("./routes/accountsRoutes");
+const pricingRoutes = require('./routes/pricingRoutes');
+
 
 
 
@@ -3486,7 +4012,11 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/sap', sapRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/messages', messageRoutes); 
-app.use("/api/accounts", accountsRoutes);// ✅ keep only this one
+app.use("/api/accounts", accountsRoutes);
+const adminRoutes = require('./routes/adminRoutes');
+app.use('/api/admin', adminRoutes);
+app.use('/pricing', pricingRoutes); // /pricing/request and /pricing/
+// ✅ keep only this one
 
 // 🧨 Error Handling
 app.use((err, req, res, next) => {

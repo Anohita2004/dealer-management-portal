@@ -16,6 +16,8 @@ const sapRoutes = require('./routes/sapRoutes');
 const inventoryRoutes = require('./routes/inventoryRoutes');
 const messageRoutes = require('./routes/messageRoutes');
 const accountsRoutes = require("./routes/accountsRoutes");
+const pricingRoutes = require('./routes/pricingRoutes');
+
 
 
 
@@ -60,7 +62,8 @@ app.use('/api/messages', messageRoutes);
 app.use("/api/accounts", accountsRoutes);
 const adminRoutes = require('./routes/adminRoutes');
 app.use('/api/admin', adminRoutes);
-
+app.use('/api/pricing', pricingRoutes);
+ // /pricing/request and /pricing/
 // ✅ keep only this one
 
 // 🧨 Error Handling
