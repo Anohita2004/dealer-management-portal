@@ -86,12 +86,51 @@ module.exports = (sequelize) => {
       type: DataTypes.BOOLEAN,
       defaultValue: false
     },
+
+    // 🧩 Enhanced Admin Control Fields
+    blockReason: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: 'Reason why dealer was blocked'
+    },
+    isVerified: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+      comment: 'Whether onboarding and license verification is complete'
+    },
+    licenseNumber: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
+    licenseDocument: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'File path or URL of uploaded license document'
+    },
+    verifiedBy: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
+    verifiedAt: {
+      type: DataTypes.DATE,
+      allowNull: true
+    },
+
+    // existing field to hold multiple license details (keep)
     licenses: {
       type: DataTypes.JSON
     }
   }, {
-    timestamps: true
+    timestamps: true,
+    tableName: 'dealers'
   });
+  Dealer.associate = (models) => {
+  Dealer.hasMany(models.User, {
+    foreignKey: 'dealerId',
+    as: 'users'
+  });
+};
+
 
   return Dealer;
 };

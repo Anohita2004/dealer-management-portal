@@ -10,13 +10,11 @@ const authenticate = async (req, res, next) => {
     }
 
     const decoded = verifyToken(token);
-    
     if (!decoded) {
       return res.status(401).json({ error: 'Invalid token' });
     }
 
     const user = await User.findByPk(decoded.userId);
-    
     if (!user || !user.isActive || user.isBlocked) {
       return res.status(401).json({ error: 'User not authorized' });
     }
@@ -24,7 +22,8 @@ const authenticate = async (req, res, next) => {
     req.user = user;
     next();
   } catch (error) {
-    return res.status(401).json({ error: 'Authentication failed' });
+    console.error('Authentication error:', error);
+    res.status(401).json({ error: 'Authentication failed' });
   }
 };
 

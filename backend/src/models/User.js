@@ -88,6 +88,18 @@ module.exports = (sequelize) => {
     if (new Date() > this.otpExpiry) return false;
     return this.otp === otp;
   };
+  User.associate = (models) => {
+  User.belongsTo(models.Dealer, {
+    foreignKey: {
+      name: 'dealerId',
+      allowNull: true, // ✅ allows admin/key_user/etc. without a dealer
+    },
+    as: 'dealer',
+    onDelete: 'SET NULL',
+    onUpdate: 'CASCADE'
+  });
+};
+
 
   return User;
 };
