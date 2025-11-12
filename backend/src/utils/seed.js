@@ -1,4 +1,5 @@
 const { User, Dealer, Invoice, Campaign, CreditDebitNote, AccountStatement, syncDatabase } = require('../models');
+const { Product } = require('../models');
 
 const seedData = async () => {
   try {
@@ -81,6 +82,35 @@ const seedData = async () => {
       isActive: true,
       isBlocked: false
     });
+    // PRODUCTS SEEDING
+await Product.bulkCreate([
+  {
+    name: "Cement Bag - 50kg",
+    plant: "Mumbai Plant",
+    stock: 1200,
+    uom: "Bag",
+  },
+  {
+    name: "Steel Rod - 10mm",
+    plant: "Delhi Plant",
+    stock: 800,
+    uom: "Ton",
+  },
+  {
+    name: "Paint Drum - 20L",
+    plant: "Bangalore Plant",
+    stock: 600,
+    uom: "Drum",
+  },
+  {
+    name: "Wall Putty - 40kg",
+    plant: "Chennai Plant",
+    stock: 500,
+    uom: "Bag",
+  },
+]);
+console.log("Products created successfully");
+
 
     console.log('Dealers created successfully');
 

@@ -1,12 +1,12 @@
 // src/models/PricingUpdate.js
 module.exports = (sequelize, DataTypes) => {
   const PricingUpdate = sequelize.define('PricingUpdate', {
-    productId: { type: DataTypes.INTEGER, allowNull: false },
+    productId: { type: DataTypes.UUID, allowNull: false },
     oldPrice: { type: DataTypes.DECIMAL(13,2) },
     newPrice: { type: DataTypes.DECIMAL(13,2), allowNull: false },
     reason: { type: DataTypes.TEXT },
     requestedBy: { type: DataTypes.STRING },
-    requestedByUserId: { type: DataTypes.INTEGER },
+    requestedByUserId: { type: DataTypes.UUID },
     status: { type: DataTypes.ENUM('pending','approved','rejected'), defaultValue: 'pending' },
     remarks: { type: DataTypes.TEXT },
     approvedBy: { type: DataTypes.STRING },

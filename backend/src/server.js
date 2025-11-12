@@ -63,6 +63,9 @@ app.use("/api/accounts", accountsRoutes);
 const adminRoutes = require('./routes/adminRoutes');
 app.use('/api/admin', adminRoutes);
 app.use('/api/pricing', pricingRoutes);
+const productRoutes = require("./routes/productRoutes");
+app.use("/api/products", productRoutes);
+
  // /pricing/request and /pricing/
 // ✅ keep only this one
 

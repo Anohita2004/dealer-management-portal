@@ -56,7 +56,7 @@ src/controllers/inventoryController.js
 src/controllers/invoiceController.js
 src/controllers/messageController.js
 src/controllers/notificationsController.js
-src/controllers/pricingControllers.js
+src/controllers/pricingController.js
 src/controllers/reportController.js
 src/controllers/sapController.js
 src/middleware/auth.js
@@ -96,6 +96,7 @@ uploads/file-1762510898999-103755803.pdf
 uploads/file-1762847371155-766543299.pdf
 uploads/file-1762847407845-983356133.pdf
 uploads/file-1762848269711-43415571.pdf
+uploads/file-1762859650179-48691705.pdf
 uploads/invoice-INV-2024-002.pdf
 uploads/invoice-INV-2024-004.pdf
 </directory_structure>
@@ -1898,138 +1899,241 @@ exports.getManagerNotifications = async (req, res) => {
 };
 </file>
 
-<file path="src/controllers/pricingControllers.js">
+<file path="src/controllers/pricingController.js">
 // ==============================
 // FILE: src/controllers/pricingController.js
 // ==============================
 
+const { PricingUpdate, AuditLog, Product } = require("../models");
+const { Op } = require("sequelize");
 
-const { PricingUpdate, AuditLog, Product } = require('../models');
-const { Op } = require('sequelize');
+// ----------------------------
+// 1️⃣ Request Pricing Change
+// ----------------------------
+exports.requestPricingChange = async (req, res) => {
+  try {
+    const { productId, oldPrice, newPrice, reason } = req.body;
 
+    if (!productId || newPrice == null) {
+      return res
+        .status(400)
+        .json({ error: "productId and newPrice are required" });
+    }
 
-module.exports = {
-requestPricingChange: async (req, res) => {
-try {
-const { productId, oldPrice, newPrice, reason } = req.body;
+    const product = await Product.findByPk(productId);
+    if (!product)
+      return res.status(404).json({ error: "Product not found" });
 
+    const update = await PricingUpdate.create({
+      productId,
+      oldPrice: oldPrice ?? product.price,
+      newPrice,
+      reason: reason || null,
+      dealerId: req.user.dealerId || null,
+      requestedBy: req.user.username || req.user.id,
+      requestedByUserId: req.user.id,
+      status: "pending",
+    });
 
-if (!productId || newPrice == null) {
-return res.status(400).json({ error: 'productId and newPrice are required' });
-}
+    await AuditLog.create({
+      userId: req.user.id,
+      action: "PRICING_REQUEST",
+      entity: "PricingUpdate",
+      entityId: update.id,
+      changes: { newPrice },
+      ipAddress: req.ip,
+    });
 
+    res.status(201).json({
+      message: "Pricing request submitted",
+      update,
+    });
+  } catch (err) {
+    console.error("requestPricingChange:", err);
+    res.status(500).json({ error: "Failed to submit pricing request" });
+  }
+};
 
-const product = await Product.findByPk(productId);
-if (!product) return res.status(404).json({ error: 'Product not found' });
+// ----------------------------
+// 2️⃣ Get Pricing Updates (Admin / Dealer)
+// ----------------------------
+exports.getPricingUpdates = async (req, res) => {
+  try {
+    const { mine, page = 1, limit = 50 } = req.query;
+    const offset = (page - 1) * limit;
 
+    const where = {};
 
-const update = await PricingUpdate.create({
-productId,
-oldPrice: oldPrice ?? product.price,
-newPrice,
-reason: reason || null,
-requestedBy: req.user.username || req.user.id,
-requestedByUserId: req.user.id,
-status: 'pending'
-});
+    // Dealers see their requests only
+    if (mine === "true" || req.user.role === "dealer") {
+      where.requestedByUserId = req.user.id;
+    }
 
+    const { count, rows } = await PricingUpdate.findAndCountAll({
+      where,
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      order: [["createdAt", "DESC"]],
+    });
 
-await AuditLog.create({
-userId: req.user.id,
-action: 'PRICING_REQUEST',
-entity: 'PricingUpdate',
-entityId: update.id,
-changes: { newPrice },
-ipAddress: req.ip,
-});
+    res.json({ updates: rows, total: count });
+  } catch (err) {
+    console.error("getPricingUpdates:", err);
+    res.status(500).json({ error: "Failed to fetch pricing updates" });
+  }
+};
 
+// ----------------------------
+// 3️⃣ Admin Pricing Summary
+// ----------------------------
+exports.getPricingSummary = async (req, res) => {
+  try {
+    const approved = await PricingUpdate.count({
+      where: { status: "approved" },
+    });
+    const pending = await PricingUpdate.count({
+      where: { status: "pending" },
+    });
+    const rejected = await PricingUpdate.count({
+      where: { status: "rejected" },
+    });
 
-res.status(201).json({ message: 'Pricing request submitted', update });
-} catch (err) {
-console.error('requestPricingChange:', err);
-res.status(500).json({ error: 'Failed to submit pricing request' });
-}
-},
-
-
-getPricingUpdates: async (req, res) => {
-try {
-const { mine, page = 1, limit = 50 } = req.query;
-const offset = (page - 1) * limit;
-
-
-const where = {};
-if (mine === 'true') where.requestedByUserId = req.user.id;
-
-
-const { count, rows } = await PricingUpdate.findAndCountAll({
-where,
-limit: parseInt(limit),
-offset: parseInt(offset),
-order: [['createdAt', 'DESC']],
-});
-
-
-res.json({ updates: rows, total: count });
-} catch (err) {
-console.error('getPricingUpdates:', err);
-res.status(500).json({ error: 'Failed to fetch pricing updates' });
-}
-}
+    return res.json({ approved, pending, rejected });
+  } catch (error) {
+    console.error("Pricing summary error:", error);
+    res
+      .status(500)
+      .json({ error: "Failed to fetch pricing summary" });
+  }
 };
 </file>
 
 <file path="src/controllers/reportController.js">
-const { Dealer, Invoice, CreditDebitNote, AccountStatement, AuditLog } = require('../models');
-const { Op } = require('sequelize');
+// =======================================================
+// ✅ REPORT CONTROLLER (CLEAN + FIXED + OPTIMIZED)
+// =======================================================
 
-const { Campaign, Document, Pricing } = require('../models');
-const { Order } = require('../models');
+const {
+  Dealer,
+  Invoice,
+  CreditDebitNote,
+  AccountStatement,
+  AuditLog,
+  Document,
+  Campaign,
+  PricingUpdate,   // ✅ The correct model
+  Order,
+} = require("../models");
 
-const PDFDocument = require('pdfkit');
-const ExcelJS = require('exceljs');
-const fs = require('fs');
-const path = require('path');
+const { Op } = require("sequelize");
+const PDFDocument = require("pdfkit");
+const ExcelJS = require("exceljs");
+const fs = require("fs");
+const path = require("path");
 
+// =======================================================
+// ✅ DEALER PERFORMANCE REPORT
+// =======================================================
 const getDealerPerformanceReport = async (req, res) => {
   try {
-    const { dealerId, startDate, endDate, format } = req.query;
-    const where = {};
+    // ✅ If the logged-in user is a dealer → return THEIR OWN dashboard summary
+    if (req.user.role === "dealer") {
+      const dealerId = req.user.dealerId;
 
-    if (dealerId) where.dealerId = dealerId;
-    if (startDate && endDate) {
-      where.invoiceDate = { [Op.between]: [new Date(startDate), new Date(endDate)] };
-    }
+      const dealer = await Dealer.findByPk(dealerId);
+      if (!dealer) return res.status(404).json({ error: "Dealer not found" });
 
-    // Restrict for dealer users
-    if (req.user.role === 'dealer') {
-      where.dealerId = req.user.dealerId;
-    }
+      // ✅ Fetch invoices
+      const invoices = await Invoice.findAll({
+        where: { dealerId },
+        order: [["invoiceDate", "DESC"]],
+      });
 
-    // 🔹 Fetch all dealers with their invoices
-    const dealers = await Dealer.findAll({
-      where: dealerId ? { id: dealerId } : {},
-      include: [{ model: Invoice, as: 'invoices' }],
-    });
+      const totalSales = invoices.reduce(
+        (sum, inv) => sum + Number(inv.totalAmount || 0),
+        0
+      );
 
-    // 🔹 Prepare the report data
-    const reportData = dealers.map((dealer) => {
-      const invoices = dealer.invoices || [];
-      const totalSales = invoices.reduce((sum, inv) => sum + (parseFloat(inv.totalAmount) || 0), 0);
-      const deliveredOrders = invoices.filter((i) => i.status === 'Delivered').length;
-      const pendingOrders = invoices.filter((i) => i.status === 'Pending').length;
+      const deliveredOrders = invoices.filter(
+        (i) => i.status === "Delivered"
+      ).length;
 
-      // Assuming you have targets set per dealer (or default to demo values)
+      const pendingOrders = invoices.filter(
+        (i) => i.status === "Pending"
+      ).length;
+
+      // ✅ Monthly Targets (fallback demo)
       const monthlyTarget = dealer.monthlyTarget || 200000;
       const quarterlyTarget = monthlyTarget * 3;
       const yearlyTarget = monthlyTarget * 12;
 
-      // Product group-wise sales
+      // ✅ Category-wise sales (for pie chart)
       const productGroups = {};
       invoices.forEach((inv) => {
-        const group = inv.productGroup || 'Others';
+        const group = inv.productGroup || "Others";
         if (!productGroups[group]) productGroups[group] = 0;
-        productGroups[group] += parseFloat(inv.totalAmount);
+        productGroups[group] += Number(inv.totalAmount || 0);
+      });
+
+      // ✅ Pricing Status counts — FULLY FIXED ✅
+      const approved = await PricingUpdate.count({
+        where: { dealerId, status: "approved" },
+      });
+
+      const pending = await PricingUpdate.count({
+        where: { dealerId, status: "pending" },
+      });
+
+      const rejected = await PricingUpdate.count({
+        where: { dealerId, status: "rejected" },
+      });
+
+      const pricingBreakdown = { approved, pending, rejected };
+
+      // ✅ Return Dealer Dashboard JSON
+      return res.json({
+        dealerName: dealer.businessName,
+        dealerCode: dealer.dealerCode,
+        totalSales,
+        monthlyTarget,
+        quarterlyTarget,
+        yearlyTarget,
+        deliveredOrders,
+        pendingOrders,
+        productGroups,
+        pricingBreakdown,
+      });
+    }
+
+    // ✅ Admin Report (all dealers)
+    const dealers = await Dealer.findAll({
+      include: [{ model: Invoice, as: "invoices" }],
+    });
+
+    const reportData = dealers.map((dealer) => {
+      const invoices = dealer.invoices || [];
+      const totalSales = invoices.reduce(
+        (sum, inv) => sum + Number(inv.totalAmount || 0),
+        0
+      );
+
+      const deliveredOrders = invoices.filter(
+        (i) => i.status === "Delivered"
+      ).length;
+
+      const pendingOrders = invoices.filter(
+        (i) => i.status === "Pending"
+      ).length;
+
+      const monthlyTarget = dealer.monthlyTarget || 200000;
+      const quarterlyTarget = monthlyTarget * 3;
+      const yearlyTarget = monthlyTarget * 12;
+
+      const productGroups = {};
+      invoices.forEach((inv) => {
+        const group = inv.productGroup || "Others";
+        if (!productGroups[group]) productGroups[group] = 0;
+        productGroups[group] += Number(inv.totalAmount || 0);
       });
 
       return {
@@ -2045,153 +2149,43 @@ const getDealerPerformanceReport = async (req, res) => {
       };
     });
 
-    // 🔹 Export as PDF
-    if (format === 'pdf') {
-      const doc = new PDFDocument({ margin: 40, size: 'A4' });
-      const filePath = path.join(__dirname, '../../reports/dealer_performance.pdf');
-      const stream = fs.createWriteStream(filePath);
-      doc.pipe(stream);
-
-      doc.fontSize(20).fillColor('#003366').text('Dealer Performance Report', { align: 'center' });
-      doc.moveDown(2);
-
-      reportData.forEach((r, i) => {
-        doc.fontSize(14).fillColor('#111').text(`${i + 1}. ${r.dealerName} (${r.dealerCode})`);
-        doc.fontSize(12).text(`Total Sales: ₹${r.totalSales.toFixed(2)}`);
-        doc.text(`Targets - M: ₹${r.monthlyTarget}, Q: ₹${r.quarterlyTarget}, Y: ₹${r.yearlyTarget}`);
-        doc.text(`Delivered Orders: ${r.deliveredOrders}`);
-        doc.text(`Pending Orders: ${r.pendingOrders}`);
-        doc.moveDown(0.5);
-        doc.fontSize(11).fillColor('#333').text('Product Group Sales:');
-        for (const [group, value] of Object.entries(r.productGroups)) {
-          doc.text(` - ${group}: ₹${value.toFixed(2)}`);
-        }
-        doc.moveDown(1.5);
-      });
-
-      doc.end();
-      stream.on('finish', () => res.download(filePath));
-      return;
-    }
-
-    // 🔹 Export as Excel
-    if (format === 'excel') {
-      const workbook = new ExcelJS.Workbook();
-      const sheet = workbook.addWorksheet('Dealer Performance');
-
-      sheet.columns = [
-        { header: 'Dealer Code', key: 'dealerCode', width: 15 },
-        { header: 'Dealer Name', key: 'dealerName', width: 30 },
-        { header: 'Total Sales', key: 'totalSales', width: 15 },
-        { header: 'Monthly Target', key: 'monthlyTarget', width: 18 },
-        { header: 'Quarterly Target', key: 'quarterlyTarget', width: 18 },
-        { header: 'Yearly Target', key: 'yearlyTarget', width: 18 },
-        { header: 'Delivered Orders', key: 'deliveredOrders', width: 18 },
-        { header: 'Pending Orders', key: 'pendingOrders', width: 18 },
-        { header: 'Product Groups', key: 'productGroups', width: 40 },
-      ];
-
-      reportData.forEach((r) =>
-        sheet.addRow({
-          dealerCode: r.dealerCode,
-          dealerName: r.dealerName,
-          totalSales: r.totalSales,
-          monthlyTarget: r.monthlyTarget,
-          quarterlyTarget: r.quarterlyTarget,
-          yearlyTarget: r.yearlyTarget,
-          deliveredOrders: r.deliveredOrders,
-          pendingOrders: r.pendingOrders,
-          productGroups: JSON.stringify(r.productGroups),
-        })
-      );
-
-      const filePath = path.join(__dirname, '../../reports/dealer_performance.xlsx');
-      await workbook.xlsx.writeFile(filePath);
-      return res.download(filePath);
-    }
-
-    // 🔹 Default: JSON (for preview)
-    res.json(reportData);
+    return res.json(reportData);
   } catch (error) {
-    console.error('Dealer performance report error:', error);
-    res.status(500).json({ error: 'Failed to generate dealer performance report' });
+    console.error("Dealer performance error:", error);
+    res.status(500).json({ error: "Failed to generate dealer performance report" });
   }
 };
- // add at the top if not already imported
 
+// =======================================================
+// ✅ ADMIN SUMMARY
+// =======================================================
 const getAdminSummary = async (req, res) => {
   try {
-    let totalDealers = 0;
-    let blockedDealers = 0;
-    let totalInvoices = 0;
-    let totalOutstanding = 0;
-    let pendingDocuments = 0;
-    let pendingPricing = 0;
+    let totalDealers = await Dealer.count();
+    let blockedDealers = await Dealer.count({ where: { status: "BLOCKED" } });
+    let totalInvoices = await Invoice.count();
 
-    // ---- Dealers ----
-    try {
-      totalDealers = await Dealer.count();
-      blockedDealers = await Dealer.count({ where: { status: "BLOCKED" } });
-    } catch (err) {
-      console.warn("[AdminSummary] Dealer count failed:", err.message);
-    }
+    const outstandingInvoices = await Invoice.findAll({
+      attributes: ["balanceAmount"],
+      where: { balanceAmount: { [Op.gt]: 0 } },
+    });
 
-    // ---- Invoices ----
-    try {
-      totalInvoices = await Invoice.count();
-      const outstandingInvoices = await Invoice.findAll({
-        attributes: ["balanceAmount"],
-        where: { balanceAmount: { [Op.gt]: 0 } },
-      });
-      totalOutstanding = outstandingInvoices.reduce(
-        (sum, inv) => sum + Number(inv.balanceAmount || 0),
-        0
-      );
-    } catch (err) {
-      console.warn("[AdminSummary] Invoice query failed:", err.message);
-    }
+    const totalOutstanding = outstandingInvoices.reduce(
+      (sum, inv) => sum + Number(inv.balanceAmount || 0),
+      0
+    );
 
-    // ---- Documents ----
-    try {
-      // Handle enum mismatch safely
-      const validStatuses = [
-        "Pending",
-        "PENDING",
-        "UNDER_REVIEW",
-        "WAITING_APPROVAL",
-      ];
+    // ✅ Pending documents (flexible enum)
+    const pendingStatuses = ["Pending", "PENDING", "UNDER_REVIEW", "WAITING_APPROVAL"];
+    let pendingDocuments = await Document.count({
+      where: { status: { [Op.in]: pendingStatuses } },
+    });
 
-      let pendingCount = 0;
-      for (const status of validStatuses) {
-        try {
-          const c = await Document.count({ where: { status } });
-          if (c > 0) {
-            pendingCount += c;
-          }
-        } catch (err) {
-          if (err.message.includes("invalid input value for enum")) {
-            console.warn(`[AdminSummary] Skipped invalid enum status: ${status}`);
-          } else {
-            console.warn(`[AdminSummary] Error counting status ${status}:`, err.message);
-          }
-        }
-      }
-      pendingDocuments = pendingCount;
-    } catch (err) {
-      console.warn("[AdminSummary] Document count failed:", err.message);
-    }
+    // ✅ Pending Pricing Updates
+    let pendingPricing = await PricingUpdate.count({
+      where: { status: "pending" },
+    });
 
-    // ---- Pricing ----
-    try {
-      // if you track pending pricing approvals via Document model or separate model, adjust accordingly
-      pendingPricing = await Document.count({
-        where: { status: { [Op.in]: ["WAITING_PRICE_APPROVAL", "PRICE_REVIEW"] } },
-      }).catch(() => 0);
-    } catch (err) {
-      console.warn("[AdminSummary] Pending pricing count failed:", err.message);
-    }
-
-    // ---- Response ----
     res.json({
       totalDealers,
       blockedDealers,
@@ -2199,16 +2193,17 @@ const getAdminSummary = async (req, res) => {
       totalOutstanding,
       pendingDocuments,
       pendingPricing,
-      activeCampaigns: 0, // placeholder (extend if needed)
+      activeCampaigns: 0, // Placeholder
     });
   } catch (err) {
-    console.error("Error in getAdminSummary:", err);
-    res.status(500).json({ message: "Error generating admin summary" });
+    console.error("Admin summary error:", err);
+    res.status(500).json({ error: "Failed to generate admin summary" });
   }
 };
 
-
-
+// =======================================================
+// ✅ ACCOUNT STATEMENT REPORT
+// =======================================================
 const getAccountStatementReport = async (req, res) => {
   try {
     const { dealerId, startDate, endDate, productGroup } = req.query;
@@ -2216,74 +2211,80 @@ const getAccountStatementReport = async (req, res) => {
     const where = {};
     if (dealerId) where.dealerId = dealerId;
     if (productGroup) where.productGroup = productGroup;
+
     if (startDate && endDate) {
       where.statementDate = {
-        [Op.between]: [new Date(startDate), new Date(endDate)]
+        [Op.between]: [new Date(startDate), new Date(endDate)],
       };
     }
 
-    if (req.user.role === 'dealer') {
+    if (req.user.role === "dealer") {
       where.dealerId = req.user.dealerId;
     }
 
     const statements = await AccountStatement.findAll({
       where,
-      include: [{ model: Dealer, as: 'dealer' }],
-      order: [['statementDate', 'ASC']]
+      include: [{ model: Dealer, as: "dealer" }],
+      order: [["statementDate", "ASC"]],
     });
 
-    const openingBalance = statements.length > 0 ? parseFloat(statements[0].balance) : 0;
-    const closingBalance = statements.length > 0 ? parseFloat(statements[statements.length - 1].balance) : 0;
-    const totalDebit = statements.reduce((sum, stmt) => sum + parseFloat(stmt.debitAmount), 0);
-    const totalCredit = statements.reduce((sum, stmt) => sum + parseFloat(stmt.creditAmount), 0);
+    const openingBalance = statements[0]?.balance || 0;
+    const closingBalance = statements.at(-1)?.balance || 0;
 
-    const report = {
+    const totalDebit = statements.reduce((sum, s) => sum + Number(s.debitAmount || 0), 0);
+    const totalCredit = statements.reduce((sum, s) => sum + Number(s.creditAmount || 0), 0);
+
+    res.json({
       openingBalance,
       closingBalance,
       totalDebit,
       totalCredit,
-      statements
-    };
-
-    res.json(report);
+      statements,
+    });
   } catch (error) {
-    console.error('Account statement report error:', error);
-    res.status(500).json({ error: 'Failed to generate account statement report' });
+    console.error("Account statement error:", error);
+    res.status(500).json({ error: "Failed to generate account statement report" });
   }
 };
 
+// =======================================================
+// ✅ INVOICE REGISTER REPORT
+// =======================================================
 const getInvoiceRegisterReport = async (req, res) => {
   try {
-    const { dealerId, productGroup, invoiceNumber, startDate, endDate, status } = req.query;
+    const { dealerId, productGroup, invoiceNumber, startDate, endDate, status } =
+      req.query;
 
     const where = {};
     if (dealerId) where.dealerId = dealerId;
     if (productGroup) where.productGroup = productGroup;
     if (invoiceNumber) where.invoiceNumber = { [Op.like]: `%${invoiceNumber}%` };
     if (status) where.status = status;
+
     if (startDate && endDate) {
-      where.invoiceDate = {
-        [Op.between]: [new Date(startDate), new Date(endDate)]
-      };
+      where.invoiceDate = { [Op.between]: [startDate, endDate] };
     }
 
-    if (req.user.role === 'dealer') {
+    if (req.user.role === "dealer") {
       where.dealerId = req.user.dealerId;
     }
 
     const invoices = await Invoice.findAll({
       where,
-      include: [{ model: Dealer, as: 'dealer' }],
-      order: [['invoiceDate', 'DESC']]
+      include: [{ model: Dealer, as: "dealer" }],
+      order: [["invoiceDate", "DESC"]],
     });
 
     res.json({ invoices });
   } catch (error) {
-    console.error('Invoice register report error:', error);
-    res.status(500).json({ error: 'Failed to generate invoice register report' });
+    console.error("Invoice register error:", error);
+    res.status(500).json({ error: "Failed to generate invoice register report" });
   }
 };
 
+// =======================================================
+// ✅ CREDIT/DEBIT NOTE REPORT
+// =======================================================
 const getCreditDebitNoteReport = async (req, res) => {
   try {
     const { dealerId, startDate, endDate, reasonCode } = req.query;
@@ -2291,125 +2292,93 @@ const getCreditDebitNoteReport = async (req, res) => {
     const where = {};
     if (dealerId) where.dealerId = dealerId;
     if (reasonCode) where.reasonCode = reasonCode;
+
     if (startDate && endDate) {
-      where.noteDate = {
-        [Op.between]: [new Date(startDate), new Date(endDate)]
-      };
+      where.noteDate = { [Op.between]: [startDate, endDate] };
     }
 
-    if (req.user.role === 'dealer') {
+    if (req.user.role === "dealer") {
       where.dealerId = req.user.dealerId;
     }
 
     const notes = await CreditDebitNote.findAll({
       where,
-      include: [{ model: Dealer, as: 'dealer' }],
-      order: [['noteDate', 'DESC']]
+      include: [{ model: Dealer, as: "dealer" }],
+      order: [["noteDate", "DESC"]],
     });
 
-    const totalCredit = notes.filter(n => n.noteType === 'credit').reduce((sum, n) => sum + parseFloat(n.amount), 0);
-    const totalDebit = notes.filter(n => n.noteType === 'debit').reduce((sum, n) => sum + parseFloat(n.amount), 0);
+    const totalCredit = notes
+      .filter((n) => n.noteType === "credit")
+      .reduce((sum, n) => sum + Number(n.amount), 0);
 
-    res.json({
-      notes,
-      totalCredit,
-      totalDebit
-    });
+    const totalDebit = notes
+      .filter((n) => n.noteType === "debit")
+      .reduce((sum, n) => sum + Number(n.amount), 0);
+
+    res.json({ notes, totalCredit, totalDebit });
   } catch (error) {
-    console.error('Credit/Debit note report error:', error);
-    res.status(500).json({ error: 'Failed to generate credit/debit note report' });
+    console.error("Credit/Debit Note error:", error);
+    res.status(500).json({ error: "Failed to generate credit/debit note report" });
   }
 };
 
+// =======================================================
+// ✅ OUTSTANDING RECEIVABLES REPORT
+// =======================================================
 const getOutstandingReceivablesReport = async (req, res) => {
   try {
-    const where = { status: { [Op.ne]: 'paid' } };
+    const where = { status: { [Op.ne]: "paid" } };
 
-    if (req.user.role === 'dealer') {
+    if (req.user.role === "dealer") {
       where.dealerId = req.user.dealerId;
     }
 
     const invoices = await Invoice.findAll({
       where,
-      include: [{ model: Dealer, as: 'dealer' }],
-      order: [['dueDate', 'ASC']]
+      include: [{ model: Dealer, as: "dealer" }],
+      order: [["dueDate", "ASC"]],
     });
 
-    const aging = {
-      '0-30': 0,
-      '31-60': 0,
-      '61-90': 0,
-      '90+': 0
-    };
-
     const today = new Date();
-    invoices.forEach(inv => {
-      const dueDate = new Date(inv.dueDate);
-      const daysDiff = Math.floor((today - dueDate) / (1000 * 60 * 60 * 24));
-      const balance = parseFloat(inv.balanceAmount);
 
-      if (daysDiff <= 30) aging['0-30'] += balance;
-      else if (daysDiff <= 60) aging['31-60'] += balance;
-      else if (daysDiff <= 90) aging['61-90'] += balance;
-      else aging['90+'] += balance;
+    const aging = { "0-30": 0, "31-60": 0, "61-90": 0, "90+": 0 };
+
+    invoices.forEach((inv) => {
+      const due = new Date(inv.dueDate);
+      const diff = Math.floor((today - due) / (1000 * 60 * 60 * 24));
+      const amt = Number(inv.balanceAmount || 0);
+
+      if (diff <= 30) aging["0-30"] += amt;
+      else if (diff <= 60) aging["31-60"] += amt;
+      else if (diff <= 90) aging["61-90"] += amt;
+      else aging["90+"] += amt;
     });
 
     res.json({
       invoices,
       aging,
-      totalOutstanding: invoices.reduce((sum, inv) => sum + parseFloat(inv.balanceAmount), 0)
+      totalOutstanding: invoices.reduce(
+        (sum, inv) => sum + Number(inv.balanceAmount || 0),
+        0
+      ),
     });
   } catch (error) {
-    console.error('Outstanding receivables report error:', error);
-    res.status(500).json({ error: 'Failed to generate outstanding receivables report' });
+    console.error("Outstanding receivables error:", error);
+    res.status(500).json({ error: "Failed to generate outstanding receivables report" });
   }
 };
 
-const getTerritoryReport = async (req, res) => {
-  try {
-    const { state, territory, region } = req.query;
-
-    const where = {};
-    if (state) where.state = state;
-    if (territory) where.territory = territory;
-    if (region) where.region = region;
-
-    const dealers = await Dealer.findAll({
-      where,
-      include: [
-        { model: Invoice, as: 'invoices' }
-      ]
-    });
-
-    const report = dealers.map(dealer => {
-      const totalSales = dealer.invoices.reduce((sum, inv) => sum + parseFloat(inv.totalAmount), 0);
-      const outstanding = parseFloat(dealer.outstandingAmount);
-      
-      return {
-        dealerCode: dealer.dealerCode,
-        businessName: dealer.businessName,
-        state: dealer.state,
-        territory: dealer.territory,
-        region: dealer.region,
-        totalSales,
-        outstanding
-      };
-    });
-
-    res.json({ report });
-  } catch (error) {
-    console.error('Territory report error:', error);
-    res.status(500).json({ error: 'Failed to generate territory report' });
-  }
-};
-const getPendingApprovals = async (req, res, next) => {
+// =======================================================
+// ✅ PENDING APPROVALS
+// =======================================================
+const getPendingApprovals = async (req, res) => {
   try {
     const pendingDocs = await Document.findAll({
       where: { status: "pending" },
       include: [
         {
           model: Dealer,
-          as: "dealer", // ✅ alias must match your model association
+          as: "dealer",
           attributes: ["id", "businessName"],
         },
       ],
@@ -2424,24 +2393,67 @@ const getPendingApprovals = async (req, res, next) => {
       status: doc.status,
     }));
 
-    res.status(200).json(formatted);
+    res.json(formatted);
   } catch (err) {
-    console.error("Error fetching pending approvals:", err);
-    next(err);
+    console.error("Pending approvals error:", err);
+    res.status(500).json({ error: "Failed to fetch pending approvals" });
+  }
+};
+// =======================================================
+// ✅ TERRITORY REPORT
+// =======================================================
+const getTerritoryReport = async (req, res) => {
+  try {
+    const { state, territory, region } = req.query;
+
+    const where = {};
+    if (state) where.state = state;
+    if (territory) where.territory = territory;
+    if (region) where.region = region;
+
+    const dealers = await Dealer.findAll({
+      where,
+      include: [{ model: Invoice, as: "invoices" }],
+    });
+
+    const report = dealers.map((dealer) => {
+      const totalSales = dealer.invoices.reduce(
+        (sum, inv) => sum + Number(inv.totalAmount || 0),
+        0
+      );
+
+      const outstanding = Number(dealer.outstandingAmount || 0);
+
+      return {
+        dealerCode: dealer.dealerCode,
+        businessName: dealer.businessName,
+        state: dealer.state,
+        territory: dealer.territory,
+        region: dealer.region,
+        totalSales,
+        outstanding,
+      };
+    });
+
+    res.json({ report });
+  } catch (error) {
+    console.error("Territory report error:", error);
+    res.status(500).json({ error: "Failed to generate territory report" });
   }
 };
 
-
-
+// =======================================================
+// ✅ EXPORT
+// =======================================================
 module.exports = {
   getDealerPerformanceReport,
+  getAdminSummary,
   getAccountStatementReport,
   getInvoiceRegisterReport,
   getCreditDebitNoteReport,
   getOutstandingReceivablesReport,
   getTerritoryReport,
-  getAdminSummary ,
-  getPendingApprovals// 👈 add this
+  getPendingApprovals,
 };
 </file>
 
@@ -3127,67 +3139,59 @@ rejectionReason: {
 
 <file path="src/models/index.js">
 const { sequelize } = require('../config/database');
+const { DataTypes } = require('sequelize'); // ✅ REQUIRED
 
 // Models
-const User = require('./User')(sequelize);
-const Dealer = require('./Dealer')(sequelize);
-const Invoice = require('./Invoice')(sequelize);
-const Document = require('./Document')(sequelize);
-const Campaign = require('./Campaign')(sequelize);
-const CreditDebitNote = require('./CreditDebitNote')(sequelize);
-const AuditLog = require('./AuditLog')(sequelize);
-const AccountStatement = require('./AccountStatement')(sequelize);
-const Product = require('./Product')(sequelize);
-const Message = require('./Message')(sequelize);
+const User = require('./User')(sequelize, DataTypes);
+const Dealer = require('./Dealer')(sequelize, DataTypes);
+const Invoice = require('./Invoice')(sequelize, DataTypes);
+const Document = require('./Document')(sequelize, DataTypes);
+const Campaign = require('./Campaign')(sequelize, DataTypes);
+const CreditDebitNote = require('./CreditDebitNote')(sequelize, DataTypes);
+const AuditLog = require('./AuditLog')(sequelize, DataTypes);
+const AccountStatement = require('./AccountStatement')(sequelize, DataTypes);
+const Product = require('./Product')(sequelize, DataTypes);
+const Message = require('./Message')(sequelize, DataTypes);
+const PricingUpdate = require('./PricingUpdate')(sequelize, DataTypes); // ✅ FIXED
 
-// =======================
 // Relationships
 // =======================
 
-// ✅ User ↔ Dealer (fixed)
 User.belongsTo(Dealer, {
-  foreignKey: {
-    name: 'dealerId',
-    allowNull: true,
-  },
+  foreignKey: { name: 'dealerId', allowNull: true },
   as: 'dealer',
   onDelete: 'SET NULL',
   onUpdate: 'CASCADE'
 });
+Dealer.hasMany(User, { foreignKey: 'dealerId', as: 'users' });
 
-Dealer.hasMany(User, {
-  foreignKey: 'dealerId',
-  as: 'users'
-});
-
-// Invoice ↔ Dealer
 Invoice.belongsTo(Dealer, { foreignKey: 'dealerId', as: 'dealer' });
 Dealer.hasMany(Invoice, { foreignKey: 'dealerId', as: 'invoices' });
 
-// Document ↔ Dealer
 Document.belongsTo(Dealer, { foreignKey: 'dealerId', as: 'dealer' });
 Dealer.hasMany(Document, { foreignKey: 'dealerId', as: 'documents' });
 
-// CreditDebitNote ↔ Dealer
 CreditDebitNote.belongsTo(Dealer, { foreignKey: 'dealerId', as: 'dealer' });
 Dealer.hasMany(CreditDebitNote, { foreignKey: 'dealerId', as: 'creditDebitNotes' });
 
-// AccountStatement ↔ Dealer
 AccountStatement.belongsTo(Dealer, { foreignKey: 'dealerId', as: 'dealer' });
 Dealer.hasMany(AccountStatement, { foreignKey: 'dealerId', as: 'accountStatements' });
 
-// ✅ Message relationships
 Message.belongsTo(User, { foreignKey: 'senderId', as: 'sender' });
 Message.belongsTo(User, { foreignKey: 'recipientId', as: 'recipient' });
 User.hasMany(Message, { foreignKey: 'senderId', as: 'sentMessages' });
 User.hasMany(Message, { foreignKey: 'recipientId', as: 'receivedMessages' });
 
+// ✅ PricingUpdate relationships
+PricingUpdate.belongsTo(Dealer, { foreignKey: "dealerId", as: "dealer" });
+Dealer.hasMany(PricingUpdate, { foreignKey: "dealerId", as: "pricingUpdates" });
+
 // =======================
-// Database Sync Function
+// Sync
 // =======================
 const syncDatabase = async () => {
   try {
-    await sequelize.sync({ alter: true }); // safe for dev
+    await sequelize.sync({ alter: true });
     console.log('✅ Database synchronized successfully.');
   } catch (error) {
     console.error('❌ Error synchronizing database:', error);
@@ -3206,6 +3210,7 @@ module.exports = {
   AccountStatement,
   Product,
   Message,
+  PricingUpdate, // ✅ EXPORT IT
   syncDatabase,
 };
 </file>
@@ -3889,19 +3894,38 @@ module.exports = router;
 </file>
 
 <file path="src/routes/pricingRoutes.js">
+// ==============================
 // FILE: src/routes/pricingRoutes.js
 // ==============================
 
-
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const pricingController = require('../controllers/pricingController');
-const { authenticate, authorize } = require('../middleware/auth');
+const pricingController = require("../controllers/pricingController");
+const { authenticate, authorize } = require("../middleware/auth");
 
+// ✅ Dealers & Managers can request price change
+router.post(
+  "/request",
+  authenticate,
+  authorize("dealer", "am", "tm"),
+  pricingController.requestPricingChange
+);
 
-router.post('/request', authenticate, authorize('dealer','am','tm'), pricingController.requestPricingChange);
-router.get('/', authenticate, authorize('admin','am','tm','dealer'), pricingController.getPricingUpdates);
+// ✅ Admin, AM, TM, Dealer can view pricing updates
+router.get(
+  "/",
+  authenticate,
+  authorize("admin", "am", "tm", "dealer"),
+  pricingController.getPricingUpdates
+);
 
+// ✅ Admin-only pricing summary (for dashboard)
+router.get(
+  "/summary",
+  authenticate,
+  authorize("admin"),
+  pricingController.getPricingSummary
+);
 
 module.exports = router;
 </file>
@@ -4015,7 +4039,8 @@ app.use('/api/messages', messageRoutes);
 app.use("/api/accounts", accountsRoutes);
 const adminRoutes = require('./routes/adminRoutes');
 app.use('/api/admin', adminRoutes);
-app.use('/pricing', pricingRoutes); // /pricing/request and /pricing/
+app.use('/api/pricing', pricingRoutes);
+ // /pricing/request and /pricing/
 // ✅ keep only this one
 
 // 🧨 Error Handling
