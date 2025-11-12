@@ -8,6 +8,10 @@ router.get('/profile', authenticate, authorize('dealer'), dealerController.getDe
 router.get('/:id', authenticate, dealerController.getDealerById);
 router.post('/', authenticate, authorize('admin', 'key_user'), dealerController.createDealer);
 router.put('/:id', authenticate, authorize('admin', 'key_user'), dealerController.updateDealer);
-router.patch('/:id/block', authenticate, authorize('admin'), dealerController.blockDealer);
+router.put('/:id/block', authenticate, authorize('admin'), dealerController.blockDealer);
+router.put('/:id/verify', authenticate, authorize('admin', 'key_user'), dealerController.verifyDealer);
+
+
+
 
 module.exports = router;

@@ -1,5 +1,6 @@
 const { Dealer, User, AuditLog } = require('../models');
 const { Op } = require('sequelize');
+const { verifyDealer } = require('./adminController');
 
 const getAllDealers = async (req, res) => {
   try {
@@ -162,6 +163,22 @@ const getDealerProfile = async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch dealer profile' });
   }
 };
+exports.verifyDealer = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const dealer = await Dealer.findByPk(id);
+    if (!dealer) return res.status(404).json({ error: "Dealer not found" });
+
+    dealer.isVerified = true;
+    await dealer.save();
+
+    res.json({ message: "Dealer verified successfully", dealer });
+  } catch (error) {
+    console.error("verifyDealer error:", error);
+    res.status(500).json({ error: "Failed to verify dealer" });
+  }
+};
+
 
 module.exports = {
   getAllDealers,
@@ -169,5 +186,6 @@ module.exports = {
   createDealer,
   updateDealer,
   blockDealer,
-  getDealerProfile
+  getDealerProfile,
+  verifyDealer
 };
