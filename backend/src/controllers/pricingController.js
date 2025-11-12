@@ -23,6 +23,7 @@ exports.requestPricingChange = async (req, res) => {
       return res.status(404).json({ error: "Product not found" });
 
     const update = await PricingUpdate.create({
+      
       productId,
       oldPrice: oldPrice ?? product.price,
       newPrice,
@@ -104,6 +105,28 @@ exports.getPricingSummary = async (req, res) => {
       .json({ error: "Failed to fetch pricing summary" });
   }
 };
+exports.getManagerPricingRequests = async (req, res) => {
+  try {
+    const managerId = req.user.id;
+
+    const updates = await PricingUpdate.findAll({
+      include: [
+        {
+          model: Dealer,
+          as: "dealer",
+          where: { managerId },
+        },
+      ],
+      order: [["createdAt", "DESC"]],
+    });
+
+    res.json({ updates });
+  } catch (err) {
+    console.error("getManagerPricingRequests:", err);
+    res.status(500).json({ error: "Failed to fetch manager pricing requests" });
+  }
+};
+
 exports.updatePricingStatus = async (req, res) => {
   try {
     const { id } = req.params;

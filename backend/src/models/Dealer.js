@@ -1,136 +1,109 @@
 const { DataTypes } = require('sequelize');
 
 module.exports = (sequelize) => {
-  const Dealer = sequelize.define('Dealer', {
-    id: {
-      type: DataTypes.UUID,
-      defaultValue: DataTypes.UUIDV4,
-      primaryKey: true
-    },
-    dealerCode: {
-      type: DataTypes.STRING,
-      allowNull: false,
-      unique: true
-    },
-    businessName: {
-      type: DataTypes.STRING,
-      allowNull: false
-    },
-    contactPerson: {
-      type: DataTypes.STRING
-    },
-    email: {
-      type: DataTypes.STRING,
-      validate: {
-        isEmail: true
-      }
-    },
-    phoneNumber: {
-      type: DataTypes.STRING
-    },
-    address: {
-      type: DataTypes.TEXT
-    },
-    city: {
-      type: DataTypes.STRING
-    },
-    state: {
-      type: DataTypes.STRING
-    },
-    pincode: {
-      type: DataTypes.STRING
-    },
-    gstNumber: {
-      type: DataTypes.STRING
-    },
-    panNumber: {
-      type: DataTypes.STRING
-    },
-    bankName: {
-      type: DataTypes.STRING
-    },
-    bankAccountNumber: {
-      type: DataTypes.STRING
-    },
-    bankIFSC: {
-      type: DataTypes.STRING
-    },
-    paymentTerms: {
-      type: DataTypes.STRING
-    },
-    creditLimit: {
-      type: DataTypes.DECIMAL(15, 2),
-      defaultValue: 0
-    },
-    outstandingAmount: {
-      type: DataTypes.DECIMAL(15, 2),
-      defaultValue: 0
-    },
-    territory: {
-      type: DataTypes.STRING
-    },
-    region: {
-      type: DataTypes.STRING
-    },
-    sapCustomerNumber: {
-      type: DataTypes.STRING
-    },
-    sapVendorNumber: {
-      type: DataTypes.STRING
-    },
-    isActive: {
-      type: DataTypes.BOOLEAN,
-      defaultValue: true
-    },
-    isBlocked: {
-      type: DataTypes.BOOLEAN,
-      defaultValue: false
-    },
+  const Dealer = sequelize.define(
+    'Dealer',
+    {
+      id: {
+        type: DataTypes.UUID,
+        defaultValue: DataTypes.UUIDV4,
+        primaryKey: true,
+      },
+      dealerCode: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        unique: true,
+      },
+      businessName: {
+        type: DataTypes.STRING,
+        allowNull: false,
+      },
+      contactPerson: DataTypes.STRING,
+      email: {
+        type: DataTypes.STRING,
+        validate: { isEmail: true },
+      },
+      phoneNumber: DataTypes.STRING,
+      address: DataTypes.TEXT,
+      city: DataTypes.STRING,
+      state: DataTypes.STRING,
+      pincode: DataTypes.STRING,
+      gstNumber: DataTypes.STRING,
+      panNumber: DataTypes.STRING,
+      bankName: DataTypes.STRING,
+      bankAccountNumber: DataTypes.STRING,
+      bankIFSC: DataTypes.STRING,
+      paymentTerms: DataTypes.STRING,
+      creditLimit: {
+        type: DataTypes.DECIMAL(15, 2),
+        defaultValue: 0,
+      },
+      outstandingAmount: {
+        type: DataTypes.DECIMAL(15, 2),
+        defaultValue: 0,
+      },
+      territory: DataTypes.STRING,
+      region: DataTypes.STRING,
+      sapCustomerNumber: DataTypes.STRING,
+      sapVendorNumber: DataTypes.STRING,
+      isActive: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: true,
+      },
+      isBlocked: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false,
+      },
+      blockReason: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+      },
+      isVerified: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false,
+      },
+      // inside attributes block (add near other UUID fields)
+managerId: {
+  type: DataTypes.UUID,
+  allowNull: true,
+  comment: 'User ID of the manager (tm/am) assigned to this dealer'
+},
 
-    // 🧩 Enhanced Admin Control Fields
-    blockReason: {
-      type: DataTypes.TEXT,
-      allowNull: true,
-      comment: 'Reason why dealer was blocked'
+      licenseNumber: DataTypes.STRING,
+      licenseDocument: DataTypes.STRING,
+      verifiedBy: DataTypes.STRING,
+      verifiedAt: DataTypes.DATE,
+      licenses: DataTypes.JSON,
     },
-    isVerified: {
-      type: DataTypes.BOOLEAN,
-      defaultValue: false,
-      comment: 'Whether onboarding and license verification is complete'
-    },
-    licenseNumber: {
-      type: DataTypes.STRING,
-      allowNull: true
-    },
-    licenseDocument: {
-      type: DataTypes.STRING,
-      allowNull: true,
-      comment: 'File path or URL of uploaded license document'
-    },
-    verifiedBy: {
-      type: DataTypes.STRING,
-      allowNull: true
-    },
-    verifiedAt: {
-      type: DataTypes.DATE,
-      allowNull: true
-    },
-
-    // existing field to hold multiple license details (keep)
-    licenses: {
-      type: DataTypes.JSON
+    {
+      timestamps: true,
+      tableName: 'Dealers',
+       freezeTableName: true,
     }
-  }, {
-    timestamps: true,
-    tableName: 'dealers'
-  });
+  );
+ console.log("✅ Dealer model using table:", Dealer.getTableName());
+  // ✅ Sequelize injects `models` here automatically
   Dealer.associate = (models) => {
-  Dealer.hasMany(models.User, {
-    foreignKey: 'dealerId',
-    as: 'users'
-  });
-};
+    // Each dealer can have many users
+    Dealer.hasMany(models.User, {
+      foreignKey: 'dealerId',
+      as: 'users',
+      onDelete: 'SET NULL',
+      onUpdate: 'CASCADE',
+    });
 
+    // Each dealer is managed by one manager (User)
+    Dealer.belongsTo(models.User, {
+      foreignKey: {
+        name: 'managerId',
+        allowNull: true,
+      },
+      as: 'manager',
+      onDelete: 'SET NULL',
+      onUpdate: 'CASCADE',
+    });
+  };
 
   return Dealer;
 };
+

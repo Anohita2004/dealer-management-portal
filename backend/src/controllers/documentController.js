@@ -207,6 +207,28 @@ const approveDocument = async (req, res) => {
     res.status(500).json({ error: 'Failed to update document status' });
   }
 };
+const getManagerDocuments = async (req, res) => {
+  try {
+    const managerId = req.user.id;
+
+    const documents = await Document.findAll({
+      include: [
+        {
+          model: Dealer,
+          as: "dealer",
+          where: { managerId },
+        },
+      ],
+      order: [["createdAt", "DESC"]],
+    });
+
+    res.json({ documents });
+  } catch (err) {
+    console.error("getManagerDocuments:", err);
+    res.status(500).json({ error: "Failed to fetch documents" });
+  }
+};
+
 
 module.exports = {
   upload,
@@ -214,5 +236,6 @@ module.exports = {
   uploadDocument,
   downloadDocument,
   deleteDocument,
-  approveDocument
+  approveDocument,
+  getManagerDocuments
 };

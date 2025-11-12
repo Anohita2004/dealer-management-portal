@@ -178,6 +178,27 @@ exports.verifyDealer = async (req, res) => {
     res.status(500).json({ error: "Failed to verify dealer" });
   }
 };
+// =============================
+// MANAGER: Get Assigned Dealers
+// =============================
+const getDealersByManager = async (req, res) => {
+  try {
+    if (!["tm", "am", "sm"].includes(req.user.role)) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const dealers = await Dealer.findAll({
+      where: { managerId: req.user.id },
+      order: [["createdAt", "DESC"]],
+    });
+
+    res.json({ dealers });
+  } catch (err) {
+    console.error("getDealersByManager error:", err);
+    res.status(500).json({ error: "Failed to fetch assigned dealers" });
+  }
+};
+
 
 
 module.exports = {
@@ -187,5 +208,6 @@ module.exports = {
   updateDealer,
   blockDealer,
   getDealerProfile,
-  verifyDealer
+  verifyDealer,
+  getDealersByManager
 };

@@ -10,6 +10,13 @@ router.post('/', authenticate, authorize('admin', 'key_user'), dealerController.
 router.put('/:id', authenticate, authorize('admin', 'key_user'), dealerController.updateDealer);
 router.put('/:id/block', authenticate, authorize('admin'), dealerController.blockDealer);
 router.put('/:id/verify', authenticate, authorize('admin', 'key_user'), dealerController.verifyDealer);
+router.get(
+  "/assigned",
+  authenticate,
+  authorize("tm", "am", "sm"),
+  dealerController.getDealersByManager
+);
+
 
 
 

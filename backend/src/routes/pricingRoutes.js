@@ -31,5 +31,11 @@ router.get(
   pricingController.getPricingSummary
 );
 router.patch("/:id", authenticate, authorize("admin","tm","am"), pricingController.updatePricingStatus);
+router.get(
+  "/manager",
+  authenticate,
+  authorize("tm", "am", "sm"),
+  pricingController.getManagerPricingRequests
+);
 
 module.exports = router;

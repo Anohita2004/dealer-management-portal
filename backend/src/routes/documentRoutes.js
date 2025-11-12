@@ -8,6 +8,8 @@ router.post('/', authenticate, documentController.upload.single('file'), documen
 router.get('/:id/download', authenticate, documentController.downloadDocument);
 router.delete('/:id', authenticate, documentController.deleteDocument);
 router.patch('/:id/status', authenticate, authorize('admin','tm','am'), documentController.approveDocument);
+router.get("/manager",authenticate,authorize("tm", "am", "sm"),documentController.getManagerDocuments);
+
 
 
 module.exports = router;
