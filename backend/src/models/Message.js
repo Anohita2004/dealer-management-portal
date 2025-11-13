@@ -30,6 +30,11 @@ module.exports = (sequelize) => {
         type: DataTypes.ENUM("unread", "read"),
         defaultValue: "unread",
       },
+messageType: {
+  type: DataTypes.ENUM("chat", "system", "announcement"),
+  defaultValue: "chat", // helps separate chat vs system messages
+},
+
     },
     {
       tableName: "messages",

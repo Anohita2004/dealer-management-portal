@@ -84,25 +84,46 @@ managerId: {
  console.log("✅ Dealer model using table:", Dealer.getTableName());
   // ✅ Sequelize injects `models` here automatically
   Dealer.associate = (models) => {
-    // Each dealer can have many users
-    Dealer.hasMany(models.User, {
-      foreignKey: 'dealerId',
-      as: 'users',
-      onDelete: 'SET NULL',
-      onUpdate: 'CASCADE',
-    });
+  // 🔹 Each dealer is linked to one user account (for login & chat)
+  Dealer.hasOne(models.User, {
+    foreignKey: "dealerId",
+    as: "user",
+    onDelete: "SET NULL",
+    onUpdate: "CASCADE",
+  });
 
-    // Each dealer is managed by one manager (User)
-    Dealer.belongsTo(models.User, {
-      foreignKey: {
-        name: 'managerId',
-        allowNull: true,
-      },
-      as: 'manager',
-      onDelete: 'SET NULL',
-      onUpdate: 'CASCADE',
-    });
-  };
+  // 🔹 Each dealer is managed by one manager (User)
+  Dealer.belongsTo(models.User, {
+    foreignKey: {
+      name: "managerId",
+      allowNull: true,
+    },
+    as: "manager",
+    onDelete: "SET NULL",
+    onUpdate: "CASCADE",
+  });
+
+  // 🔹 Each dealer can have many invoices
+  Dealer.hasMany(models.Invoice, {
+    foreignKey: "dealerId",
+    as: "invoices",
+    onDelete: "CASCADE",
+    onUpdate: "CASCADE",
+  });
+
+  // 🔹 Each dealer can have many documents
+  Dealer.hasMany(models.Document, {
+    foreignKey: "dealerId",
+    as: "documents",
+  });
+
+  // 🔹 Each dealer can have many pricing updates
+  Dealer.hasMany(models.PricingUpdate, {
+    foreignKey: "dealerId",
+    as: "pricingUpdates",
+  });
+};
+
 
   return Dealer;
 };

@@ -44,10 +44,14 @@ exports.sendMessage = async (req, res) => {
     const message = await Message.create({
       senderId,
       recipientId,
-      subject,
+      subject: subject || "Chat",
       body,
-      status: "unread"
+      status: "unread",
     });
+
+    // 🔌 Real-time push
+    const io = req.app.get("io");
+    io.to(`user:${recipientId}`).emit("message:new", message);
 
     res.status(201).json({ message });
   } catch (error) {
@@ -55,6 +59,7 @@ exports.sendMessage = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
 
 // ✅ Mark a message as read
 exports.markAsRead = async (req, res) => {
@@ -72,6 +77,32 @@ exports.markAsRead = async (req, res) => {
     res.json({ message });
   } catch (error) {
     console.error("Error marking message as read:", error);
+    res.status(500).json({ error: error.message });
+  }
+};
+// 💬 Get conversation between two users (Dealer ↔ Manager)
+exports.getConversation = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { partnerId } = req.params;
+
+    const messages = await Message.findAll({
+      where: {
+        [Op.or]: [
+          { senderId: userId, recipientId: partnerId },
+          { senderId: partnerId, recipientId: userId },
+        ],
+      },
+      include: [
+        { model: User, as: "sender", attributes: ["id", "username", "role"] },
+        { model: User, as: "recipient", attributes: ["id", "username", "role"] },
+      ],
+      order: [["createdAt", "ASC"]],
+    });
+
+    res.json({ messages });
+  } catch (error) {
+    console.error("Error fetching conversation:", error);
     res.status(500).json({ error: error.message });
   }
 };

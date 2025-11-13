@@ -114,26 +114,39 @@ module.exports = (sequelize) => {
   };
 
   // ✅ Associations
-  User.associate = (models) => {
-    // Dealers can have a user record linked
-    User.belongsTo(models.Dealer, {
-      foreignKey: {
-        name: "dealerId",
-        allowNull: true, // admin, tm, etc. won’t have dealerId
-      },
-      as: "dealer",
-      onDelete: "SET NULL",
-      onUpdate: "CASCADE",
-    });
+ User.associate = (models) => {
+  // 🔹 Dealers link back to their dealer profile
+  User.belongsTo(models.Dealer, {
+    foreignKey: {
+      name: "dealerId",
+      allowNull: true, // managers/admins won’t have dealerId
+    },
+    as: "dealer",
+    onDelete: "SET NULL",
+    onUpdate: "CASCADE",
+  });
 
-    // 🧩 Managers (TM/AM/SM) oversee multiple dealers
-    User.hasMany(models.Dealer, {
-      foreignKey: "managerId",
-      as: "managedDealers",
-      onDelete: "SET NULL",
-      onUpdate: "CASCADE",
-    });
-  };
+  // 🔹 Managers (TM/AM/SM) manage many dealers
+  User.hasMany(models.Dealer, {
+    foreignKey: "managerId",
+    as: "managedDealers",
+    onDelete: "SET NULL",
+    onUpdate: "CASCADE",
+  });
+
+  // 💬 Chat relationships
+  User.hasMany(models.Message, {
+    foreignKey: "senderId",
+    as: "sentMessages",
+    onDelete: "CASCADE",
+  });
+
+  User.hasMany(models.Message, {
+    foreignKey: "recipientId",
+    as: "receivedMessages",
+    onDelete: "CASCADE",
+  });
+};
 
   return User;
 };

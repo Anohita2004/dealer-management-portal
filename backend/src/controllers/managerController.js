@@ -73,21 +73,38 @@ module.exports = {
   // ======================================
   // ✅ GET /api/managers/dealers
   // ======================================
-  getDealers: async (req, res) => {
-    try {
-      const managerId = req.user.id;
-      const dealers = await Dealer.findAll({
-        where: { managerId },
-        include: [
-          { model: Invoice, as: 'invoices', limit: 5, order: [['invoiceDate', 'DESC']] },
-        ],
-      });
-      res.json(dealers);
-    } catch (err) {
-      console.error('❌ manager.getDealers Error:', err);
-      res.status(500).json({ error: 'Failed to fetch dealers' });
-    }
-  },
+  // ======================================
+// ✅ GET /api/managers/dealers (with linked user info)
+// ======================================
+getDealers: async (req, res) => {
+  try {
+    const managerId = req.user.id;
+
+    const dealers = await Dealer.findAll({
+      where: { managerId },
+      include: [
+        {
+          model: Invoice,
+          as: "invoices",
+          limit: 5,
+          order: [["invoiceDate", "DESC"]],
+        },
+        {
+          // 🔹 Add the associated User record (used for messaging)
+          model: require("../models").User,
+          as: "users",
+          attributes: ["id", "username", "email", "role"],
+        },
+      ],
+    });
+
+    res.json({ dealers });
+  } catch (err) {
+    console.error("❌ manager.getDealers Error:", err);
+    res.status(500).json({ error: "Failed to fetch dealers" });
+  }
+},
+
 
   // ======================================
   // ✅ GET /api/managers/dealers/:id
