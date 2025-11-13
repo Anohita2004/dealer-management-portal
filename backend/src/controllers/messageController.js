@@ -1,29 +1,26 @@
-const { Message, User } = require("../models");
+const { Message, User, Notification } = require("../models");
 const { Op } = require("sequelize");
 
-// 📩 Get messages for the logged-in user
+// 📩 Get all messages for the logged-in user
 exports.getMessages = async (req, res) => {
   try {
     const userId = req.user.id;
 
     const messages = await Message.findAll({
       where: {
-        [Op.or]: [
-          { senderId: userId },
-          { recipientId: userId }
-        ]
+        [Op.or]: [{ senderId: userId }, { recipientId: userId }],
       },
       include: [
         {
           model: User,
           as: "sender",
-          attributes: ["id", "username", "email", "role"] // ✅ username instead of name
+          attributes: ["id", "username", "email", "role"],
         },
         {
           model: User,
           as: "recipient",
-          attributes: ["id", "username", "email", "role"] // ✅ username instead of name
-        }
+          attributes: ["id", "username", "email", "role"],
+        },
       ],
       order: [["createdAt", "DESC"]],
     });
@@ -41,6 +38,7 @@ exports.sendMessage = async (req, res) => {
     const { recipientId, subject, body } = req.body;
     const senderId = req.user.id;
 
+    // Create the message
     const message = await Message.create({
       senderId,
       recipientId,
@@ -49,9 +47,29 @@ exports.sendMessage = async (req, res) => {
       status: "unread",
     });
 
-    // 🔌 Real-time push
     const io = req.app.get("io");
-    io.to(`user:${recipientId}`).emit("message:new", message);
+
+    // 1️⃣ Real-time message push to recipient
+    if (io) io.to(`user:${recipientId}`).emit("message:new", message);
+
+    // 2️⃣ Save persistent notification
+    await Notification.create({
+      senderId,
+      recipientId,
+      title: "New Message Received",
+      message: `${req.user.username}: ${body.substring(0, 60)}...`,
+      type: "chat",
+      relatedId: message.id,
+    });
+
+    // 3️⃣ Emit a "notification" event to recipient
+    if (io) {
+      io.to(`user:${recipientId}`).emit("notification", {
+        title: "New Message Received",
+        message: `${req.user.username}: ${body.substring(0, 60)}...`,
+        type: "chat",
+      });
+    }
 
     res.status(201).json({ message });
   } catch (error) {
@@ -60,16 +78,13 @@ exports.sendMessage = async (req, res) => {
   }
 };
 
-
-// ✅ Mark a message as read
+// ✅ Mark message as read
 exports.markAsRead = async (req, res) => {
   try {
     const { id } = req.params;
     const message = await Message.findByPk(id);
 
-    if (!message) {
-      return res.status(404).json({ error: "Message not found" });
-    }
+    if (!message) return res.status(404).json({ error: "Message not found" });
 
     message.status = "read";
     await message.save();
@@ -80,6 +95,7 @@ exports.markAsRead = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
 // 💬 Get conversation between two users (Dealer ↔ Manager)
 exports.getConversation = async (req, res) => {
   try {
@@ -106,3 +122,4 @@ exports.getConversation = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+

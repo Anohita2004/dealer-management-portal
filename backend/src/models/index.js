@@ -15,6 +15,8 @@ const AccountStatement = require('./AccountStatement')(sequelize, DataTypes);
 const Product = require('./Product')(sequelize, DataTypes);
 const Message = require('./Message')(sequelize, DataTypes);
 const PricingUpdate = require('./PricingUpdate')(sequelize, DataTypes);
+const Notification = require('./Notification')(sequelize, DataTypes);
+
 
 // =======================
 // Define Associations
@@ -50,6 +52,12 @@ Message.belongsTo(User, { foreignKey: 'senderId', as: 'sender' });
 Message.belongsTo(User, { foreignKey: 'recipientId', as: 'recipient' });
 User.hasMany(Message, { foreignKey: 'senderId', as: 'sentMessages' });
 User.hasMany(Message, { foreignKey: 'recipientId', as: 'receivedMessages' });
+// User ↔ Notification
+Notification.belongsTo(User, { foreignKey: 'recipientId', as: 'recipient' });
+Notification.belongsTo(User, { foreignKey: 'senderId', as: 'sender' });
+User.hasMany(Notification, { foreignKey: 'recipientId', as: 'receivedNotifications' });
+User.hasMany(Notification, { foreignKey: 'senderId', as: 'sentNotifications' });
+
 
 // PricingUpdate ↔ Dealer
 PricingUpdate.belongsTo(Dealer, { foreignKey: 'dealerId', as: 'dealer' });
@@ -87,5 +95,6 @@ module.exports = {
   Product,
   Message,
   PricingUpdate,
+  Notification,
   syncDatabase,
 };

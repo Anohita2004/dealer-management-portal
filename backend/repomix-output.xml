@@ -1921,21 +1921,38 @@ module.exports = {
   // ======================================
   // ✅ GET /api/managers/dealers
   // ======================================
-  getDealers: async (req, res) => {
-    try {
-      const managerId = req.user.id;
-      const dealers = await Dealer.findAll({
-        where: { managerId },
-        include: [
-          { model: Invoice, as: 'invoices', limit: 5, order: [['invoiceDate', 'DESC']] },
-        ],
-      });
-      res.json(dealers);
-    } catch (err) {
-      console.error('❌ manager.getDealers Error:', err);
-      res.status(500).json({ error: 'Failed to fetch dealers' });
-    }
-  },
+  // ======================================
+// ✅ GET /api/managers/dealers (with linked user info)
+// ======================================
+getDealers: async (req, res) => {
+  try {
+    const managerId = req.user.id;
+
+    const dealers = await Dealer.findAll({
+      where: { managerId },
+      include: [
+        {
+          model: Invoice,
+          as: "invoices",
+          limit: 5,
+          order: [["invoiceDate", "DESC"]],
+        },
+        {
+          // 🔹 Add the associated User record (used for messaging)
+          model: require("../models").User,
+          as: "users",
+          attributes: ["id", "username", "email", "role"],
+        },
+      ],
+    });
+
+    res.json({ dealers });
+  } catch (err) {
+    console.error("❌ manager.getDealers Error:", err);
+    res.status(500).json({ error: "Failed to fetch dealers" });
+  }
+},
+
 
   // ======================================
   // ✅ GET /api/managers/dealers/:id
@@ -1973,31 +1990,29 @@ module.exports = {
   // ======================================
   // ✅ GET /api/managers/pricing
   // ======================================
- getPricingRequests: async (req, res) => {
+getPricingRequests: async (req, res) => {
   try {
     const managerId = req.user.id;
     console.log("🔹 Logged-in managerId from token:", managerId);
 
-    // ✅ Get all dealers managed by this manager
+    // 1️⃣ Get all dealers under this manager
     const dealerIds = (
       await Dealer.findAll({
         where: { managerId },
-        attributes: ['id']
+        attributes: ['id'],
       })
     ).map((d) => d.id);
 
     console.log("🔹 Dealer IDs under this manager:", dealerIds);
 
-    // ✅ Base filter
+    // 2️⃣ Build filter
     const where = { dealerId: { [Op.in]: dealerIds } };
-
-    // ✅ Add optional status filter
     if (req.query.status) {
-      where.status = req.query.status; // removed `.toLowerCase()` for exact match
+      where.status = req.query.status.toLowerCase();
       console.log("🔹 Filtering by status:", where.status);
     }
 
-    // ✅ Fetch pricing updates
+    // 3️⃣ Fetch pricing updates
     const updates = await PricingUpdate.findAll({
       where,
       include: [
@@ -2016,7 +2031,17 @@ module.exports = {
     });
 
     console.log("✅ Found updates:", updates.length);
-    res.json(updates);
+    console.table(
+      updates.map((u) => ({
+        id: u.id,
+        dealer: u.dealer?.businessName,
+        status: u.status,
+        newPrice: u.newPrice,
+      }))
+    );
+
+    // 4️⃣ Return structured response
+    res.json({ updates });
   } catch (err) {
     console.error('❌ manager.getPricingRequests Error:', err);
     res.status(500).json({ error: 'Failed to fetch pricing requests' });
@@ -2147,10 +2172,14 @@ exports.sendMessage = async (req, res) => {
     const message = await Message.create({
       senderId,
       recipientId,
-      subject,
+      subject: subject || "Chat",
       body,
-      status: "unread"
+      status: "unread",
     });
+
+    // 🔌 Real-time push
+    const io = req.app.get("io");
+    io.to(`user:${recipientId}`).emit("message:new", message);
 
     res.status(201).json({ message });
   } catch (error) {
@@ -2158,6 +2187,7 @@ exports.sendMessage = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
 
 // ✅ Mark a message as read
 exports.markAsRead = async (req, res) => {
@@ -2175,6 +2205,32 @@ exports.markAsRead = async (req, res) => {
     res.json({ message });
   } catch (error) {
     console.error("Error marking message as read:", error);
+    res.status(500).json({ error: error.message });
+  }
+};
+// 💬 Get conversation between two users (Dealer ↔ Manager)
+exports.getConversation = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { partnerId } = req.params;
+
+    const messages = await Message.findAll({
+      where: {
+        [Op.or]: [
+          { senderId: userId, recipientId: partnerId },
+          { senderId: partnerId, recipientId: userId },
+        ],
+      },
+      include: [
+        { model: User, as: "sender", attributes: ["id", "username", "role"] },
+        { model: User, as: "recipient", attributes: ["id", "username", "role"] },
+      ],
+      order: [["createdAt", "ASC"]],
+    });
+
+    res.json({ messages });
+  } catch (error) {
+    console.error("Error fetching conversation:", error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -3414,25 +3470,46 @@ managerId: {
  console.log("✅ Dealer model using table:", Dealer.getTableName());
   // ✅ Sequelize injects `models` here automatically
   Dealer.associate = (models) => {
-    // Each dealer can have many users
-    Dealer.hasMany(models.User, {
-      foreignKey: 'dealerId',
-      as: 'users',
-      onDelete: 'SET NULL',
-      onUpdate: 'CASCADE',
-    });
+  // 🔹 Each dealer is linked to one user account (for login & chat)
+  Dealer.hasOne(models.User, {
+    foreignKey: "dealerId",
+    as: "user",
+    onDelete: "SET NULL",
+    onUpdate: "CASCADE",
+  });
 
-    // Each dealer is managed by one manager (User)
-    Dealer.belongsTo(models.User, {
-      foreignKey: {
-        name: 'managerId',
-        allowNull: true,
-      },
-      as: 'manager',
-      onDelete: 'SET NULL',
-      onUpdate: 'CASCADE',
-    });
-  };
+  // 🔹 Each dealer is managed by one manager (User)
+  Dealer.belongsTo(models.User, {
+    foreignKey: {
+      name: "managerId",
+      allowNull: true,
+    },
+    as: "manager",
+    onDelete: "SET NULL",
+    onUpdate: "CASCADE",
+  });
+
+  // 🔹 Each dealer can have many invoices
+  Dealer.hasMany(models.Invoice, {
+    foreignKey: "dealerId",
+    as: "invoices",
+    onDelete: "CASCADE",
+    onUpdate: "CASCADE",
+  });
+
+  // 🔹 Each dealer can have many documents
+  Dealer.hasMany(models.Document, {
+    foreignKey: "dealerId",
+    as: "documents",
+  });
+
+  // 🔹 Each dealer can have many pricing updates
+  Dealer.hasMany(models.PricingUpdate, {
+    foreignKey: "dealerId",
+    as: "pricingUpdates",
+  });
+};
+
 
   return Dealer;
 };
@@ -3740,6 +3817,11 @@ module.exports = (sequelize) => {
         type: DataTypes.ENUM("unread", "read"),
         defaultValue: "unread",
       },
+messageType: {
+  type: DataTypes.ENUM("chat", "system", "announcement"),
+  defaultValue: "chat", // helps separate chat vs system messages
+},
+
     },
     {
       tableName: "messages",
@@ -3988,26 +4070,39 @@ module.exports = (sequelize) => {
   };
 
   // ✅ Associations
-  User.associate = (models) => {
-    // Dealers can have a user record linked
-    User.belongsTo(models.Dealer, {
-      foreignKey: {
-        name: "dealerId",
-        allowNull: true, // admin, tm, etc. won’t have dealerId
-      },
-      as: "dealer",
-      onDelete: "SET NULL",
-      onUpdate: "CASCADE",
-    });
+ User.associate = (models) => {
+  // 🔹 Dealers link back to their dealer profile
+  User.belongsTo(models.Dealer, {
+    foreignKey: {
+      name: "dealerId",
+      allowNull: true, // managers/admins won’t have dealerId
+    },
+    as: "dealer",
+    onDelete: "SET NULL",
+    onUpdate: "CASCADE",
+  });
 
-    // 🧩 Managers (TM/AM/SM) oversee multiple dealers
-    User.hasMany(models.Dealer, {
-      foreignKey: "managerId",
-      as: "managedDealers",
-      onDelete: "SET NULL",
-      onUpdate: "CASCADE",
-    });
-  };
+  // 🔹 Managers (TM/AM/SM) manage many dealers
+  User.hasMany(models.Dealer, {
+    foreignKey: "managerId",
+    as: "managedDealers",
+    onDelete: "SET NULL",
+    onUpdate: "CASCADE",
+  });
+
+  // 💬 Chat relationships
+  User.hasMany(models.Message, {
+    foreignKey: "senderId",
+    as: "sentMessages",
+    onDelete: "CASCADE",
+  });
+
+  User.hasMany(models.Message, {
+    foreignKey: "recipientId",
+    as: "receivedMessages",
+    onDelete: "CASCADE",
+  });
+};
 
   return User;
 };
@@ -4198,14 +4293,43 @@ const express = require('express');
 const router = express.Router();
 const dealerController = require('../controllers/dealerController');
 const { authenticate, authorize } = require('../middleware/auth');
+const { Dealer, User } = require('../models'); // ✅ needed
 
+// 🧩 List all dealers
 router.get('/', authenticate, dealerController.getAllDealers);
+
+// 🧩 Dealer profile
 router.get('/profile', authenticate, authorize('dealer'), dealerController.getDealerProfile);
-router.get('/:id', authenticate, dealerController.getDealerById);
-router.post('/', authenticate, authorize('admin', 'key_user'), dealerController.createDealer);
-router.put('/:id', authenticate, authorize('admin', 'key_user'), dealerController.updateDealer);
-router.put('/:id/block', authenticate, authorize('admin'), dealerController.blockDealer);
-router.put('/:id/verify', authenticate, authorize('admin', 'key_user'), dealerController.verifyDealer);
+
+// ✅ FIX: Place this BEFORE "/:id"
+router.get("/my-manager", authenticate, authorize("dealer"), async (req, res) => {
+  try {
+    console.log("🟢 req.user:", req.user);
+
+    const dealerId = req.user.dealerId; // ✅ FIXED
+    if (!dealerId) return res.status(400).json({ error: "Dealer ID missing in user token" });
+
+    const dealer = await Dealer.findByPk(dealerId);
+
+    if (!dealer || !dealer.managerId)
+      return res.status(404).json({ error: "No manager assigned" });
+
+    const manager = await User.findByPk(dealer.managerId, {
+      attributes: ["id", "username", "email", "role"]
+    });
+
+    if (!manager)
+      return res.status(404).json({ error: "Assigned manager not found" });
+
+    res.json({ manager });
+  } catch (err) {
+    console.error("Error fetching dealer’s manager:", err);
+    res.status(500).json({ error: "Failed to fetch manager" });
+  }
+});
+
+
+// 🧩 Manager → Dealers
 router.get(
   "/assigned",
   authenticate,
@@ -4213,9 +4337,12 @@ router.get(
   dealerController.getDealersByManager
 );
 
-
-
-
+// 🧩 Dealer by ID (keep this at the bottom)
+router.get('/:id', authenticate, dealerController.getDealerById);
+router.post('/', authenticate, authorize('admin', 'key_user'), dealerController.createDealer);
+router.put('/:id', authenticate, authorize('admin', 'key_user'), dealerController.updateDealer);
+router.put('/:id/block', authenticate, authorize('admin'), dealerController.blockDealer);
+router.put('/:id/verify', authenticate, authorize('admin', 'key_user'), dealerController.verifyDealer);
 
 module.exports = router;
 </file>
@@ -4333,17 +4460,42 @@ module.exports = router;
 
 <file path="src/routes/messageRoutes.js">
 // routes/messageRoutes.js
-const express = require('express');
+const express = require("express");
 const router = express.Router();
 const messageController = require("../controllers/messageController");
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorize } = require("../middleware/auth");
 
+// 📨 Fetch all messages (visible to TM/AM/Admin/Dealer)
+router.get(
+  "/",
+  authenticate,
+  authorize("tm", "am", "admin", "dealer"),
+  messageController.getMessages
+);
 
-// 📨 List all messages for TM/AM/Admin
-router.get("/", authenticate, authorize("tm", "am", "admin"), messageController.getMessages);
+// 💬 Get conversation between a dealer and a manager
+router.get(
+  "/conversation/:partnerId",
+  authenticate,
+  authorize("tm", "am", "admin", "dealer"), // both sides can access
+  messageController.getConversation // ✅ fixed name (was messageCtrl)
+);
 
-// 📨 Dealer sends a new message
-router.post("/", authenticate, authorize("dealer"), messageController.sendMessage);
+// 📨 Send a new message (dealer OR manager)
+router.post(
+  "/",
+  authenticate,
+  authorize("tm", "am", "admin", "dealer"),
+  messageController.sendMessage
+);
+
+// ✅ Mark message as read
+router.patch(
+  "/:id/read",
+  authenticate,
+  authorize("tm", "am", "admin", "dealer"),
+  messageController.markAsRead
+);
 
 module.exports = router;
 </file>

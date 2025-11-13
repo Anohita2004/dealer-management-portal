@@ -1,4 +1,4 @@
-const { Document, Dealer, AuditLog } = require('../models');
+const { Document, Dealer, AuditLog, Notification } = require('../models');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -15,7 +15,7 @@ const storage = multer.diskStorage({
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
     cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
-  }
+  },
 });
 
 const upload = multer({
@@ -27,7 +27,7 @@ const upload = multer({
     const mimetype = allowedTypes.test(file.mimetype);
     if (mimetype && extname) cb(null, true);
     else cb(new Error('Only PDF, DOC, DOCX, JPG, JPEG, PNG files are allowed'));
-  }
+  },
 });
 
 // ========================= Get All Documents =========================
@@ -46,14 +46,14 @@ const getAllDocuments = async (req, res) => {
       include: [{ model: Dealer, as: 'dealer' }],
       limit: parseInt(limit),
       offset: parseInt(offset),
-      order: [['createdAt', 'DESC']]
+      order: [['createdAt', 'DESC']],
     });
 
     res.json({
       documents: rows,
       total: count,
       page: parseInt(page),
-      totalPages: Math.ceil(count / limit)
+      totalPages: Math.ceil(count / limit),
     });
   } catch (error) {
     console.error('Get documents error:', error);
@@ -76,7 +76,7 @@ const uploadDocument = async (req, res) => {
       mimeType: req.file.mimetype,
       uploadedBy: req.user.username,
       description,
-      dealerId: req.user.role === 'dealer' ? req.user.dealerId : dealerId
+      dealerId: req.user.role === 'dealer' ? req.user.dealerId : dealerId,
     });
 
     await AuditLog.create({
@@ -86,14 +86,32 @@ const uploadDocument = async (req, res) => {
       entityId: document.id,
       changes: { documentName: req.file.originalname, documentType },
       ipAddress: req.ip,
-      userAgent: req.headers['user-agent']
+      userAgent: req.headers['user-agent'],
     });
 
-    // 🔌 Emit socket event to TM/AM dashboards
+    // ✅ Notify managers (real-time + persistent)
     const io = req.app.get('io');
     if (io) {
       io.to('role:tm').emit('document:new', { dealerId: document.dealerId });
       io.to('role:am').emit('document:new', { dealerId: document.dealerId });
+    }
+
+    // 🔔 Create notification entry for managers
+    await Notification.create({
+      senderId: req.user.id,
+      recipientRole: 'tm',
+      title: 'New Document Uploaded',
+      message: `${req.user.username} uploaded "${document.documentName}".`,
+      type: 'document',
+      relatedId: document.id,
+    });
+
+    if (io) {
+      io.to('role:tm').emit('notification', {
+        title: 'New Document Uploaded',
+        message: `${req.user.username} uploaded "${document.documentName}".`,
+        type: 'document',
+      });
     }
 
     res.status(201).json(document);
@@ -121,7 +139,7 @@ const downloadDocument = async (req, res) => {
       entity: 'Document',
       entityId: document.id,
       ipAddress: req.ip,
-      userAgent: req.headers['user-agent']
+      userAgent: req.headers['user-agent'],
     });
 
     res.download(document.filePath, document.documentName);
@@ -147,7 +165,7 @@ const deleteDocument = async (req, res) => {
       entity: 'Document',
       entityId: document.id,
       ipAddress: req.ip,
-      userAgent: req.headers['user-agent']
+      userAgent: req.headers['user-agent'],
     });
 
     res.json({ message: 'Document deleted successfully' });
@@ -181,20 +199,32 @@ const approveDocument = async (req, res) => {
       entityId: document.id,
       changes: { status: document.status, reason },
       ipAddress: req.ip,
-      userAgent: req.headers['user-agent']
+      userAgent: req.headers['user-agent'],
     });
 
-    // 🔌 Emit socket updates
+    // ✅ Notify dealer in DB + via socket
     const io = req.app.get('io');
+
+    await Notification.create({
+      senderId: req.user.id,
+      recipientId: document.dealerId,
+      title: `Document ${document.status}`,
+      message:
+        document.status === 'approved'
+          ? `Your document "${document.documentName}" was approved by ${req.user.username}.`
+          : `Your document "${document.documentName}" was rejected. Reason: ${document.rejectionReason || 'N/A'}.`,
+      type: 'document',
+      relatedId: document.id,
+    });
+
     if (io) {
-      io.to(`user:${document.dealerId}`).emit('document:update', {
-        id: document.id,
-        status: document.status,
-        fileName: document.documentName,
+      io.to(`user:${document.dealerId}`).emit('notification', {
+        title: `Document ${document.status}`,
         message:
           document.status === 'approved'
-            ? `✅ Your document "${document.documentName}" has been approved.`
-            : `❌ Your document "${document.documentName}" was rejected. Reason: ${document.rejectionReason || 'N/A'}`
+            ? `✅ "${document.documentName}" approved`
+            : `❌ "${document.documentName}" rejected`,
+        type: 'document',
       });
 
       io.to('role:tm').emit('document:pending:update');
@@ -207,6 +237,7 @@ const approveDocument = async (req, res) => {
     res.status(500).json({ error: 'Failed to update document status' });
   }
 };
+
 const getManagerDocuments = async (req, res) => {
   try {
     const managerId = req.user.id;
@@ -215,20 +246,19 @@ const getManagerDocuments = async (req, res) => {
       include: [
         {
           model: Dealer,
-          as: "dealer",
+          as: 'dealer',
           where: { managerId },
         },
       ],
-      order: [["createdAt", "DESC"]],
+      order: [['createdAt', 'DESC']],
     });
 
     res.json({ documents });
   } catch (err) {
-    console.error("getManagerDocuments:", err);
-    res.status(500).json({ error: "Failed to fetch documents" });
+    console.error('getManagerDocuments:', err);
+    res.status(500).json({ error: 'Failed to fetch documents' });
   }
 };
-
 
 module.exports = {
   upload,
@@ -237,5 +267,5 @@ module.exports = {
   downloadDocument,
   deleteDocument,
   approveDocument,
-  getManagerDocuments
+  getManagerDocuments,
 };

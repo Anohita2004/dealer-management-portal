@@ -2,28 +2,24 @@
 // FILE: src/controllers/pricingController.js
 // ==============================
 
-const { PricingUpdate, AuditLog, Product } = require("../models");
+const { PricingUpdate, AuditLog, Product, Dealer, Notification } = require("../models");
 const { Op } = require("sequelize");
 
 // ----------------------------
-// 1️⃣ Request Pricing Change
+// 1️⃣ Request Pricing Change (Dealer → Manager Notification)
 // ----------------------------
 exports.requestPricingChange = async (req, res) => {
   try {
     const { productId, oldPrice, newPrice, reason } = req.body;
 
     if (!productId || newPrice == null) {
-      return res
-        .status(400)
-        .json({ error: "productId and newPrice are required" });
+      return res.status(400).json({ error: "productId and newPrice are required" });
     }
 
     const product = await Product.findByPk(productId);
-    if (!product)
-      return res.status(404).json({ error: "Product not found" });
+    if (!product) return res.status(404).json({ error: "Product not found" });
 
     const update = await PricingUpdate.create({
-      
       productId,
       oldPrice: oldPrice ?? product.price,
       newPrice,
@@ -42,6 +38,26 @@ exports.requestPricingChange = async (req, res) => {
       changes: { newPrice },
       ipAddress: req.ip,
     });
+
+    // ✅ Create & Emit Notification for Managers
+    const io = req.app.get("io");
+
+    await Notification.create({
+      senderId: req.user.id,
+      recipientRole: "tm",
+      title: "New Pricing Request Submitted",
+      message: `${req.user.username} submitted a new pricing request for product ID ${productId}.`,
+      type: "pricing",
+      relatedId: update.id,
+    });
+
+    if (io) {
+      io.to("role:tm").emit("notification", {
+        title: "New Pricing Request",
+        message: `${req.user.username} submitted a new pricing request for product ID ${productId}.`,
+        type: "pricing",
+      });
+    }
 
     res.status(201).json({
       message: "Pricing request submitted",
@@ -87,24 +103,20 @@ exports.getPricingUpdates = async (req, res) => {
 // ----------------------------
 exports.getPricingSummary = async (req, res) => {
   try {
-    const approved = await PricingUpdate.count({
-      where: { status: "approved" },
-    });
-    const pending = await PricingUpdate.count({
-      where: { status: "pending" },
-    });
-    const rejected = await PricingUpdate.count({
-      where: { status: "rejected" },
-    });
+    const approved = await PricingUpdate.count({ where: { status: "approved" } });
+    const pending = await PricingUpdate.count({ where: { status: "pending" } });
+    const rejected = await PricingUpdate.count({ where: { status: "rejected" } });
 
     return res.json({ approved, pending, rejected });
   } catch (error) {
     console.error("Pricing summary error:", error);
-    res
-      .status(500)
-      .json({ error: "Failed to fetch pricing summary" });
+    res.status(500).json({ error: "Failed to fetch pricing summary" });
   }
 };
+
+// ----------------------------
+// 4️⃣ Manager’s Region/Territory Requests
+// ----------------------------
 exports.getManagerPricingRequests = async (req, res) => {
   try {
     const managerId = req.user.id;
@@ -127,6 +139,9 @@ exports.getManagerPricingRequests = async (req, res) => {
   }
 };
 
+// ----------------------------
+// 5️⃣ Update Pricing Status (Manager → Dealer Notification)
+// ----------------------------
 exports.updatePricingStatus = async (req, res) => {
   try {
     const { id } = req.params;
@@ -141,10 +156,7 @@ exports.updatePricingStatus = async (req, res) => {
 
     // If approved → update product price
     if (status === "approved") {
-      await Product.update(
-        { price: update.newPrice },
-        { where: { id: update.productId } }
-      );
+      await Product.update({ price: update.newPrice }, { where: { id: update.productId } });
     }
 
     update.status = status;
@@ -152,6 +164,32 @@ exports.updatePricingStatus = async (req, res) => {
     update.approvedBy = req.user.username;
     update.approvedAt = new Date();
     await update.save();
+
+    // ✅ Create Notification for Dealer
+    const io = req.app.get("io");
+
+    await Notification.create({
+      senderId: req.user.id,
+      recipientId: update.requestedByUserId,
+      title: `Pricing ${status}`,
+      message:
+        status === "approved"
+          ? `Your pricing request for product ID ${update.productId} has been approved.`
+          : `Your pricing request for product ID ${update.productId} was rejected. Remarks: ${remarks || "N/A"}.`,
+      type: "pricing",
+      relatedId: update.id,
+    });
+
+    if (io) {
+      io.to(`user:${update.requestedByUserId}`).emit("notification", {
+        title: `Pricing ${status}`,
+        message:
+          status === "approved"
+            ? `✅ Your pricing request (Product ID ${update.productId}) was approved`
+            : `❌ Your pricing request (Product ID ${update.productId}) was rejected`,
+        type: "pricing",
+      });
+    }
 
     res.json({ message: "Status updated", update });
   } catch (err) {

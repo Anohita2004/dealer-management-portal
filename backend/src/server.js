@@ -67,6 +67,8 @@ const productRoutes = require("./routes/productRoutes");
 app.use("/api/products", productRoutes);
 
 app.use('/api/managers', require('./routes/managerRoutes'));
+app.use('/api/notifications', require('./routes/notificationRoutes'));
+
 
 
  // /pricing/request and /pricing/
