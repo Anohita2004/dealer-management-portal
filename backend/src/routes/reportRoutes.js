@@ -20,6 +20,12 @@ router.get(
   authorize("tm", "am", "admin"),
   reportController.getPendingApprovals
 );
+router.get(
+  "/regional-sales-summary",
+  authenticate,
+  authorize("admin", "am", "tm"),
+  reportController.getRegionalSalesSummary
+);
 
 
 

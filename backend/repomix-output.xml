@@ -72,6 +72,7 @@ src/models/index.js
 src/models/Inventory.js
 src/models/Invoice.js
 src/models/Message.js
+src/models/Notification.js
 src/models/PricingUpdate.js
 src/models/Product.js
 src/models/SalesGroup.js
@@ -1208,7 +1209,7 @@ module.exports = {
 </file>
 
 <file path="src/controllers/documentController.js">
-const { Document, Dealer, AuditLog } = require('../models');
+const { Document, Dealer, AuditLog, Notification } = require('../models');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -1225,7 +1226,7 @@ const storage = multer.diskStorage({
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
     cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
-  }
+  },
 });
 
 const upload = multer({
@@ -1237,7 +1238,7 @@ const upload = multer({
     const mimetype = allowedTypes.test(file.mimetype);
     if (mimetype && extname) cb(null, true);
     else cb(new Error('Only PDF, DOC, DOCX, JPG, JPEG, PNG files are allowed'));
-  }
+  },
 });
 
 // ========================= Get All Documents =========================
@@ -1256,14 +1257,14 @@ const getAllDocuments = async (req, res) => {
       include: [{ model: Dealer, as: 'dealer' }],
       limit: parseInt(limit),
       offset: parseInt(offset),
-      order: [['createdAt', 'DESC']]
+      order: [['createdAt', 'DESC']],
     });
 
     res.json({
       documents: rows,
       total: count,
       page: parseInt(page),
-      totalPages: Math.ceil(count / limit)
+      totalPages: Math.ceil(count / limit),
     });
   } catch (error) {
     console.error('Get documents error:', error);
@@ -1286,7 +1287,7 @@ const uploadDocument = async (req, res) => {
       mimeType: req.file.mimetype,
       uploadedBy: req.user.username,
       description,
-      dealerId: req.user.role === 'dealer' ? req.user.dealerId : dealerId
+      dealerId: req.user.role === 'dealer' ? req.user.dealerId : dealerId,
     });
 
     await AuditLog.create({
@@ -1296,14 +1297,32 @@ const uploadDocument = async (req, res) => {
       entityId: document.id,
       changes: { documentName: req.file.originalname, documentType },
       ipAddress: req.ip,
-      userAgent: req.headers['user-agent']
+      userAgent: req.headers['user-agent'],
     });
 
-    // 🔌 Emit socket event to TM/AM dashboards
+    // ✅ Notify managers (real-time + persistent)
     const io = req.app.get('io');
     if (io) {
       io.to('role:tm').emit('document:new', { dealerId: document.dealerId });
       io.to('role:am').emit('document:new', { dealerId: document.dealerId });
+    }
+
+    // 🔔 Create notification entry for managers
+    await Notification.create({
+      senderId: req.user.id,
+      recipientRole: 'tm',
+      title: 'New Document Uploaded',
+      message: `${req.user.username} uploaded "${document.documentName}".`,
+      type: 'document',
+      relatedId: document.id,
+    });
+
+    if (io) {
+      io.to('role:tm').emit('notification', {
+        title: 'New Document Uploaded',
+        message: `${req.user.username} uploaded "${document.documentName}".`,
+        type: 'document',
+      });
     }
 
     res.status(201).json(document);
@@ -1331,7 +1350,7 @@ const downloadDocument = async (req, res) => {
       entity: 'Document',
       entityId: document.id,
       ipAddress: req.ip,
-      userAgent: req.headers['user-agent']
+      userAgent: req.headers['user-agent'],
     });
 
     res.download(document.filePath, document.documentName);
@@ -1357,7 +1376,7 @@ const deleteDocument = async (req, res) => {
       entity: 'Document',
       entityId: document.id,
       ipAddress: req.ip,
-      userAgent: req.headers['user-agent']
+      userAgent: req.headers['user-agent'],
     });
 
     res.json({ message: 'Document deleted successfully' });
@@ -1391,20 +1410,32 @@ const approveDocument = async (req, res) => {
       entityId: document.id,
       changes: { status: document.status, reason },
       ipAddress: req.ip,
-      userAgent: req.headers['user-agent']
+      userAgent: req.headers['user-agent'],
     });
 
-    // 🔌 Emit socket updates
+    // ✅ Notify dealer in DB + via socket
     const io = req.app.get('io');
+
+    await Notification.create({
+      senderId: req.user.id,
+      recipientId: document.dealerId,
+      title: `Document ${document.status}`,
+      message:
+        document.status === 'approved'
+          ? `Your document "${document.documentName}" was approved by ${req.user.username}.`
+          : `Your document "${document.documentName}" was rejected. Reason: ${document.rejectionReason || 'N/A'}.`,
+      type: 'document',
+      relatedId: document.id,
+    });
+
     if (io) {
-      io.to(`user:${document.dealerId}`).emit('document:update', {
-        id: document.id,
-        status: document.status,
-        fileName: document.documentName,
+      io.to(`user:${document.dealerId}`).emit('notification', {
+        title: `Document ${document.status}`,
         message:
           document.status === 'approved'
-            ? `✅ Your document "${document.documentName}" has been approved.`
-            : `❌ Your document "${document.documentName}" was rejected. Reason: ${document.rejectionReason || 'N/A'}`
+            ? `✅ "${document.documentName}" approved`
+            : `❌ "${document.documentName}" rejected`,
+        type: 'document',
       });
 
       io.to('role:tm').emit('document:pending:update');
@@ -1417,6 +1448,7 @@ const approveDocument = async (req, res) => {
     res.status(500).json({ error: 'Failed to update document status' });
   }
 };
+
 const getManagerDocuments = async (req, res) => {
   try {
     const managerId = req.user.id;
@@ -1425,20 +1457,19 @@ const getManagerDocuments = async (req, res) => {
       include: [
         {
           model: Dealer,
-          as: "dealer",
+          as: 'dealer',
           where: { managerId },
         },
       ],
-      order: [["createdAt", "DESC"]],
+      order: [['createdAt', 'DESC']],
     });
 
     res.json({ documents });
   } catch (err) {
-    console.error("getManagerDocuments:", err);
-    res.status(500).json({ error: "Failed to fetch documents" });
+    console.error('getManagerDocuments:', err);
+    res.status(500).json({ error: 'Failed to fetch documents' });
   }
 };
-
 
 module.exports = {
   upload,
@@ -1447,7 +1478,7 @@ module.exports = {
   downloadDocument,
   deleteDocument,
   approveDocument,
-  getManagerDocuments
+  getManagerDocuments,
 };
 </file>
 
@@ -2126,32 +2157,29 @@ getPricingRequests: async (req, res) => {
 </file>
 
 <file path="src/controllers/messageController.js">
-const { Message, User } = require("../models");
+const { Message, User, Notification } = require("../models");
 const { Op } = require("sequelize");
 
-// 📩 Get messages for the logged-in user
+// 📩 Get all messages for the logged-in user
 exports.getMessages = async (req, res) => {
   try {
     const userId = req.user.id;
 
     const messages = await Message.findAll({
       where: {
-        [Op.or]: [
-          { senderId: userId },
-          { recipientId: userId }
-        ]
+        [Op.or]: [{ senderId: userId }, { recipientId: userId }],
       },
       include: [
         {
           model: User,
           as: "sender",
-          attributes: ["id", "username", "email", "role"] // ✅ username instead of name
+          attributes: ["id", "username", "email", "role"],
         },
         {
           model: User,
           as: "recipient",
-          attributes: ["id", "username", "email", "role"] // ✅ username instead of name
-        }
+          attributes: ["id", "username", "email", "role"],
+        },
       ],
       order: [["createdAt", "DESC"]],
     });
@@ -2169,6 +2197,7 @@ exports.sendMessage = async (req, res) => {
     const { recipientId, subject, body } = req.body;
     const senderId = req.user.id;
 
+    // Create the message
     const message = await Message.create({
       senderId,
       recipientId,
@@ -2177,9 +2206,29 @@ exports.sendMessage = async (req, res) => {
       status: "unread",
     });
 
-    // 🔌 Real-time push
     const io = req.app.get("io");
-    io.to(`user:${recipientId}`).emit("message:new", message);
+
+    // 1️⃣ Real-time message push to recipient
+    if (io) io.to(`user:${recipientId}`).emit("message:new", message);
+
+    // 2️⃣ Save persistent notification
+    await Notification.create({
+      senderId,
+      recipientId,
+      title: "New Message Received",
+      message: `${req.user.username}: ${body.substring(0, 60)}...`,
+      type: "chat",
+      relatedId: message.id,
+    });
+
+    // 3️⃣ Emit a "notification" event to recipient
+    if (io) {
+      io.to(`user:${recipientId}`).emit("notification", {
+        title: "New Message Received",
+        message: `${req.user.username}: ${body.substring(0, 60)}...`,
+        type: "chat",
+      });
+    }
 
     res.status(201).json({ message });
   } catch (error) {
@@ -2188,16 +2237,13 @@ exports.sendMessage = async (req, res) => {
   }
 };
 
-
-// ✅ Mark a message as read
+// ✅ Mark message as read
 exports.markAsRead = async (req, res) => {
   try {
     const { id } = req.params;
     const message = await Message.findByPk(id);
 
-    if (!message) {
-      return res.status(404).json({ error: "Message not found" });
-    }
+    if (!message) return res.status(404).json({ error: "Message not found" });
 
     message.status = "read";
     await message.save();
@@ -2208,6 +2254,7 @@ exports.markAsRead = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
 // 💬 Get conversation between two users (Dealer ↔ Manager)
 exports.getConversation = async (req, res) => {
   try {
@@ -2237,7 +2284,7 @@ exports.getConversation = async (req, res) => {
 </file>
 
 <file path="src/controllers/notificationsController.js">
-const { Dealer, Document } = require('../models');
+const { Notification,Dealer, Document } = require('../models');
 const { Op } = require('sequelize');
 
 // ========================= Get Manager Notifications =========================
@@ -2276,6 +2323,80 @@ exports.getManagerNotifications = async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch notifications' });
   }
 };
+// src/controllers/notificationController.js
+
+// ========================= Manager Snapshot Notifications =========================
+exports.getManagerNotifications = async (req, res) => {
+  try {
+    const { role, region, territory, id } = req.user;
+    const whereDealer = {};
+    if (region) whereDealer.region = region;
+    if (territory) whereDealer.territory = territory;
+
+    const expiringLicenses = await Dealer.count({
+      where: {
+        ...whereDealer,
+        licenses: { [Op.ne]: null },
+        updatedAt: { [Op.lt]: new Date(Date.now() - 330 * 24 * 60 * 60 * 1000) },
+      },
+    });
+
+    const pendingDocs = await Document.count({
+      where: { status: 'pending', ...whereDealer },
+    });
+
+    const summary = {
+      expiringLicenses,
+      pendingDocs,
+      message: 'Notifications fetched successfully',
+    };
+
+    const io = req.app.get('io');
+    if (io) io.to(`user:${id}`).emit('notification:update', summary);
+
+    res.json(summary);
+  } catch (error) {
+    console.error('Manager notifications error:', error);
+    res.status(500).json({ error: 'Failed to fetch notifications' });
+  }
+};
+
+// ========================= Real Notification CRUD =========================
+exports.getUserNotifications = async (req, res) => {
+  try {
+    const { id, role } = req.user;
+    const where = {
+      [Op.or]: [
+        { recipientId: id },
+        { recipientRole: role },
+      ],
+    };
+
+    const notes = await Notification.findAll({
+      where,
+      order: [['createdAt', 'DESC']],
+    });
+
+    res.json({ notifications: notes });
+  } catch (err) {
+    console.error('Get notifications error:', err);
+    res.status(500).json({ error: 'Failed to fetch notifications' });
+  }
+};
+
+exports.markAsRead = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const note = await Notification.findByPk(id);
+    if (!note) return res.status(404).json({ error: 'Notification not found' });
+
+    await note.update({ isRead: true });
+    res.json({ message: 'Notification marked as read', note });
+  } catch (err) {
+    console.error('Mark notification read error:', err);
+    res.status(500).json({ error: 'Failed to update notification' });
+  }
+};
 </file>
 
 <file path="src/controllers/pricingController.js">
@@ -2283,28 +2404,24 @@ exports.getManagerNotifications = async (req, res) => {
 // FILE: src/controllers/pricingController.js
 // ==============================
 
-const { PricingUpdate, AuditLog, Product } = require("../models");
+const { PricingUpdate, AuditLog, Product, Dealer, Notification } = require("../models");
 const { Op } = require("sequelize");
 
 // ----------------------------
-// 1️⃣ Request Pricing Change
+// 1️⃣ Request Pricing Change (Dealer → Manager Notification)
 // ----------------------------
 exports.requestPricingChange = async (req, res) => {
   try {
     const { productId, oldPrice, newPrice, reason } = req.body;
 
     if (!productId || newPrice == null) {
-      return res
-        .status(400)
-        .json({ error: "productId and newPrice are required" });
+      return res.status(400).json({ error: "productId and newPrice are required" });
     }
 
     const product = await Product.findByPk(productId);
-    if (!product)
-      return res.status(404).json({ error: "Product not found" });
+    if (!product) return res.status(404).json({ error: "Product not found" });
 
     const update = await PricingUpdate.create({
-      
       productId,
       oldPrice: oldPrice ?? product.price,
       newPrice,
@@ -2323,6 +2440,26 @@ exports.requestPricingChange = async (req, res) => {
       changes: { newPrice },
       ipAddress: req.ip,
     });
+
+    // ✅ Create & Emit Notification for Managers
+    const io = req.app.get("io");
+
+    await Notification.create({
+      senderId: req.user.id,
+      recipientRole: "tm",
+      title: "New Pricing Request Submitted",
+      message: `${req.user.username} submitted a new pricing request for product ID ${productId}.`,
+      type: "pricing",
+      relatedId: update.id,
+    });
+
+    if (io) {
+      io.to("role:tm").emit("notification", {
+        title: "New Pricing Request",
+        message: `${req.user.username} submitted a new pricing request for product ID ${productId}.`,
+        type: "pricing",
+      });
+    }
 
     res.status(201).json({
       message: "Pricing request submitted",
@@ -2368,24 +2505,20 @@ exports.getPricingUpdates = async (req, res) => {
 // ----------------------------
 exports.getPricingSummary = async (req, res) => {
   try {
-    const approved = await PricingUpdate.count({
-      where: { status: "approved" },
-    });
-    const pending = await PricingUpdate.count({
-      where: { status: "pending" },
-    });
-    const rejected = await PricingUpdate.count({
-      where: { status: "rejected" },
-    });
+    const approved = await PricingUpdate.count({ where: { status: "approved" } });
+    const pending = await PricingUpdate.count({ where: { status: "pending" } });
+    const rejected = await PricingUpdate.count({ where: { status: "rejected" } });
 
     return res.json({ approved, pending, rejected });
   } catch (error) {
     console.error("Pricing summary error:", error);
-    res
-      .status(500)
-      .json({ error: "Failed to fetch pricing summary" });
+    res.status(500).json({ error: "Failed to fetch pricing summary" });
   }
 };
+
+// ----------------------------
+// 4️⃣ Manager’s Region/Territory Requests
+// ----------------------------
 exports.getManagerPricingRequests = async (req, res) => {
   try {
     const managerId = req.user.id;
@@ -2408,6 +2541,9 @@ exports.getManagerPricingRequests = async (req, res) => {
   }
 };
 
+// ----------------------------
+// 5️⃣ Update Pricing Status (Manager → Dealer Notification)
+// ----------------------------
 exports.updatePricingStatus = async (req, res) => {
   try {
     const { id } = req.params;
@@ -2422,10 +2558,7 @@ exports.updatePricingStatus = async (req, res) => {
 
     // If approved → update product price
     if (status === "approved") {
-      await Product.update(
-        { price: update.newPrice },
-        { where: { id: update.productId } }
-      );
+      await Product.update({ price: update.newPrice }, { where: { id: update.productId } });
     }
 
     update.status = status;
@@ -2433,6 +2566,32 @@ exports.updatePricingStatus = async (req, res) => {
     update.approvedBy = req.user.username;
     update.approvedAt = new Date();
     await update.save();
+
+    // ✅ Create Notification for Dealer
+    const io = req.app.get("io");
+
+    await Notification.create({
+      senderId: req.user.id,
+      recipientId: update.requestedByUserId,
+      title: `Pricing ${status}`,
+      message:
+        status === "approved"
+          ? `Your pricing request for product ID ${update.productId} has been approved.`
+          : `Your pricing request for product ID ${update.productId} was rejected. Remarks: ${remarks || "N/A"}.`,
+      type: "pricing",
+      relatedId: update.id,
+    });
+
+    if (io) {
+      io.to(`user:${update.requestedByUserId}`).emit("notification", {
+        title: `Pricing ${status}`,
+        message:
+          status === "approved"
+            ? `✅ Your pricing request (Product ID ${update.productId}) was approved`
+            : `❌ Your pricing request (Product ID ${update.productId}) was rejected`,
+        type: "pricing",
+      });
+    }
 
     res.json({ message: "Status updated", update });
   } catch (err) {
@@ -3598,6 +3757,8 @@ const AccountStatement = require('./AccountStatement')(sequelize, DataTypes);
 const Product = require('./Product')(sequelize, DataTypes);
 const Message = require('./Message')(sequelize, DataTypes);
 const PricingUpdate = require('./PricingUpdate')(sequelize, DataTypes);
+const Notification = require('./Notification')(sequelize, DataTypes);
+
 
 // =======================
 // Define Associations
@@ -3633,6 +3794,12 @@ Message.belongsTo(User, { foreignKey: 'senderId', as: 'sender' });
 Message.belongsTo(User, { foreignKey: 'recipientId', as: 'recipient' });
 User.hasMany(Message, { foreignKey: 'senderId', as: 'sentMessages' });
 User.hasMany(Message, { foreignKey: 'recipientId', as: 'receivedMessages' });
+// User ↔ Notification
+Notification.belongsTo(User, { foreignKey: 'recipientId', as: 'recipient' });
+Notification.belongsTo(User, { foreignKey: 'senderId', as: 'sender' });
+User.hasMany(Notification, { foreignKey: 'recipientId', as: 'receivedNotifications' });
+User.hasMany(Notification, { foreignKey: 'senderId', as: 'sentNotifications' });
+
 
 // PricingUpdate ↔ Dealer
 PricingUpdate.belongsTo(Dealer, { foreignKey: 'dealerId', as: 'dealer' });
@@ -3670,6 +3837,7 @@ module.exports = {
   Product,
   Message,
   PricingUpdate,
+  Notification,
   syncDatabase,
 };
 </file>
@@ -3841,6 +4009,35 @@ messageType: {
   };
 
   return Message;
+};
+</file>
+
+<file path="src/models/Notification.js">
+// src/models/Notification.js
+module.exports = (sequelize, DataTypes) => {
+  const Notification = sequelize.define('Notification', {
+    // Optional sender (the user who triggered the event)
+    senderId: { type: DataTypes.UUID, allowNull: true },
+
+    // Optional recipient (null if broadcasted to a role)
+    recipientId: { type: DataTypes.UUID, allowNull: true },
+
+    // Role-based broadcast target (e.g., 'manager', 'dealer', 'admin')
+    recipientRole: { type: DataTypes.STRING, allowNull: true },
+
+    title: { type: DataTypes.STRING, allowNull: false },
+    message: { type: DataTypes.TEXT, allowNull: false },
+
+    // Category: 'document', 'pricing', 'chat', etc.
+    type: { type: DataTypes.STRING, allowNull: true },
+
+    // Related record ID (documentId, pricingId, etc.)
+    relatedId: { type: DataTypes.INTEGER, allowNull: true },
+
+    isRead: { type: DataTypes.BOOLEAN, defaultValue: false },
+  });
+
+  return Notification;
 };
 </file>
 
@@ -4501,13 +4698,19 @@ module.exports = router;
 </file>
 
 <file path="src/routes/notificationRoutes.js">
-// routes/notificationRoutes.js
+// src/routes/notificationRoutes.js
 const express = require('express');
 const router = express.Router();
-const { getManagerNotifications } = require('../controllers/notificationController');
+const {
+  getManagerNotifications,
+  getUserNotifications,
+  markAsRead,
+} = require('../controllers/notificationsController');
 const { authenticate, authorize } = require('../middleware/auth');
 
 router.get('/manager', authenticate, authorize('tm', 'am'), getManagerNotifications);
+router.get('/', authenticate, getUserNotifications);
+router.put('/:id/read', authenticate, markAsRead);
 
 module.exports = router;
 </file>
@@ -4681,6 +4884,8 @@ const productRoutes = require("./routes/productRoutes");
 app.use("/api/products", productRoutes);
 
 app.use('/api/managers', require('./routes/managerRoutes'));
+app.use('/api/notifications', require('./routes/notificationRoutes'));
+
 
 
  // /pricing/request and /pricing/

@@ -151,7 +151,7 @@ const getDealerPerformanceReport = async (req, res) => {
 const getAdminSummary = async (req, res) => {
   try {
     let totalDealers = await Dealer.count();
-    let blockedDealers = await Dealer.count({ where: { status: "BLOCKED" } });
+    let blockedDealers = await Dealer.count({ where: { state: "BLOCKED" } });
     let totalInvoices = await Invoice.count();
 
     const outstandingInvoices = await Invoice.findAll({
@@ -165,7 +165,7 @@ const getAdminSummary = async (req, res) => {
     );
 
     // ✅ Pending documents (flexible enum)
-    const pendingStatuses = ["Pending", "PENDING", "UNDER_REVIEW", "WAITING_APPROVAL"];
+    const pendingStatuses = ["pending"];
     let pendingDocuments = await Document.count({
       where: { status: { [Op.in]: pendingStatuses } },
     });
@@ -391,6 +391,9 @@ const getPendingApprovals = async (req, res) => {
 // =======================================================
 // ✅ TERRITORY REPORT
 // =======================================================
+// =======================================================
+// ✅ TERRITORY REPORT (MATCHES FRONTEND FORMAT)
+// =======================================================
 const getTerritoryReport = async (req, res) => {
   try {
     const { state, territory, region } = req.query;
@@ -405,29 +408,149 @@ const getTerritoryReport = async (req, res) => {
       include: [{ model: Invoice, as: "invoices" }],
     });
 
-    const report = dealers.map((dealer) => {
+    let totalSales = 0;
+    let territorySalesMap = {};
+    let productGroupMap = {};
+    let dealerSales = [];
+
+    dealers.forEach((d) => {
+      const sales = d.invoices.reduce(
+        (sum, inv) => sum + Number(inv.totalAmount || 0),
+        0
+      );
+
+      totalSales += sales;
+
+      dealerSales.push({
+        dealerName: d.businessName,
+        dealerCode: d.dealerCode,
+        territory: d.territory,
+        totalSales: sales,
+      });
+
+      // Territory contribution
+      if (!territorySalesMap[d.territory]) territorySalesMap[d.territory] = 0;
+      territorySalesMap[d.territory] += sales;
+
+      // Product mix
+      d.invoices.forEach((inv) => {
+        const grp = inv.productGroup || "OTHERS";
+        if (!productGroupMap[grp]) productGroupMap[grp] = 0;
+        productGroupMap[grp] += Number(inv.totalAmount || 0);
+      });
+    });
+
+    const topDealer = dealerSales.sort((a, b) => b.totalSales - a.totalSales)[0] || null;
+    const bottomDealer = dealerSales.sort((a, b) => a.totalSales - b.totalSales)[0] || null;
+
+    const territoryContributionChart = Object.entries(territorySalesMap).map(
+      ([name, value]) => ({ name, value })
+    );
+
+    const productMixChart = Object.entries(productGroupMap).map(
+      ([name, value]) => ({ name, value })
+    );
+
+    res.json({
+      kpis: {
+        totalDealers: dealers.length,
+        totalSales,
+        topTerritory: territoryContributionChart[0]?.name || "-",
+        topProductGroup: productMixChart[0]?.name || "-",
+      },
+      dealerSalesChart: dealerSales,
+      territoryContributionChart,
+      productMixChart,
+      table: dealerSales,
+      highlights: {
+        topDealer,
+        bottomDealer,
+      },
+    });
+
+  } catch (error) {
+    console.error("Territory report error:", error);
+    res.status(500).json({ error: "Failed to generate territory report" });
+  }
+};
+
+// =======================================================
+// ✅ REGIONAL SALES SUMMARY REPORT (AS PER PPT)
+// =======================================================
+const getRegionalSalesSummary = async (req, res) => {
+  try {
+    const { region, state, territory } = req.query;
+
+    const where = {};
+    if (region) where.region = region;
+    if (state) where.state = state;
+    if (territory) where.territory = territory;
+
+    // 1️⃣ Fetch Dealers + Their Invoices
+    const dealers = await Dealer.findAll({
+      where,
+      include: [{ model: Invoice, as: "invoices" }]
+    });
+
+    // 2️⃣ Grouping → Region → Territory → Dealers
+    const result = {};
+
+    dealers.forEach((dealer) => {
+      const regionName = dealer.region || "UNASSIGNED";
+      const territoryName = dealer.territory || "UNASSIGNED";
+
+      if (!result[regionName]) {
+        result[regionName] = {
+          region: regionName,
+          totalSales: 0,
+          totalOutstanding: 0,
+          territories: {}
+        };
+      }
+
+      if (!result[regionName].territories[territoryName]) {
+        result[regionName].territories[territoryName] = {
+          territory: territoryName,
+          totalSales: 0,
+          totalOutstanding: 0,
+          dealers: []
+        };
+      }
+
       const totalSales = dealer.invoices.reduce(
         (sum, inv) => sum + Number(inv.totalAmount || 0),
         0
       );
 
-      const outstanding = Number(dealer.outstandingAmount || 0);
+      const outstanding = dealer.invoices.reduce(
+        (sum, inv) => sum + Number(inv.balanceAmount || 0),
+        0
+      );
 
-      return {
+      // Push Dealer Row
+      result[regionName].territories[territoryName].dealers.push({
         dealerCode: dealer.dealerCode,
-        businessName: dealer.businessName,
-        state: dealer.state,
-        territory: dealer.territory,
-        region: dealer.region,
+        dealerName: dealer.businessName,
         totalSales,
-        outstanding,
-      };
+        outstanding
+      });
+
+      // Update totals
+      result[regionName].territories[territoryName].totalSales += totalSales;
+      result[regionName].territories[territoryName].totalOutstanding += outstanding;
+
+      result[regionName].totalSales += totalSales;
+      result[regionName].totalOutstanding += outstanding;
     });
 
-    res.json({ report });
+    res.json({
+      generatedAt: new Date(),
+      regions: result
+    });
+
   } catch (error) {
-    console.error("Territory report error:", error);
-    res.status(500).json({ error: "Failed to generate territory report" });
+    console.error("Regional sales summary error:", error);
+    res.status(500).json({ error: "Failed to generate regional sales summary" });
   }
 };
 
@@ -443,4 +566,5 @@ module.exports = {
   getOutstandingReceivablesReport,
   getTerritoryReport,
   getPendingApprovals,
+  getRegionalSalesSummary,
 };
