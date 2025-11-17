@@ -68,6 +68,9 @@ app.use("/api/products", productRoutes);
 
 app.use('/api/managers', require('./routes/managerRoutes'));
 app.use('/api/notifications', require('./routes/notificationRoutes'));
+app.use("/api/roles", require("./routes/roles"));
+app.use("/api/permissions", require("./routes/permissions"));
+
 
 
 

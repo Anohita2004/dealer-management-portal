@@ -1,7 +1,8 @@
 // backend/src/models/Message.js
 const { DataTypes } = require("sequelize");
 
-module.exports = (sequelize) => {
+module.exports = (sequelize, DataTypes) => {
+
   const Message = sequelize.define(
     "Message",
     {

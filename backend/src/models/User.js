@@ -1,7 +1,7 @@
-const { DataTypes } = require("sequelize");
 const bcrypt = require("bcryptjs");
 
-module.exports = (sequelize) => {
+module.exports = (sequelize, DataTypes) => {
+
   const User = sequelize.define(
     "User",
     {
@@ -21,22 +21,30 @@ module.exports = (sequelize) => {
         type: DataTypes.STRING,
         allowNull: false,
         unique: true,
-        validate: {
-          isEmail: true,
-        },
+        validate: { isEmail: true },
       },
 
-      password: {
-        type: DataTypes.STRING,
-        allowNull: false,
+      // 🔥 Link to roles table (RBAC)
+      roleId: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: { model: "roles", key: "id" },
       },
 
+      // 🔥 Link to Regions table
+      regionId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: { model: "Regions", key: "id" },
+      },
+
+      // (Old ENUM – we can remove later)
       role: {
         type: DataTypes.ENUM(
           "dealer",
-          "tm", // Territory Manager
-          "am", // Area Manager
-          "sm", // Sales Manager
+          "tm",
+          "am",
+          "sm",
           "admin",
           "key_user",
           "accounts",
@@ -46,107 +54,99 @@ module.exports = (sequelize) => {
         defaultValue: "dealer",
       },
 
-      phoneNumber: {
+      password: {
         type: DataTypes.STRING,
-        allowNull: true,
+        allowNull: false,
       },
 
-      isActive: {
-        type: DataTypes.BOOLEAN,
-        defaultValue: true,
-      },
+      phoneNumber: DataTypes.STRING,
+      isActive: { type: DataTypes.BOOLEAN, defaultValue: true },
+      isBlocked: { type: DataTypes.BOOLEAN, defaultValue: false },
 
-      isBlocked: {
-        type: DataTypes.BOOLEAN,
-        defaultValue: false,
-      },
-
-      lastLogin: {
-        type: DataTypes.DATE,
-        allowNull: true,
-      },
-
-      otp: {
-        type: DataTypes.STRING,
-        allowNull: true,
-      },
-
-      otpExpiry: {
-        type: DataTypes.DATE,
-        allowNull: true,
-      },
+      lastLogin: DataTypes.DATE,
+      otp: DataTypes.STRING,
+      otpExpiry: DataTypes.DATE,
     },
     {
       timestamps: true,
+      tableName: "Users",
+      freezeTableName: true,
+
       hooks: {
-        // Hash password before creation or update
         beforeCreate: async (user) => {
-          if (user.password) {
+          if (user.password)
             user.password = await bcrypt.hash(user.password, 10);
-          }
         },
         beforeUpdate: async (user) => {
-          if (user.changed("password")) {
+          if (user.changed("password"))
             user.password = await bcrypt.hash(user.password, 10);
-          }
         },
       },
     }
   );
 
-  // ✅ Instance Methods
-  User.prototype.validatePassword = async function (password) {
-    return await bcrypt.compare(password, this.password);
+  // ============================
+  // INSTANCE METHODS
+  // ============================
+  User.prototype.validatePassword = function (password) {
+    return bcrypt.compare(password, this.password);
   };
 
   User.prototype.generateOTP = function () {
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    this.otp = otp;
-    this.otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // valid 10 mins
-    console.log(`🔐 OTP for user '${this.username}': ${otp}`);
-    return otp;
-  };
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  this.otp = otp;
+  this.otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+
+  console.log(`🔐 OTP generated for user: ${this.username} → ${otp}`);
+
+  return otp;
+};
+
 
   User.prototype.validateOTP = function (otp) {
     if (!this.otp || !this.otpExpiry) return false;
-    if (new Date() > this.otpExpiry) return false;
-    return this.otp === otp;
+    return this.otp === otp && new Date() < this.otpExpiry;
   };
 
-  // ✅ Associations
- User.associate = (models) => {
-  // 🔹 Dealers link back to their dealer profile
-  User.belongsTo(models.Dealer, {
-    foreignKey: {
-      name: "dealerId",
-      allowNull: true, // managers/admins won’t have dealerId
-    },
-    as: "dealer",
-    onDelete: "SET NULL",
-    onUpdate: "CASCADE",
-  });
+  // ============================
+  // ASSOCIATIONS
+  // ============================
+  User.associate = (models) => {
+    // Dealer profile
+    User.belongsTo(models.Dealer, {
+      foreignKey: "dealerId",
+      as: "dealer",
+    });
 
-  // 🔹 Managers (TM/AM/SM) manage many dealers
-  User.hasMany(models.Dealer, {
-    foreignKey: "managerId",
-    as: "managedDealers",
-    onDelete: "SET NULL",
-    onUpdate: "CASCADE",
-  });
+    // Managers manage many dealers
+    User.hasMany(models.Dealer, {
+      foreignKey: "managerId",
+      as: "managedDealers",
+    });
 
-  // 💬 Chat relationships
-  User.hasMany(models.Message, {
-    foreignKey: "senderId",
-    as: "sentMessages",
-    onDelete: "CASCADE",
-  });
+    // RBAC Role
+    User.belongsTo(models.Role, {
+      foreignKey: "roleId",
+      as: "roleDetails",
+    });
 
-  User.hasMany(models.Message, {
-    foreignKey: "recipientId",
-    as: "receivedMessages",
-    onDelete: "CASCADE",
-  });
-};
+    // Region
+    User.belongsTo(models.Region, {
+      foreignKey: "regionId",
+      as: "region",
+    });
+
+    // Chat
+    User.hasMany(models.Message, {
+      foreignKey: "senderId",
+      as: "sentMessages",
+    });
+
+    User.hasMany(models.Message, {
+      foreignKey: "recipientId",
+      as: "receivedMessages",
+    });
+  };
 
   return User;
 };
