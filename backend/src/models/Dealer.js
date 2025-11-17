@@ -1,5 +1,4 @@
 module.exports = (sequelize, DataTypes) => {
-
   const Dealer = sequelize.define(
     "Dealer",
     {
@@ -39,7 +38,8 @@ module.exports = (sequelize, DataTypes) => {
       outstandingAmount: { type: DataTypes.DECIMAL(15, 2), defaultValue: 0 },
 
       territory: DataTypes.STRING,
-      region: DataTypes.STRING,
+
+      // ❌ removed old 'region: DataTypes.STRING,'
 
       sapCustomerNumber: DataTypes.STRING,
       sapVendorNumber: DataTypes.STRING,
@@ -60,6 +60,12 @@ module.exports = (sequelize, DataTypes) => {
       verifiedBy: DataTypes.STRING,
       verifiedAt: DataTypes.DATE,
       licenses: DataTypes.JSON,
+
+      // ✅ REAL REGION RELATION
+      regionId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
     },
     {
       timestamps: true,
@@ -68,11 +74,7 @@ module.exports = (sequelize, DataTypes) => {
     }
   );
 
-  // ================================
-  // ASSOCIATIONS
-  // ================================
   Dealer.associate = (models) => {
-    // Dealer ←→ User (Dealer login)
     Dealer.hasOne(models.User, {
       foreignKey: "dealerId",
       as: "user",
@@ -80,7 +82,6 @@ module.exports = (sequelize, DataTypes) => {
       onUpdate: "CASCADE",
     });
 
-    // Dealer ←→ User (Manager)
     Dealer.belongsTo(models.User, {
       foreignKey: { name: "managerId", allowNull: true },
       as: "manager",
@@ -88,7 +89,6 @@ module.exports = (sequelize, DataTypes) => {
       onUpdate: "CASCADE",
     });
 
-    // Dealer ←→ Invoices
     Dealer.hasMany(models.Invoice, {
       foreignKey: "dealerId",
       as: "invoices",
@@ -96,16 +96,20 @@ module.exports = (sequelize, DataTypes) => {
       onUpdate: "CASCADE",
     });
 
-    // Dealer ←→ Documents
     Dealer.hasMany(models.Document, {
       foreignKey: "dealerId",
       as: "documents",
     });
 
-    // Dealer ←→ Pricing Updates
     Dealer.hasMany(models.PricingUpdate, {
       foreignKey: "dealerId",
       as: "pricingUpdates",
+    });
+
+    // ✅ FIXED: Region relationship
+    Dealer.belongsTo(models.Region, {
+      foreignKey: "regionId",
+      as: "region",
     });
   };
 

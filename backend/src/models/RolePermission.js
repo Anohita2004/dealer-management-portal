@@ -6,17 +6,17 @@ module.exports = (sequelize, DataTypes) => {
       roleId: {
         type: DataTypes.INTEGER,
         allowNull: false,
-        references: { model: "roles", key: "id" }
+        references: { model: "roles", key: "id" },
       },
       permissionId: {
         type: DataTypes.INTEGER,
         allowNull: false,
-        references: { model: "permissions", key: "id" }
-      }
+        references: { model: "permissions", key: "id" },
+      },
     },
     {
       tableName: "rolepermissions",
-      timestamps: true
+      timestamps: true,
     }
   );
 

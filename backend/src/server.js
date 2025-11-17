@@ -17,6 +17,7 @@ const inventoryRoutes = require('./routes/inventoryRoutes');
 const messageRoutes = require('./routes/messageRoutes');
 const accountsRoutes = require("./routes/accountsRoutes");
 const pricingRoutes = require('./routes/pricingRoutes');
+const regionRoutes = require("./routes/regionRoutes");
 
 
 
@@ -70,6 +71,8 @@ app.use('/api/managers', require('./routes/managerRoutes'));
 app.use('/api/notifications', require('./routes/notificationRoutes'));
 app.use("/api/roles", require("./routes/roles"));
 app.use("/api/permissions", require("./routes/permissions"));
+app.use("/api", regionRoutes);
+
 
 
 

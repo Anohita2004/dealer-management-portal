@@ -1,5 +1,5 @@
-const { Dealer, SalesGroup, PricingUpdate, Document, User, AuditLog, sequelize } = require('../models');
-const { Op } = require('sequelize');
+const { Dealer, SalesGroup, PricingUpdate, Document, User,Region, AuditLog,Role, sequelize } = require('../models');
+const { Op,fn, col, literal } = require('sequelize');
 
 // ✅ Block or unblock dealer with reason
 const blockDealer = async (req, res) => {
@@ -160,6 +160,89 @@ const getAllUsers = async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch users' });
   }
 };
+const createUser = async (req, res) => {
+  try {
+    const { username, email, password, roleId, dealerId, regionId, isActive } = req.body;
+
+    // Check for duplicate email
+    const existing = await User.findOne({ where: { email } });
+    if (existing) return res.status(400).json({ error: "Email already exists" });
+
+    const user = await User.create({
+      username,
+      email,
+      password, // assuming hooks handle hashing
+      roleId,
+      dealerId: dealerId || null,
+      regionId: regionId || null,
+      isActive
+    });
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: "CREATE_USER",
+      entity: "User",
+      entityId: user.id,
+      changes: req.body,
+      ipAddress: req.ip
+    });
+
+    res.json({ message: "User created", user });
+  } catch (err) {
+    console.error("createUser:", err);
+    res.status(500).json({ error: "Failed to create user" });
+  }
+};
+const updateUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { username, email, roleId, dealerId, regionId, isActive, password } = req.body;
+
+    const user = await User.findByPk(id);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    // Prepare update payload
+    const updatePayload = {
+      username,
+      email,
+      roleId,
+      dealerId: dealerId || null,
+      regionId: regionId || null,
+      isActive
+    };
+
+    if (password && password.trim() !== "") {
+      updatePayload.password = password; // hashing handled by model hook
+    }
+
+    // ---- Update USER ----
+    await user.update(updatePayload);
+
+    // ---- NEW: Auto-update dealer region ----
+    if (dealerId && regionId) {
+      await Dealer.update(
+        { regionId },
+        { where: { id: dealerId } }
+      );
+    }
+
+    // ---- Audit Log ----
+    await AuditLog.create({
+      userId: req.user.id,
+      action: "UPDATE_USER",
+      entity: "User",
+      entityId: id,
+      changes: updatePayload,
+      ipAddress: req.ip
+    });
+
+    res.json({ message: "User updated", user });
+  } catch (err) {
+    console.error("updateUser:", err);
+    res.status(500).json({ error: "Failed to update user" });
+  }
+};
+
 
 const updateUserRole = async (req, res) => {
   try {
@@ -206,27 +289,153 @@ const deleteUser = async (req, res) => {
   }
 };
 
-// ✅ Consolidated reporting for dashboard
+
+
 const getAdminReport = async (req, res) => {
   try {
-    const [dealerCount, blockedCount, verifiedCount, docPending, pricePending] = await Promise.all([
-      Dealer.count(),
-      Dealer.count({ where: { isBlocked: true } }),
-      Dealer.count({ where: { isVerified: true } }),
-      Document.count({ where: { status: 'pending' } }),
-      PricingUpdate.count({ where: { status: 'pending' } })
-    ]);
+    // ---------- KPIs ----------
+    const totalUsers = await User.count();
+    const totalRoles = await Role.count();
+    const totalDealers = await Dealer.count();
+    const totalDocuments = await Document.count();
+    const totalPricingUpdates = await PricingUpdate.count();
 
-    res.json({
-      dealers: { total: dealerCount, blocked: blockedCount, verified: verifiedCount },
-      documents: { pending: docPending },
-      pricing: { pending: pricePending }
+    const pendingDocuments = await Document.count({ where: { status: "pending" } });
+    const approvedDocuments = await Document.count({ where: { status: "approved" } });
+    const rejectedDocuments = await Document.count({ where: { status: "rejected" } });
+
+    const pendingPricing = await PricingUpdate.count({ where: { status: "pending" } });
+    const approvedPricing = await PricingUpdate.count({ where: { status: "approved" } });
+    const rejectedPricing = await PricingUpdate.count({ where: { status: "rejected" } });
+
+
+    // ---------- User Growth ----------
+    const userGrowth = await User.findAll({
+      attributes: [
+        [fn("to_char", col("createdAt"), "Mon YYYY"), "month"],
+        [fn("count", col("id")), "count"],
+      ],
+      group: [literal("month")],
+      order: [[literal("month"), "ASC"]],
+      limit: 12
     });
+
+
+    // ---------- Documents Per Month ----------
+    const docsPerMonth = await Document.findAll({
+      attributes: [
+        [fn("to_char", col("createdAt"), "Mon YYYY"), "month"],
+        [fn("count", col("id")), "count"],
+      ],
+      group: [literal("month")],
+      order: [[literal("month"), "ASC"]],
+      limit: 12
+    });
+
+// ---------- Dealer Distribution By Region ----------
+// ---------- Dealer Distribution By Region ----------
+const dealerDistribution = await Region.findAll({
+  attributes: [
+    "id",
+    "name",
+    [sequelize.fn("COUNT", sequelize.col("dealers.id")), "count"]
+  ],
+  include: [
+    {
+      model: Dealer,
+      as: "dealers",      // ⭐ ensure this matches your association alias
+      attributes: [],
+      required: false     // LEFT JOIN → includes regions with 0 dealers
+    }
+  ],
+  group: ["Region.id"],
+  order: [["name", "ASC"]]
+});
+
+// Add "Unassigned" region (dealers with null regionId)
+const unassignedDealers = await Dealer.count({ where: { regionId: null } });
+
+dealerDistribution.push({
+  id: null,
+  name: "Unassigned",
+  count: unassignedDealers
+});
+
+
+
+
+
+    // ---------- Pricing Trend ----------
+    const pricingTrend = await PricingUpdate.findAll({
+      attributes: [
+        [fn("to_char", col("createdAt"), "Mon YYYY"), "month"],
+        [fn("count", col("id")), "count"]
+      ],
+      group: [literal("month")],
+      order: [[literal("month"), "ASC"]],
+      limit: 12
+    });
+
+
+    // ---------- Recent Activity ----------
+    const recentActivity = await AuditLog.findAll({
+      limit: 10,
+      order: [["timestamp", "DESC"]],
+
+    });
+
+
+    // ---------- FINAL RESPONSE ----------
+    res.json({
+      kpis: {
+        totalUsers,
+        totalRoles,
+        totalDealers,
+        totalDocuments,
+        totalPricingUpdates,
+
+        pendingDocuments,
+        approvedDocuments,
+        rejectedDocuments,
+
+        pendingPricing,
+        approvedPricing,
+        rejectedPricing
+      },
+      charts: {
+        userGrowth,
+        docsPerMonth,
+        dealerDistribution,
+        pricingTrend
+      },
+      recentActivity
+    });
+
   } catch (err) {
-    console.error('getAdminReport:', err);
-    res.status(500).json({ error: 'Failed to generate report' });
+    console.error("getAdminReport:", err);
+    res.status(500).json({ error: "Failed to generate report" });
   }
 };
+
+const assignRegion = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { regionId } = req.body;
+
+    const dealer = await Dealer.findByPk(id);
+    if (!dealer) return res.status(404).json({ error: 'Dealer not found' });
+
+    await dealer.update({ regionId });
+
+    res.json({ message: "Region assigned successfully", dealer });
+  } catch (err) {
+    console.error("assignRegion:", err);
+    res.status(500).json({ error: "Failed to assign region" });
+  }
+};
+
+
+
 
 module.exports = {
   blockDealer,
@@ -235,7 +444,11 @@ module.exports = {
   reviewDocument,
   reviewPricingUpdate,
   getAllUsers,
+  createUser,
+  updateUser,
   updateUserRole,
   deleteUser,
-  getAdminReport
+  getAdminReport,
+  assignRegion,
+  
 };

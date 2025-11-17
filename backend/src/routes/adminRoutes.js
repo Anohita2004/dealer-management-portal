@@ -31,8 +31,15 @@ router.put('/pricing/:id/review', authorize('admin'), adminController.reviewPric
 
 // ---------------- User Management ----------------
 router.get('/users', authorize('admin'), adminController.getAllUsers);
+router.post('/users', authorize('admin'), adminController.createUser);   // ✅ ADD
+router.put('/users/:id', authorize('admin'), adminController.updateUser);  // ✅ ADD
 router.put('/users/:id/role', authorize('admin'), adminController.updateUserRole);
 router.delete('/users/:id', authorize('admin'), adminController.deleteUser);
+router.put('/dealers/:id/assign-region', authorize('admin'), adminController.assignRegion);
+router.put('/users/:id', authorize('admin'), adminController.updateUser);
+
+
+
 
 // ---------------- Reports ----------------
 router.get('/reports', authorize('admin'), adminController.getAdminReport);

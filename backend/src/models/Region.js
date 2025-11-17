@@ -20,6 +20,12 @@ module.exports = (sequelize, DataTypes) => {
       foreignKey: "regionId",
       as: "users",
     });
+
+    // ✅ Add dealer association
+    Region.hasMany(models.Dealer, {
+      foreignKey: "regionId",
+      as: "dealers",
+    });
   };
 
   return Region;

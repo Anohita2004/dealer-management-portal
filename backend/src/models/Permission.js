@@ -4,11 +4,11 @@ module.exports = (sequelize, DataTypes) => {
     {
       id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
       key: { type: DataTypes.STRING, allowNull: false, unique: true },
-      description: { type: DataTypes.STRING, allowNull: true }
+      description: { type: DataTypes.STRING, allowNull: true },
     },
     {
       tableName: "permissions",
-      timestamps: true
+      timestamps: true,
     }
   );
 
@@ -17,7 +17,7 @@ module.exports = (sequelize, DataTypes) => {
       through: "rolepermissions",
       foreignKey: "permissionId",
       otherKey: "roleId",
-      as: "roles"
+      as: "roles", // ALIAS
     });
   };
 

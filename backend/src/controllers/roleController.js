@@ -15,14 +15,17 @@ module.exports = {
     }
   },
 
-  // Get all roles
+  // Get all roles (FIXED: alias 'permissions' added)
   getRoles: async (req, res) => {
     try {
       const roles = await Role.findAll({
-        include: {
-          model: Permission,
-          through: RolePermission,
-        },
+        include: [
+          {
+            model: Permission,
+            as: "permissions", // REQUIRED ALIAS
+            through: { attributes: [] }, // Hide junction table
+          },
+        ],
       });
 
       res.json(roles);
@@ -44,5 +47,5 @@ module.exports = {
       console.error(err);
       res.status(500).json({ error: "Failed to assign permission" });
     }
-  }
+  },
 };
