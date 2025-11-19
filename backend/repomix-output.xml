@@ -55,8 +55,11 @@ src/controllers/documentController.js
 src/controllers/inventoryController.js
 src/controllers/invoiceController.js
 src/controllers/managerController.js
+src/controllers/materialController.js
+src/controllers/materialGroupController.js
 src/controllers/messageController.js
 src/controllers/notificationsController.js
+src/controllers/orderController.js
 src/controllers/permissionController.js
 src/controllers/pricingController.js
 src/controllers/productController.js
@@ -76,8 +79,12 @@ src/models/Document.js
 src/models/index.js
 src/models/Inventory.js
 src/models/Invoice.js
+src/models/Material.js
+src/models/MaterialGroup.js
 src/models/Message.js
 src/models/Notification.js
+src/models/Order.js
+src/models/OrderItem.js
 src/models/Permission.js
 src/models/PricingUpdate.js
 src/models/Product.js
@@ -95,8 +102,10 @@ src/routes/documentRoutes.js
 src/routes/inventoryRoutes.js
 src/routes/invoiceRoutes.js
 src/routes/managerRoutes.js
+src/routes/materialRoutes.js
 src/routes/messageRoutes.js
 src/routes/notificationRoutes.js
+src/routes/orderRoutes.js
 src/routes/permissions.js
 src/routes/pricingRoutes.js
 src/routes/productRoutes.js
@@ -2402,6 +2411,121 @@ getPricingRequests: async (req, res) => {
 };
 </file>
 
+<file path="src/controllers/materialController.js">
+// src/controllers/materialController.js
+const { Material, MaterialGroup } = require('../models');
+
+
+exports.createMaterial = async (req, res) => {
+try {
+const payload = req.body;
+const mat = await Material.create(payload);
+// optional audit log: adjust or remove if you don't have AuditLog
+if (req.models && req.models.AuditLog) {
+await req.models.AuditLog.create({ userId: req.user?.id || null, action: 'CREATE_MATERIAL', entity: 'Material', entityId: mat.id, ipAddress: req.ip });
+}
+res.status(201).json(mat);
+} catch (err) {
+console.error('createMaterial:', err);
+res.status(500).json({ error: 'Failed to create material', details: err.message });
+}
+};
+
+
+exports.getMaterials = async (req, res) => {
+try {
+const mats = await Material.findAll({ include: [{ model: MaterialGroup, as: 'group' }], order: [['createdAt','DESC']] });
+res.json({ materials: mats });
+} catch (err) {
+console.error('getMaterials:', err);
+res.status(500).json({ error: 'Failed to fetch materials' });
+}
+};
+
+
+exports.getMaterialById = async (req, res) => {
+try {
+const { id } = req.params;
+const mat = await Material.findByPk(id, { include: [{ model: MaterialGroup, as: 'group' }] });
+if (!mat) return res.status(404).json({ error: 'Material not found' });
+res.json(mat);
+} catch (err) {
+console.error('getMaterialById:', err);
+res.status(500).json({ error: 'Failed to fetch material' });
+}
+};
+
+
+exports.updateMaterial = async (req, res) => {
+try {
+const { id } = req.params;
+const mat = await Material.findByPk(id);
+if (!mat) return res.status(404).json({ error: 'Material not found' });
+await mat.update(req.body);
+res.json(mat);
+} catch (err) {
+console.error('updateMaterial:', err);
+res.status(500).json({ error: 'Failed to update material' });
+}
+};
+
+
+exports.deleteMaterial = async (req, res) => {
+try {
+const { id } = req.params;
+await Material.destroy({ where: { id } });
+res.json({ message: 'Deleted' });
+} catch (err) {
+console.error('deleteMaterial:', err);
+res.status(500).json({ error: 'Failed to delete' });
+}
+};
+</file>
+
+<file path="src/controllers/materialGroupController.js">
+// src/controllers/materialGroupController.js
+const { MaterialGroup, Material } = require('../models');
+
+
+exports.createGroup = async (req, res) => {
+try {
+const g = await MaterialGroup.create(req.body);
+res.status(201).json(g);
+} catch (err) {
+console.error('createGroup:', err);
+res.status(500).json({ error: 'Failed to create group' });
+}
+};
+
+
+exports.getGroups = async (req, res) => {
+try {
+const groups = await MaterialGroup.findAll({ include: [{ model: Material, as: 'materials' }] });
+res.json({ groups });
+} catch (err) {
+console.error('getGroups:', err);
+res.status(500).json({ error: 'Failed to fetch groups' });
+}
+};
+
+
+exports.assignMaterial = async (req, res) => {
+try {
+const { materialId } = req.body;
+const { id: groupId } = req.params;
+const group = await MaterialGroup.findByPk(groupId);
+if (!group) return res.status(404).json({ error: 'Group not found' });
+const mat = await Material.findByPk(materialId);
+if (!mat) return res.status(404).json({ error: 'Material not found' });
+await mat.update({ materialGroupId: groupId });
+res.json({ message: 'Assigned', material: mat });
+} catch (err) {
+console.error('assignMaterial:', err);
+res.status(500).json({ error: 'Failed to assign' });
+}
+};
+</file>
+
 <file path="src/controllers/messageController.js">
 const { Message, User, Notification } = require("../models");
 const { Op } = require("sequelize");
@@ -2642,6 +2766,106 @@ exports.markAsRead = async (req, res) => {
     console.error('Mark notification read error:', err);
     res.status(500).json({ error: 'Failed to update notification' });
   }
+};
+</file>
+
+<file path="src/controllers/orderController.js">
+// src/controllers/orderController.js
+// src/controllers/orderController.js
+const { Order, OrderItem, Material, Dealer, sequelize } = require('../models');
+
+
+exports.placeOrder = async (req, res) => {
+const t = await sequelize.transaction();
+try {
+const dealerId = req.user?.dealerId || req.body.dealerId;
+if (!dealerId) return res.status(400).json({ error: 'Missing dealerId' });
+const { items = [], notes } = req.body;
+if (!items.length) return res.status(400).json({ error: 'No items' });
+
+
+let total = 0;
+for (const it of items) {
+const mat = await Material.findByPk(it.materialId);
+if (!mat) {
+await t.rollback();
+return res.status(404).json({ error: `Material ${it.materialId} not found` });
+}
+total += Number(it.qty) * Number(it.unitPrice || 0);
+}
+
+
+const order = await Order.create({
+dealerId,
+orderNumber: `ORD-${Date.now()}`,
+status: 'Pending',
+totalAmount: total,
+notes
+}, { transaction: t });
+
+
+for (const it of items) {
+const lineTotal = Number(it.qty) * Number(it.unitPrice || 0);
+await OrderItem.create({ orderId: order.id, materialId: it.materialId, qty: it.qty, unitPrice: it.unitPrice, lineTotal }, { transaction: t });
+}
+
+
+// optional notifications: implement as you like (email, socket, notification table)
+
+
+await t.commit();
+res.status(201).json({ orderId: order.id, orderNumber: order.orderNumber });
+} catch (err) {
+await t.rollback();
+console.error('placeOrder:', err);
+res.status(500).json({ error: 'Failed to place order', details: err.message });
+}
+};
+
+
+exports.getOrdersForDealer = async (req, res) => {
+try {
+const where = {};
+if (req.user?.role === 'dealer') where.dealerId = req.user.dealerId;
+const orders = await Order.findAll({ where, include: [{ model: OrderItem, as: 'items', include: [{ model: Material, as: 'material' }] }], order: [['createdAt','DESC']] });
+res.json({ orders });
+} catch (err) {
+console.error('getOrdersForDealer:', err);
+res.status(500).json({ error: 'Failed to fetch orders' });
+}
+};
+
+
+exports.updateOrderStatus = async (req, res) => {
+const t = await sequelize.transaction();
+try {
+const { id } = req.params;
+const { status } = req.body;
+const order = await Order.findByPk(id, { include: [{ model: OrderItem, as: 'items' }] });
+if (!order) return res.status(404).json({ error: 'Order not found' });
+order.status = status;
+await order.save({ transaction: t });
+
+
+// If moving to "Shipped" or "Processing" update material stock
+if (['Shipped','Processing'].includes(status)) {
+for (const item of order.items) {
+const mat = await Material.findByPk(item.materialId);
+if (mat) {
+mat.stock = Math.max(0, (mat.stock || 0) - item.qty);
+await mat.save({ transaction: t });
+}
+}
+}
+
+
+await t.commit();
+res.json({ order });
+} catch (err) {
+await t.rollback();
+console.error('updateOrderStatus:', err);
+res.status(500).json({ error: 'Failed to update status' });
+}
 };
 </file>
 
@@ -4229,66 +4453,63 @@ module.exports = (sequelize, DataTypes) => {
 </file>
 
 <file path="src/models/Document.js">
-const { DataTypes } = require('sequelize');
-
 module.exports = (sequelize, DataTypes) => {
+  const Document = sequelize.define(
+    "Document",
+    {
+      id: {
+        type: DataTypes.UUID,
+        defaultValue: DataTypes.UUIDV4,
+        primaryKey: true,
+      },
 
-  const Document = sequelize.define('Document', {
-    id: {
-      type: DataTypes.UUID,
-      defaultValue: DataTypes.UUIDV4,
-      primaryKey: true
-    },
-    documentType: {
-      type: DataTypes.ENUM('statement', 'certificate', 'invoice', 'credit_note', 'debit_note', 'other'),
-      allowNull: false
-    },
-    documentName: {
-      type: DataTypes.STRING,
-      allowNull: false
-    },
-    filePath: {
-      type: DataTypes.STRING,
-      allowNull: false
-    },
-    fileSize: {
-      type: DataTypes.INTEGER
-    },
-    mimeType: {
-      type: DataTypes.STRING
-    },
-    uploadedBy: {
-      type: DataTypes.STRING
-    },
-    description: {
-      type: DataTypes.TEXT
-    },
-  // add to Document model definition
-status: {
-  type: DataTypes.ENUM('pending', 'approved', 'rejected'),
-  defaultValue: 'pending'
-},
-approvedBy: {
-  type: DataTypes.UUID, // user id who approved/rejected
-  allowNull: true
-},
-approvedAt: {
-  type: DataTypes.DATE,
-  allowNull: true
-},
-rejectionReason: {
-  type: DataTypes.TEXT,
-  allowNull: true
-},
+      dealerId: {
+        type: DataTypes.UUID,
+        allowNull: false,
+      },
 
+      documentType: {
+        type: DataTypes.ENUM(
+          "statement",
+          "certificate",
+          "invoice",
+          "credit_note",
+          "debit_note",
+          "other"
+        ),
+        allowNull: false,
+      },
 
-    sapDocumentId: {
-      type: DataTypes.STRING
+      documentName: { type: DataTypes.STRING, allowNull: false },
+      filePath: { type: DataTypes.STRING, allowNull: false },
+      fileSize: DataTypes.INTEGER,
+      mimeType: DataTypes.STRING,
+      uploadedBy: DataTypes.STRING,
+      description: DataTypes.TEXT,
+
+      status: {
+        type: DataTypes.ENUM("pending", "approved", "rejected"),
+        defaultValue: "pending",
+      },
+      approvedBy: { type: DataTypes.UUID },
+      approvedAt: { type: DataTypes.DATE },
+      rejectionReason: { type: DataTypes.TEXT },
+
+      sapDocumentId: { type: DataTypes.STRING },
+    },
+    {
+      timestamps: true,
+      tableName: "documents",
     }
-  }, {
-    timestamps: true
-  },
-);
+  );
+
+  Document.associate = (models) => {
+    Document.belongsTo(models.Dealer, {
+      foreignKey: "dealerId",
+      as: "dealer",
+      onDelete: "CASCADE",
+    });
+  };
 
   return Document;
 };
@@ -4388,70 +4609,134 @@ module.exports = (sequelize, DataTypes) => {
 </file>
 
 <file path="src/models/Invoice.js">
-const { DataTypes } = require('sequelize');
 module.exports = (sequelize, DataTypes) => {
+  const Invoice = sequelize.define(
+    "Invoice",
+    {
+      id: {
+        type: DataTypes.UUID,
+        defaultValue: DataTypes.UUIDV4,
+        primaryKey: true,
+      },
 
-  const Invoice = sequelize.define('Invoice', {
+      dealerId: {
+        type: DataTypes.UUID,
+        allowNull: false,
+      },
+
+      invoiceNumber: { type: DataTypes.STRING, allowNull: false, unique: true },
+      invoiceDate: { type: DataTypes.DATE, allowNull: false },
+      dueDate: DataTypes.DATE,
+
+      amount: { type: DataTypes.DECIMAL(15, 2), allowNull: false },
+      taxAmount: { type: DataTypes.DECIMAL(15, 2), defaultValue: 0 },
+      totalAmount: { type: DataTypes.DECIMAL(15, 2), allowNull: false },
+
+      paidAmount: { type: DataTypes.DECIMAL(15, 2), defaultValue: 0 },
+      balanceAmount: DataTypes.DECIMAL(15, 2),
+
+      status: {
+        type: DataTypes.ENUM("paid", "unpaid", "partial", "overdue"),
+        defaultValue: "unpaid",
+      },
+
+      productGroup: DataTypes.STRING,
+      description: DataTypes.TEXT,
+      pdfPath: DataTypes.STRING,
+      sapDocumentNumber: DataTypes.STRING,
+      paymentDate: DataTypes.DATE,
+    },
+    {
+      timestamps: true,
+      tableName: "invoices",
+    }
+  );
+
+  Invoice.associate = (models) => {
+    Invoice.belongsTo(models.Dealer, {
+      foreignKey: "dealerId",
+      as: "dealer",
+      onDelete: "CASCADE",
+    });
+  };
+
+  return Invoice;
+};
+</file>
+
+<file path="src/models/Material.js">
+// src/models/Material.js
+module.exports = (sequelize, DataTypes) => {
+  const Material = sequelize.define('Material', {
     id: {
       type: DataTypes.UUID,
       defaultValue: DataTypes.UUIDV4,
       primaryKey: true
     },
-    invoiceNumber: {
+    materialNumber: {
       type: DataTypes.STRING,
       allowNull: false,
       unique: true
     },
-    invoiceDate: {
-      type: DataTypes.DATE,
+    name: {
+      type: DataTypes.STRING,
       allowNull: false
-    },
-    dueDate: {
-      type: DataTypes.DATE
-    },
-    amount: {
-      type: DataTypes.DECIMAL(15, 2),
-      allowNull: false
-    },
-    taxAmount: {
-      type: DataTypes.DECIMAL(15, 2),
-      defaultValue: 0
-    },
-    totalAmount: {
-      type: DataTypes.DECIMAL(15, 2),
-      allowNull: false
-    },
-    paidAmount: {
-      type: DataTypes.DECIMAL(15, 2),
-      defaultValue: 0
-    },
-    balanceAmount: {
-      type: DataTypes.DECIMAL(15, 2)
-    },
-    status: {
-      type: DataTypes.ENUM('paid', 'unpaid', 'partial', 'overdue'),
-      defaultValue: 'unpaid'
-    },
-    productGroup: {
-      type: DataTypes.STRING
     },
     description: {
       type: DataTypes.TEXT
     },
-    pdfPath: {
+    uom: {
       type: DataTypes.STRING
     },
-    sapDocumentNumber: {
+    plant: {
       type: DataTypes.STRING
     },
-    paymentDate: {
-      type: DataTypes.DATE
+    stock: {
+      type: DataTypes.INTEGER,
+      defaultValue: 0
+    },
+    materialGroupId: {
+      type: DataTypes.UUID,
+      allowNull: true
     }
   }, {
+    tableName: 'materials',
     timestamps: true
   });
 
-  return Invoice;
+  Material.associate = (models) => {
+    Material.belongsTo(models.MaterialGroup, { as: 'group', foreignKey: 'materialGroupId' });
+  };
+
+  return Material;
+};
+</file>
+
+<file path="src/models/MaterialGroup.js">
+// src/models/MaterialGroup.js
+module.exports = (sequelize, DataTypes) => {
+const MaterialGroup = sequelize.define('MaterialGroup', {
+id: {
+  type: DataTypes.UUID,
+  defaultValue: DataTypes.UUIDV4,
+  primaryKey: true
+}
+,
+code: { type: DataTypes.STRING, allowNull: false, unique: true },
+name: { type: DataTypes.STRING, allowNull: false },
+description: { type: DataTypes.TEXT, allowNull: true }
+}, {
+tableName: 'material_groups',
+timestamps: true
+});
+
+
+MaterialGroup.associate = (models) => {
+MaterialGroup.hasMany(models.Material, { as: 'materials', foreignKey: 'materialGroupId' });
+};
+
+
+return MaterialGroup;
 };
 </file>
 
@@ -4542,6 +4827,109 @@ module.exports = (sequelize, DataTypes) => {
   });
 
   return Notification;
+};
+</file>
+
+<file path="src/models/Order.js">
+// src/models/Order.js
+module.exports = (sequelize, DataTypes) => {
+  const Order = sequelize.define('Order', {
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true
+    },
+    dealerId: {
+      type: DataTypes.UUID,   // FIXED HERE
+      allowNull: false
+    },
+    orderNumber: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      unique: true
+    },
+    status: {
+      type: DataTypes.ENUM(
+        'Pending',
+        'Approved',
+        'Rejected',
+        'Processing',
+        'Shipped',
+        'Delivered',
+        'Cancelled'
+      ),
+      defaultValue: 'Pending'
+    },
+    totalAmount: {
+      type: DataTypes.DECIMAL(12, 2),
+      defaultValue: 0
+    },
+    notes: {
+      type: DataTypes.TEXT
+    }
+  }, {
+    tableName: 'orders',
+    timestamps: true
+  });
+
+  Order.associate = (models) => {
+    Order.belongsTo(models.Dealer, {
+      as: 'dealer',
+      foreignKey: 'dealerId'
+    });
+    Order.hasMany(models.OrderItem, {
+      as: 'items',
+      foreignKey: 'orderId'
+    });
+  };
+
+  return Order;
+};
+</file>
+
+<file path="src/models/OrderItem.js">
+// src/models/OrderItem.js
+module.exports = (sequelize, DataTypes) => {
+  const OrderItem = sequelize.define('OrderItem', {
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true
+    },
+    orderId: {
+      type: DataTypes.UUID,   // FIXED
+      allowNull: false
+    },
+    materialId: {
+      type: DataTypes.UUID,   // should match Material.id
+      allowNull: false
+    },
+    qty: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 1
+    },
+    unitPrice: {
+      type: DataTypes.DECIMAL(12, 2),
+      allowNull: false,
+      defaultValue: 0
+    },
+    lineTotal: {
+      type: DataTypes.DECIMAL(12, 2),
+      allowNull: false,
+      defaultValue: 0
+    }
+  }, {
+    tableName: 'order_items',
+    timestamps: true
+  });
+
+  OrderItem.associate = (models) => {
+    OrderItem.belongsTo(models.Order, { as: 'order', foreignKey: 'orderId' });
+    OrderItem.belongsTo(models.Material, { as: 'material', foreignKey: 'materialId' });
+  };
+
+  return OrderItem;
 };
 </file>
 
@@ -5293,6 +5681,35 @@ router.post('/assign-dealer', authenticate, authorize('admin','key_user'), manag
 module.exports = router;
 </file>
 
+<file path="src/routes/materialRoutes.js">
+// src/routes/materialRoutes.js
+const express = require("express");
+const router = express.Router();
+const materialController = require("../controllers/materialController");
+const materialGroupController = require("../controllers/materialGroupController");
+const { authenticate, authorize } = require("../middleware/auth");
+
+// Material Groups
+router.get("/groups", authenticate, materialGroupController.getGroups);
+
+router.post(
+  "/groups/:id/assign-material",
+  authenticate,
+  authorize("admin"),
+  materialGroupController.assignMaterial
+);
+
+// Material Master
+router.get("/", authenticate, materialController.getMaterials);
+router.get("/:id", authenticate, materialController.getMaterialById);
+router.post("/", authenticate, authorize("admin", "inventory"), materialController.createMaterial);
+router.put("/:id", authenticate, authorize("admin", "inventory"), materialController.updateMaterial);
+router.delete("/:id", authenticate, authorize("admin", "inventory"), materialController.deleteMaterial);
+router.post("/groups", authenticate, authorize("admin", "dealer", "inventory"), materialGroupController.createGroup);
+
+module.exports = router;
+</file>
+
 <file path="src/routes/messageRoutes.js">
 // routes/messageRoutes.js
 const express = require("express");
@@ -5349,6 +5766,25 @@ const { authenticate, authorize } = require('../middleware/auth');
 router.get('/manager', authenticate, authorize('tm', 'am'), getManagerNotifications);
 router.get('/', authenticate, getUserNotifications);
 router.put('/:id/read', authenticate, markAsRead);
+
+module.exports = router;
+</file>
+
+<file path="src/routes/orderRoutes.js">
+// src/routes/orderRoutes.js
+const express = require("express");
+const router = express.Router();
+const orderController = require("../controllers/orderController");
+const { authenticate, authorize } = require("../middleware/auth");
+
+// Dealer placing order
+router.post("/", authenticate, authorize("dealer"), orderController.placeOrder);
+
+// Dealer/admin getting orders
+router.get("/", authenticate, orderController.getOrdersForDealer);
+
+// Admin/manager updating order status
+router.patch("/:id/status", authenticate, authorize("admin", "manager"), orderController.updateOrderStatus);
 
 module.exports = router;
 </file>
@@ -5571,6 +6007,9 @@ app.use('/api/notifications', require('./routes/notificationRoutes'));
 app.use("/api/roles", require("./routes/roles"));
 app.use("/api/permissions", require("./routes/permissions"));
 app.use("/api", regionRoutes);
+app.use('/api/materials', require('./routes/materialRoutes'));
+app.use('/api/orders', require('./routes/orderRoutes'));
+
 
 
 

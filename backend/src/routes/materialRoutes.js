@@ -21,6 +21,6 @@ router.get("/:id", authenticate, materialController.getMaterialById);
 router.post("/", authenticate, authorize("admin", "inventory"), materialController.createMaterial);
 router.put("/:id", authenticate, authorize("admin", "inventory"), materialController.updateMaterial);
 router.delete("/:id", authenticate, authorize("admin", "inventory"), materialController.deleteMaterial);
-router.post("/groups", authenticate, authorize("admin", "dealer_admin", "inventory"), materialGroupController.createGroup);
+router.post("/groups", authenticate, authorize("admin", "dealer", "inventory"), materialGroupController.createGroup);
 
 module.exports = router;

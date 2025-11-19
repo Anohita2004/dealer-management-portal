@@ -39,6 +39,11 @@ module.exports = (sequelize, DataTypes) => {
 
   Material.associate = (models) => {
     Material.belongsTo(models.MaterialGroup, { as: 'group', foreignKey: 'materialGroupId' });
+    Material.hasMany(models.OrderItem, {
+  as: "orderItems",
+  foreignKey: "materialId"
+});
+
   };
 
   return Material;

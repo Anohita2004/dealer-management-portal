@@ -95,3 +95,70 @@ console.error('updateOrderStatus:', err);
 res.status(500).json({ error: 'Failed to update status' });
 }
 };
+exports.approveOrder = async (req, res) => {
+  const order = await Order.findByPk(req.params.id);
+  if (!order) return res.status(404).json({ error: "Order not found" });
+
+  order.status = "Approved";
+  await order.save();
+
+  res.json({ message: "Order approved" });
+};
+exports.rejectOrder = async (req, res) => {
+  const { reason } = req.body;
+  const order = await Order.findByPk(req.params.id);
+  if (!order) return res.status(404).json({ error: "Order not found" });
+
+  order.status = "Rejected";
+  order.notes = reason;
+  await order.save();
+
+  res.json({ message: "Order rejected" });
+};
+exports.getMyOrders = async (req, res) => {
+  try {
+    const dealerId = req.user?.dealerId;
+
+    const orders = await Order.findAll({
+      where: { dealerId },
+      include: [
+        {
+          model: OrderItem,
+          include: [{ model: Material }]
+        }
+      ],
+      order: [["createdAt", "DESC"]],
+    });
+
+    res.json({ orders });
+  } catch (err) {
+    console.error("getMyOrders:", err);
+    res.status(500).json({ error: "Failed to load orders" });
+  }
+};
+
+exports.getAllOrders = async (req, res) => {
+  try {
+    const orders = await Order.findAll({
+      include: [
+        {
+          model: OrderItem,
+          as: "items",
+          include: [
+            { model: Material, as: "material" }
+          ]
+        },
+        {
+          model: Dealer,
+          as: "dealer"
+        }
+      ],
+      order: [["createdAt", "DESC"]]
+    });
+
+    res.json({ orders });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to load orders" });
+  }
+};
