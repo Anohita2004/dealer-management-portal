@@ -107,6 +107,7 @@ src/routes/sapRoutes.js
 src/server.js
 src/utils/jwt.js
 src/utils/seed.js
+src/utils/seedPermissions.js
 src/utils/seedProducts.js
 uploads/.gitkeep
 uploads/file-1762338158713-682306011.pdf
@@ -3484,7 +3485,8 @@ module.exports = {
 </file>
 
 <file path="src/controllers/roleController.js">
-const { Role, Permission, RolePermission } = require("../models");
+// src/controllers/roleController.js
+const { Role, Permission, RolePermission, sequelize } = require("../models");
 
 module.exports = {
   // Create Role
@@ -3496,42 +3498,93 @@ module.exports = {
 
       res.json({ message: "Role created", role });
     } catch (err) {
-      console.error(err);
+      console.error("createRole:", err);
       res.status(500).json({ error: "Failed to create role" });
     }
   },
 
-  // Get all roles (FIXED: alias 'permissions' added)
+  // Get all roles (with permissions)
   getRoles: async (req, res) => {
     try {
       const roles = await Role.findAll({
         include: [
           {
             model: Permission,
-            as: "permissions", // REQUIRED ALIAS
-            through: { attributes: [] }, // Hide junction table
+            as: "permissions",
+            through: { attributes: [] }, // hide junction table
           },
         ],
+        order: [["id", "ASC"]],
       });
 
       res.json(roles);
     } catch (err) {
-      console.error(err);
+      console.error("getRoles:", err);
       res.status(500).json({ error: "Failed to fetch roles" });
     }
   },
 
-  // Assign Permission to Role
+  // Assign a single permission to a role (keeps old behaviour but implemented safely)
   assignPermission: async (req, res) => {
     try {
       const { roleId, permissionId } = req.body;
 
-      await RolePermission.create({ roleId, permissionId });
+      const role = await Role.findByPk(roleId);
+      const permission = await Permission.findByPk(permissionId);
+
+      if (!role || !permission) {
+        return res.status(404).json({ error: "Role or Permission not found" });
+      }
+
+      // Use association helper to avoid duplicates
+      await role.addPermission(permission);
 
       res.json({ message: "Permission assigned to role" });
     } catch (err) {
-      console.error(err);
+      console.error("assignPermission:", err);
       res.status(500).json({ error: "Failed to assign permission" });
+    }
+  },
+
+  // NEW: Replace all permissions for a role (atomic)
+  updateRolePermissions: async (req, res) => {
+    const t = await sequelize.transaction();
+    try {
+      const { roleId } = req.params;
+      const { permissionIds } = req.body;
+
+      if (!Array.isArray(permissionIds)) {
+        await t.rollback();
+        return res
+          .status(400)
+          .json({ error: "permissionIds must be an array of integers" });
+      }
+
+      const role = await Role.findByPk(roleId, { transaction: t });
+      if (!role) {
+        await t.rollback();
+        return res.status(404).json({ error: "Role not found" });
+      }
+
+      // Option A: Use Sequelize association helper (clean & will sync junction table)
+      // This will remove existing associations and add the provided ones.
+      await role.setPermissions(permissionIds, { transaction: t });
+
+      // Fetch updated role (with permissions)
+      const updatedRole = await Role.findByPk(roleId, {
+        include: [{ model: Permission, as: "permissions", through: { attributes: [] } }],
+        transaction: t,
+      });
+
+      await t.commit();
+      res.json({
+        message: "Permissions updated successfully",
+        role: updatedRole,
+      });
+    } catch (err) {
+      await t.rollback();
+      console.error("updateRolePermissions:", err);
+      res.status(500).json({ error: "Unable to update role permissions" });
     }
   },
 };
@@ -5413,12 +5466,17 @@ module.exports = router;
 </file>
 
 <file path="src/routes/roles.js">
+// src/routes/roles.js
 const router = require("express").Router();
 const controller = require("../controllers/roleController");
 
+// existing routes
 router.post("/", controller.createRole);
 router.get("/", controller.getRoles);
 router.post("/assign-permission", controller.assignPermission);
+
+// NEW: update permissions for a role (frontend expects this: PUT /roles/:roleId/permissions)
+router.put("/:roleId/permissions", controller.updateRolePermissions);
 
 module.exports = router;
 </file>
@@ -6005,6 +6063,151 @@ if (require.main === module) {
 }
 
 module.exports = { seedData };
+</file>
+
+<file path="src/utils/seedPermissions.js">
+// src/utils/seedPermissions.js
+// Run: node src/utils/seedPermissions.js
+
+const { sequelize, Role, Permission } = require("../models");
+
+const PERMISSIONS = [
+  // Dealer Module
+  { key: "dealer.view", description: "View dealers" },
+  { key: "dealer.create", description: "Create dealers" },
+  { key: "dealer.update", description: "Update dealers" },
+  { key: "dealer.delete", description: "Delete dealers" },
+
+  // Documents
+  { key: "document.upload", description: "Upload documents" },
+  { key: "document.verify", description: "Verify documents" },
+  { key: "document.approve", description: "Approve documents" },
+
+  // Pricing
+  { key: "pricing.view", description: "View pricing" },
+  { key: "pricing.request", description: "Request pricing change" },
+  { key: "pricing.approve", description: "Approve pricing" },
+
+  // Users / Roles / Permissions
+  { key: "users.view", description: "View user list" },
+  { key: "users.edit", description: "Edit user" },
+  { key: "users.suspend", description: "Suspend user" },
+
+  { key: "roles.view", description: "View roles" },
+  { key: "roles.create", description: "Create roles" },
+  { key: "roles.delete", description: "Delete roles" },
+  { key: "roles.assign.permissions", description: "Assign permissions to roles" },
+
+  { key: "permissions.view", description: "View permissions" },
+  { key: "permissions.assign", description: "Assign permissions (matrix) to roles" },
+
+  // Dashboard access
+  { key: "dashboard.view.superadmin", description: "View superadmin dashboard" },
+  { key: "dashboard.view.manager", description: "View manager dashboard" },
+
+  // Other
+  { key: "invoices.view", description: "View invoices" },
+  { key: "invoices.create", description: "Create invoices" },
+];
+
+const ROLES = [
+  "super_admin",
+  "technical_admin",
+  "regional_admin",
+  "regional_manager",
+  "area_manager",
+  "territory_manager",
+  "finance_admin",
+  "dealer_admin",
+  "dealer_staff",
+  "inventory_user",
+  "accounts_user",
+];
+
+const ROLE_TO_PERMS = {
+  super_admin: PERMISSIONS.map((p) => p.key), // all permissions
+  technical_admin: [
+    "permissions.view",
+    "permissions.assign",
+    "roles.view",
+    "roles.assign.permissions",
+    "users.view", // maybe they want to view users for audit
+  ],
+  regional_admin: [
+    "dealer.view",
+    "dealer.update",
+    "document.verify",
+    "roles.view",
+  ],
+  regional_manager: ["dashboard.view.manager", "dealer.view"],
+  finance_admin: ["invoices.view", "invoices.create", "pricing.view", "pricing.approve"],
+  dealer_admin: ["dealer.view", "document.upload", "document.verify"],
+  dealer_staff: ["dealer.view", "document.upload"],
+  inventory_user: ["dealer.view", "pricing.view"],
+  accounts_user: ["invoices.view", "dashboard.view.manager"],
+};
+
+async function seed() {
+  try {
+    await sequelize.authenticate();
+    console.log("✅ DB connection OK");
+
+    // Create permissions
+    const createdPermissions = {};
+    for (const p of PERMISSIONS) {
+      const [perm] = await Permission.findOrCreate({
+        where: { key: p.key },
+        defaults: { description: p.description },
+      });
+      createdPermissions[perm.key] = perm;
+    }
+    console.log(`Created/Found ${Object.keys(createdPermissions).length} permissions`);
+
+    // Create roles
+    const createdRoles = {};
+    for (const roleName of ROLES) {
+      const [role] = await Role.findOrCreate({
+        where: { name: roleName },
+      });
+      createdRoles[role.name] = role;
+    }
+    console.log(`Created/Found ${Object.keys(createdRoles).length} roles`);
+
+    // Assign permissions
+    for (const [roleName, permKeys] of Object.entries(ROLE_TO_PERMS)) {
+      const role = createdRoles[roleName];
+      if (!role) {
+        console.warn(`Role ${roleName} not found, skipping mapping`);
+        continue;
+      }
+
+      // Map permission keys to ids
+      const permIds = permKeys
+        .map((k) => createdPermissions[k])
+        .filter(Boolean)
+        .map((p) => p.id);
+
+      // setPermissions replaces current permissions with new ones
+      await role.setPermissions(permIds);
+      console.log(`Mapped ${permIds.length} perms -> ${roleName}`);
+    }
+
+    // For super_admin ensure it has ALL permissions
+    if (createdRoles.super_admin) {
+      const allIds = Object.values(createdPermissions).map((p) => p.id);
+      await createdRoles.super_admin.setPermissions(allIds);
+      console.log(`Granted all permissions to super_admin`);
+    }
+
+    console.log("✅ Seeding finished");
+    process.exit(0);
+  } catch (err) {
+    console.error("Seeding error:", err);
+    process.exit(1);
+  }
+}
+
+seed();
 </file>
 
 <file path="src/utils/seedProducts.js">

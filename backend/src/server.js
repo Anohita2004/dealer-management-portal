@@ -72,6 +72,9 @@ app.use('/api/notifications', require('./routes/notificationRoutes'));
 app.use("/api/roles", require("./routes/roles"));
 app.use("/api/permissions", require("./routes/permissions"));
 app.use("/api", regionRoutes);
+app.use('/api/materials', require('./routes/materialRoutes'));
+app.use('/api/orders', require('./routes/orderRoutes'));
+
 
 
 

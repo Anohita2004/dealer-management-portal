@@ -1,0 +1,45 @@
+// src/models/Material.js
+module.exports = (sequelize, DataTypes) => {
+  const Material = sequelize.define('Material', {
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true
+    },
+    materialNumber: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      unique: true
+    },
+    name: {
+      type: DataTypes.STRING,
+      allowNull: false
+    },
+    description: {
+      type: DataTypes.TEXT
+    },
+    uom: {
+      type: DataTypes.STRING
+    },
+    plant: {
+      type: DataTypes.STRING
+    },
+    stock: {
+      type: DataTypes.INTEGER,
+      defaultValue: 0
+    },
+    materialGroupId: {
+      type: DataTypes.UUID,
+      allowNull: true
+    }
+  }, {
+    tableName: 'materials',
+    timestamps: true
+  });
+
+  Material.associate = (models) => {
+    Material.belongsTo(models.MaterialGroup, { as: 'group', foreignKey: 'materialGroupId' });
+  };
+
+  return Material;
+};
