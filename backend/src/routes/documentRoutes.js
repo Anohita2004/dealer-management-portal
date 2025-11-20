@@ -7,7 +7,7 @@ router.get('/', authenticate, documentController.getAllDocuments);
 router.post('/', authenticate, documentController.upload.single('file'), documentController.uploadDocument);
 router.get('/:id/download', authenticate, documentController.downloadDocument);
 router.delete('/:id', authenticate, documentController.deleteDocument);
-router.patch('/:id/status', authenticate, authorize('admin','tm','am'), documentController.approveDocument);
+router.patch('/:id/status', authenticate, authorize('super_admin','tm','am'), documentController.approveDocument);
 router.get("/manager",authenticate,authorize("tm", "am", "sm"),documentController.getManagerDocuments);
 
 

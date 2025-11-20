@@ -17,13 +17,13 @@ router.get("/admin-summary",
 router.get(
   "/pending-approvals",
   authenticate,
-  authorize("tm", "am", "admin"),
+  authorize("tm", "am", "super_admin"),
   reportController.getPendingApprovals
 );
 router.get(
   "/regional-sales-summary",
   authenticate,
-  authorize("admin", "am", "tm"),
+  authorize("super_admin", "am", "tm"),
   reportController.getRegionalSalesSummary
 );
 

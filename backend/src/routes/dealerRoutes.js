@@ -48,9 +48,9 @@ router.get(
 
 // 🧩 Dealer by ID (keep this at the bottom)
 router.get('/:id', authenticate, dealerController.getDealerById);
-router.post('/', authenticate, authorize('admin', 'key_user'), dealerController.createDealer);
-router.put('/:id', authenticate, authorize('admin', 'key_user'), dealerController.updateDealer);
-router.put('/:id/block', authenticate, authorize('admin'), dealerController.blockDealer);
-router.put('/:id/verify', authenticate, authorize('admin', 'key_user'), dealerController.verifyDealer);
+router.post('/', authenticate, authorize('super_admin', 'key_user'), dealerController.createDealer);
+router.put('/:id', authenticate, authorize('super_admin', 'key_user'), dealerController.updateDealer);
+router.put('/:id/block', authenticate, authorize('super_admin'), dealerController.blockDealer);
+router.put('/:id/verify', authenticate, authorize('super_admin', 'key_user'), dealerController.verifyDealer);
 
 module.exports = router;

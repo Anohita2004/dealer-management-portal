@@ -13,6 +13,6 @@ router.get('/pricing', authenticate, authorize('tm','am','sm'), managerCtrl.getP
 router.patch('/pricing/:id/forward', authenticate, authorize('tm','am','sm'), managerCtrl.forwardPricingToAdmin);
 
 // Assign (admin or key_user)
-router.post('/assign-dealer', authenticate, authorize('admin','key_user'), managerCtrl.assignDealerToManager);
+router.post('/assign-dealer', authenticate, authorize('super_admin','key_user'), managerCtrl.assignDealerToManager);
 
 module.exports = router;
