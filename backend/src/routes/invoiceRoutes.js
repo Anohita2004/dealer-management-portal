@@ -6,7 +6,9 @@ const { authenticate, authorize } = require('../middleware/auth');
 router.get('/', authenticate, invoiceController.getAllInvoices);
 router.get('/:id', authenticate, invoiceController.getInvoiceById);
 router.get('/:id/pdf', authenticate, invoiceController.generateInvoicePDF);
-router.post('/', authenticate, authorize('admin', 'key_user'), invoiceController.createInvoice);
+// Allow dealer_staff to request/create invoices for approved orders;
+// controller will enforce order ownership and approved status checks.
+router.post('/', authenticate, authorize('admin', 'key_user', 'dealer_staff'), invoiceController.createInvoice);
 router.put('/:id', authenticate, authorize('admin', 'key_user'), invoiceController.updateInvoice);
 
 module.exports = router;

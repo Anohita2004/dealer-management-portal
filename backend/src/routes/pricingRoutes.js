@@ -19,7 +19,7 @@ router.post(
 router.get(
   "/",
   authenticate,
-  authorize("admin", "am", "tm", "dealer"),
+  authorize("admin", "am", "tm", "dealer_admin"),
   pricingController.getPricingUpdates
 );
 
