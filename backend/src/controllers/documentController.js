@@ -1,8 +1,9 @@
-const { Document, Dealer, AuditLog } = require('../models');
+const { Document, Dealer, AuditLog, Notification } = require('../models');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
+// ========================= Multer Storage Config =========================
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const uploadPath = path.join(__dirname, '../../uploads');
@@ -12,25 +13,24 @@ const storage = multer.diskStorage({
     cb(null, uploadPath);
   },
   filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
     cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
-  }
+  },
 });
 
 const upload = multer({
-  storage: storage,
-  limits: { fileSize: 10 * 1024 * 1024 },
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
   fileFilter: (req, file, cb) => {
     const allowedTypes = /pdf|doc|docx|jpg|jpeg|png/;
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
     const mimetype = allowedTypes.test(file.mimetype);
-    if (mimetype && extname) {
-      return cb(null, true);
-    }
-    cb(new Error('Only PDF, DOC, DOCX, JPG, JPEG, PNG files are allowed'));
-  }
+    if (mimetype && extname) cb(null, true);
+    else cb(new Error('Only PDF, DOC, DOCX, JPG, JPEG, PNG files are allowed'));
+  },
 });
 
+// ========================= Get All Documents =========================
 const getAllDocuments = async (req, res) => {
   try {
     const { page = 1, limit = 10, dealerId, documentType } = req.query;
@@ -39,24 +39,21 @@ const getAllDocuments = async (req, res) => {
     const where = {};
     if (dealerId) where.dealerId = dealerId;
     if (documentType) where.documentType = documentType;
-
-    if (req.user.role === 'dealer') {
-      where.dealerId = req.user.dealerId;
-    }
+    if (req.user.role === 'dealer') where.dealerId = req.user.dealerId;
 
     const { count, rows } = await Document.findAndCountAll({
       where,
       include: [{ model: Dealer, as: 'dealer' }],
       limit: parseInt(limit),
       offset: parseInt(offset),
-      order: [['createdAt', 'DESC']]
+      order: [['createdAt', 'DESC']],
     });
 
     res.json({
       documents: rows,
       total: count,
       page: parseInt(page),
-      totalPages: Math.ceil(count / limit)
+      totalPages: Math.ceil(count / limit),
     });
   } catch (error) {
     console.error('Get documents error:', error);
@@ -64,11 +61,10 @@ const getAllDocuments = async (req, res) => {
   }
 };
 
+// ========================= Upload Document =========================
 const uploadDocument = async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
-    }
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
     const { documentType, description, dealerId } = req.body;
 
@@ -80,7 +76,7 @@ const uploadDocument = async (req, res) => {
       mimeType: req.file.mimetype,
       uploadedBy: req.user.username,
       description,
-      dealerId: req.user.role === 'dealer' ? req.user.dealerId : dealerId
+      dealerId: req.user.role === 'dealer' ? req.user.dealerId : dealerId,
     });
 
     await AuditLog.create({
@@ -90,8 +86,33 @@ const uploadDocument = async (req, res) => {
       entityId: document.id,
       changes: { documentName: req.file.originalname, documentType },
       ipAddress: req.ip,
-      userAgent: req.headers['user-agent']
+      userAgent: req.headers['user-agent'],
     });
+
+    // ✅ Notify managers (real-time + persistent)
+    const io = req.app.get('io');
+    if (io) {
+      io.to('role:tm').emit('document:new', { dealerId: document.dealerId });
+      io.to('role:am').emit('document:new', { dealerId: document.dealerId });
+    }
+
+    // 🔔 Create notification entry for managers
+    await Notification.create({
+      senderId: req.user.id,
+      recipientRole: 'tm',
+      title: 'New Document Uploaded',
+      message: `${req.user.username} uploaded "${document.documentName}".`,
+      type: 'document',
+      relatedId: document.id,
+    });
+
+    if (io) {
+      io.to('role:tm').emit('notification', {
+        title: 'New Document Uploaded',
+        message: `${req.user.username} uploaded "${document.documentName}".`,
+        type: 'document',
+      });
+    }
 
     res.status(201).json(document);
   } catch (error) {
@@ -100,24 +121,17 @@ const uploadDocument = async (req, res) => {
   }
 };
 
+// ========================= Download Document =========================
 const downloadDocument = async (req, res) => {
   try {
     const { id } = req.params;
     const where = { id };
-
-    if (req.user.role === 'dealer') {
-      where.dealerId = req.user.dealerId;
-    }
+    if (req.user.role === 'dealer') where.dealerId = req.user.dealerId;
 
     const document = await Document.findOne({ where });
-
-    if (!document) {
-      return res.status(404).json({ error: 'Document not found' });
-    }
-
-    if (!fs.existsSync(document.filePath)) {
+    if (!document) return res.status(404).json({ error: 'Document not found' });
+    if (!fs.existsSync(document.filePath))
       return res.status(404).json({ error: 'File not found on server' });
-    }
 
     await AuditLog.create({
       userId: req.user.id,
@@ -125,7 +139,7 @@ const downloadDocument = async (req, res) => {
       entity: 'Document',
       entityId: document.id,
       ipAddress: req.ip,
-      userAgent: req.headers['user-agent']
+      userAgent: req.headers['user-agent'],
     });
 
     res.download(document.filePath, document.documentName);
@@ -135,19 +149,14 @@ const downloadDocument = async (req, res) => {
   }
 };
 
+// ========================= Delete Document =========================
 const deleteDocument = async (req, res) => {
   try {
     const { id } = req.params;
     const document = await Document.findByPk(id);
+    if (!document) return res.status(404).json({ error: 'Document not found' });
 
-    if (!document) {
-      return res.status(404).json({ error: 'Document not found' });
-    }
-
-    if (fs.existsSync(document.filePath)) {
-      fs.unlinkSync(document.filePath);
-    }
-
+    if (fs.existsSync(document.filePath)) fs.unlinkSync(document.filePath);
     await document.destroy();
 
     await AuditLog.create({
@@ -156,7 +165,7 @@ const deleteDocument = async (req, res) => {
       entity: 'Document',
       entityId: document.id,
       ipAddress: req.ip,
-      userAgent: req.headers['user-agent']
+      userAgent: req.headers['user-agent'],
     });
 
     res.json({ message: 'Document deleted successfully' });
@@ -166,10 +175,97 @@ const deleteDocument = async (req, res) => {
   }
 };
 
+// ========================= Approve / Reject Document =========================
+const approveDocument = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { action, reason } = req.body;
+    if (!['approve', 'reject'].includes(action))
+      return res.status(400).json({ error: 'Invalid action' });
+
+    const document = await Document.findByPk(id);
+    if (!document) return res.status(404).json({ error: 'Document not found' });
+
+    document.status = action === 'approve' ? 'approved' : 'rejected';
+    document.approvedBy = req.user.id;
+    document.approvedAt = new Date();
+    document.rejectionReason = action === 'reject' ? reason : null;
+    await document.save();
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: action === 'approve' ? 'APPROVE_DOCUMENT' : 'REJECT_DOCUMENT',
+      entity: 'Document',
+      entityId: document.id,
+      changes: { status: document.status, reason },
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    // ✅ Notify dealer in DB + via socket
+    const io = req.app.get('io');
+
+    await Notification.create({
+      senderId: req.user.id,
+      recipientId: document.dealerId,
+      title: `Document ${document.status}`,
+      message:
+        document.status === 'approved'
+          ? `Your document "${document.documentName}" was approved by ${req.user.username}.`
+          : `Your document "${document.documentName}" was rejected. Reason: ${document.rejectionReason || 'N/A'}.`,
+      type: 'document',
+      relatedId: document.id,
+    });
+
+    if (io) {
+      io.to(`user:${document.dealerId}`).emit('notification', {
+        title: `Document ${document.status}`,
+        message:
+          document.status === 'approved'
+            ? `✅ "${document.documentName}" approved`
+            : `❌ "${document.documentName}" rejected`,
+        type: 'document',
+      });
+
+      io.to('role:tm').emit('document:pending:update');
+      io.to('role:am').emit('document:pending:update');
+    }
+
+    res.json({ message: `Document ${document.status}`, document });
+  } catch (err) {
+    console.error('Approve document error:', err);
+    res.status(500).json({ error: 'Failed to update document status' });
+  }
+};
+
+const getManagerDocuments = async (req, res) => {
+  try {
+    const managerId = req.user.id;
+
+    const documents = await Document.findAll({
+      include: [
+        {
+          model: Dealer,
+          as: 'dealer',
+          where: { managerId },
+        },
+      ],
+      order: [['createdAt', 'DESC']],
+    });
+
+    res.json({ documents });
+  } catch (err) {
+    console.error('getManagerDocuments:', err);
+    res.status(500).json({ error: 'Failed to fetch documents' });
+  }
+};
+
 module.exports = {
+  upload,
   getAllDocuments,
   uploadDocument,
   downloadDocument,
   deleteDocument,
-  upload
+  approveDocument,
+  getManagerDocuments,
 };

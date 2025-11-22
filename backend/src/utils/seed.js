@@ -1,4 +1,5 @@
 const { User, Dealer, Invoice, Campaign, CreditDebitNote, AccountStatement, syncDatabase } = require('../models');
+const { Product } = require('../models');
 
 const seedData = async () => {
   try {
@@ -81,6 +82,35 @@ const seedData = async () => {
       isActive: true,
       isBlocked: false
     });
+    // PRODUCTS SEEDING
+await Product.bulkCreate([
+  {
+    name: "Cement Bag - 50kg",
+    plant: "Mumbai Plant",
+    stock: 1200,
+    uom: "Bag",
+  },
+  {
+    name: "Steel Rod - 10mm",
+    plant: "Delhi Plant",
+    stock: 800,
+    uom: "Ton",
+  },
+  {
+    name: "Paint Drum - 20L",
+    plant: "Bangalore Plant",
+    stock: 600,
+    uom: "Drum",
+  },
+  {
+    name: "Wall Putty - 40kg",
+    plant: "Chennai Plant",
+    stock: 500,
+    uom: "Bag",
+  },
+]);
+console.log("Products created successfully");
+
 
     console.log('Dealers created successfully');
 
@@ -140,6 +170,23 @@ const seedData = async () => {
       isActive: true,
       phoneNumber: '9999999997'
     });
+    const accountsUser = await User.create({
+  username: 'accounts_user',
+  email: 'accounts@dealerportal.com',
+  password: 'Accounts@123',
+  role: 'accounts',
+  isActive: true,
+  phoneNumber: '9999999996'
+});
+const inventoryUser = await User.create({
+  username: 'inventory_user',
+  email: 'inventory@dealerportal.com',
+  password: 'Inventory@123', // will be hashed automatically
+  role: 'inventory',
+  isActive: true,
+  phoneNumber: '9999999976'
+});
+
 
     console.log('Users created successfully');
 

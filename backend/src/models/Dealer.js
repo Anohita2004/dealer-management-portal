@@ -1,97 +1,117 @@
-const { DataTypes } = require('sequelize');
+module.exports = (sequelize, DataTypes) => {
+  const Dealer = sequelize.define(
+    "Dealer",
+    {
+      id: {
+        type: DataTypes.UUID,
+        defaultValue: DataTypes.UUIDV4,
+        primaryKey: true,
+      },
 
-module.exports = (sequelize) => {
-  const Dealer = sequelize.define('Dealer', {
-    id: {
-      type: DataTypes.UUID,
-      defaultValue: DataTypes.UUIDV4,
-      primaryKey: true
+      dealerCode: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        unique: true,
+      },
+
+      businessName: {
+        type: DataTypes.STRING,
+        allowNull: false,
+      },
+
+      contactPerson: DataTypes.STRING,
+      email: { type: DataTypes.STRING, validate: { isEmail: true } },
+      phoneNumber: DataTypes.STRING,
+      address: DataTypes.TEXT,
+      city: DataTypes.STRING,
+      state: DataTypes.STRING,
+      pincode: DataTypes.STRING,
+      gstNumber: DataTypes.STRING,
+      panNumber: DataTypes.STRING,
+
+      bankName: DataTypes.STRING,
+      bankAccountNumber: DataTypes.STRING,
+      bankIFSC: DataTypes.STRING,
+      paymentTerms: DataTypes.STRING,
+
+      creditLimit: { type: DataTypes.DECIMAL(15, 2), defaultValue: 0 },
+      outstandingAmount: { type: DataTypes.DECIMAL(15, 2), defaultValue: 0 },
+
+      territory: DataTypes.STRING,
+
+      // ❌ removed old 'region: DataTypes.STRING,'
+
+      sapCustomerNumber: DataTypes.STRING,
+      sapVendorNumber: DataTypes.STRING,
+
+      isActive: { type: DataTypes.BOOLEAN, defaultValue: true },
+      isBlocked: { type: DataTypes.BOOLEAN, defaultValue: false },
+      blockReason: DataTypes.TEXT,
+      isVerified: { type: DataTypes.BOOLEAN, defaultValue: false },
+
+      managerId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        comment: "User ID of TM/AM/RM managing this dealer",
+      },
+
+      licenseNumber: DataTypes.STRING,
+      licenseDocument: DataTypes.STRING,
+      verifiedBy: DataTypes.STRING,
+      verifiedAt: DataTypes.DATE,
+      licenses: DataTypes.JSON,
+
+      // ✅ REAL REGION RELATION
+      regionId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
     },
-    dealerCode: {
-      type: DataTypes.STRING,
-      allowNull: false,
-      unique: true
-    },
-    businessName: {
-      type: DataTypes.STRING,
-      allowNull: false
-    },
-    contactPerson: {
-      type: DataTypes.STRING
-    },
-    email: {
-      type: DataTypes.STRING,
-      validate: {
-        isEmail: true
-      }
-    },
-    phoneNumber: {
-      type: DataTypes.STRING
-    },
-    address: {
-      type: DataTypes.TEXT
-    },
-    city: {
-      type: DataTypes.STRING
-    },
-    state: {
-      type: DataTypes.STRING
-    },
-    pincode: {
-      type: DataTypes.STRING
-    },
-    gstNumber: {
-      type: DataTypes.STRING
-    },
-    panNumber: {
-      type: DataTypes.STRING
-    },
-    bankName: {
-      type: DataTypes.STRING
-    },
-    bankAccountNumber: {
-      type: DataTypes.STRING
-    },
-    bankIFSC: {
-      type: DataTypes.STRING
-    },
-    paymentTerms: {
-      type: DataTypes.STRING
-    },
-    creditLimit: {
-      type: DataTypes.DECIMAL(15, 2),
-      defaultValue: 0
-    },
-    outstandingAmount: {
-      type: DataTypes.DECIMAL(15, 2),
-      defaultValue: 0
-    },
-    territory: {
-      type: DataTypes.STRING
-    },
-    region: {
-      type: DataTypes.STRING
-    },
-    sapCustomerNumber: {
-      type: DataTypes.STRING
-    },
-    sapVendorNumber: {
-      type: DataTypes.STRING
-    },
-    isActive: {
-      type: DataTypes.BOOLEAN,
-      defaultValue: true
-    },
-    isBlocked: {
-      type: DataTypes.BOOLEAN,
-      defaultValue: false
-    },
-    licenses: {
-      type: DataTypes.JSON
+    {
+      timestamps: true,
+      tableName: "dealers",
+      freezeTableName: true,
     }
-  }, {
-    timestamps: true
-  });
+  );
+
+  Dealer.associate = (models) => {
+    Dealer.hasOne(models.User, {
+      foreignKey: "dealerId",
+      as: "user",
+      onDelete: "SET NULL",
+      onUpdate: "CASCADE",
+    });
+
+    Dealer.belongsTo(models.User, {
+      foreignKey: { name: "managerId", allowNull: true },
+      as: "manager",
+      onDelete: "SET NULL",
+      onUpdate: "CASCADE",
+    });
+
+    Dealer.hasMany(models.Invoice, {
+      foreignKey: "dealerId",
+      as: "invoices",
+      onDelete: "CASCADE",
+      onUpdate: "CASCADE",
+    });
+
+    Dealer.hasMany(models.Document, {
+      foreignKey: "dealerId",
+      as: "documents",
+    });
+
+    Dealer.hasMany(models.PricingUpdate, {
+      foreignKey: "dealerId",
+      as: "pricingUpdates",
+    });
+
+    // ✅ FIXED: Region relationship
+    Dealer.belongsTo(models.Region, {
+      foreignKey: "regionId",
+      as: "region",
+    });
+  };
 
   return Dealer;
 };

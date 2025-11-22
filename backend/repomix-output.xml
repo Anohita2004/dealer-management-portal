@@ -1,0 +1,6759 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+.env.example
+.gitignore
+package.json
+reports/dealer_performance.pdf
+reports/dealer_performance.xlsx
+src/config/database.js
+src/controllers/accountsController.js
+src/controllers/adminController.js
+src/controllers/authController.js
+src/controllers/campaignController.js
+src/controllers/dealerController.js
+src/controllers/documentController.js
+src/controllers/inventoryController.js
+src/controllers/invoiceController.js
+src/controllers/managerController.js
+src/controllers/materialController.js
+src/controllers/materialGroupController.js
+src/controllers/messageController.js
+src/controllers/notificationsController.js
+src/controllers/orderController.js
+src/controllers/permissionController.js
+src/controllers/pricingController.js
+src/controllers/productController.js
+src/controllers/regionController.js
+src/controllers/reportController.js
+src/controllers/roleController.js
+src/controllers/sapController.js
+src/middleware/auth.js
+src/middleware/checkPermission.js
+src/middleware/checkRole.js
+src/models/AccountStatement.js
+src/models/AuditLog.js
+src/models/Campaign.js
+src/models/CreditDebitNote.js
+src/models/Dealer.js
+src/models/Document.js
+src/models/index.js
+src/models/Inventory.js
+src/models/Invoice.js
+src/models/Material.js
+src/models/MaterialGroup.js
+src/models/Message.js
+src/models/Notification.js
+src/models/Order.js
+src/models/OrderItem.js
+src/models/Permission.js
+src/models/PricingUpdate.js
+src/models/Product.js
+src/models/Region.js
+src/models/Role.js
+src/models/RolePermission.js
+src/models/SalesGroup.js
+src/models/User.js
+src/routes/accountsRoutes.js
+src/routes/adminRoutes.js
+src/routes/authRoutes.js
+src/routes/campaignRoutes.js
+src/routes/dealerRoutes.js
+src/routes/documentRoutes.js
+src/routes/inventoryRoutes.js
+src/routes/invoiceRoutes.js
+src/routes/managerRoutes.js
+src/routes/materialRoutes.js
+src/routes/messageRoutes.js
+src/routes/notificationRoutes.js
+src/routes/orderRoutes.js
+src/routes/permissions.js
+src/routes/pricingRoutes.js
+src/routes/productRoutes.js
+src/routes/regionRoutes.js
+src/routes/reportRoutes.js
+src/routes/roles.js
+src/routes/sapRoutes.js
+src/server.js
+src/utils/jwt.js
+src/utils/seed.js
+src/utils/seedPermissions.js
+src/utils/seedProducts.js
+uploads/.gitkeep
+uploads/file-1762338158713-682306011.pdf
+uploads/file-1762510898999-103755803.pdf
+uploads/file-1762847371155-766543299.pdf
+uploads/file-1762847407845-983356133.pdf
+uploads/file-1762848269711-43415571.pdf
+uploads/file-1762859650179-48691705.pdf
+uploads/invoice-INV-2024-002.pdf
+uploads/invoice-INV-2024-004.pdf
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path=".env.example">
+# Server Configuration
+PORT=3000
+NODE_ENV=development
+
+# Database Configuration
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=dealer_portal
+DB_USER=postgres
+DB_PASSWORD=postgres
+
+# JWT Configuration
+JWT_SECRET=your-secret-key-change-in-production
+JWT_EXPIRE=24h
+
+# OTP Configuration
+OTP_EXPIRE_MINUTES=10
+
+# Email Configuration (for OTP)
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_USER=your-email@gmail.com
+EMAIL_PASSWORD=your-email-password
+
+# SAP Integration
+SAP_BASE_URL=http://localhost:8080/sap
+SAP_CLIENT=100
+SAP_USERNAME=sapuser
+SAP_PASSWORD=sappassword
+
+# File Upload
+MAX_FILE_SIZE=10485760
+UPLOAD_PATH=./uploads
+
+# Security
+RATE_LIMIT_WINDOW_MS=900000
+RATE_LIMIT_MAX_REQUESTS=100
+
+# CORS
+CORS_ORIGIN=http://localhost:8080
+</file>
+
+<file path=".gitignore">
+.github/instructions/kluster-code-verify.instructions.md
+.kluster
+</file>
+
+<file path="package.json">
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "exceljs": "^4.4.0",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.1.0",
+    "express-validator": "^7.3.0",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.1",
+    "multer": "^2.0.2",
+    "nodemailer": "^7.0.10",
+    "pdfkit": "^0.17.2",
+    "pg": "^8.16.3",
+    "pg-hstore": "^2.3.4",
+    "sequelize": "^6.37.7",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1",
+    "sqlite3": "^5.1.7",
+    "winston": "^3.18.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  }
+}
+</file>
+
+<file path="src/config/database.js">
+const { Sequelize } = require('sequelize');
+require('dotenv').config();
+
+const sequelize = new Sequelize(
+  process.env.DB_NAME,
+  process.env.DB_USER,
+  process.env.DB_PASSWORD,
+  {
+    host: process.env.DB_HOST,
+    port: process.env.DB_PORT,
+    dialect: 'postgres',
+    logging: false,
+    pool: {
+      max: 10,
+      min: 0,
+      acquire: 30000,
+      idle: 10000,
+    },
+  }
+);
+
+const testConnection = async () => {
+  try {
+    await sequelize.authenticate();
+    console.log('✅ PostgreSQL connection established successfully.');
+  } catch (error) {
+    console.error('❌ Unable to connect to the PostgreSQL database:', error);
+  }
+};
+
+module.exports = { sequelize, testConnection };
+</file>
+
+<file path="src/controllers/accountsController.js">
+const { AccountStatement, Invoice, CreditDebitNote } = require("../models");
+const { Op } = require("sequelize");
+
+// 📊 Summary - high level financial overview
+const getSummary = async (req, res) => {
+  try {
+    const totalInvoices = await Invoice.count();
+    const totalCredit =
+      (await CreditDebitNote.sum("amount", { where: { noteType: "credit" } })) || 0;
+    const totalDebit =
+      (await CreditDebitNote.sum("amount", { where: { noteType: "debit" } })) || 0;
+    const totalOutstanding =
+      (await Invoice.sum("balanceAmount", { where: { status: { [Op.ne]: "paid" } } })) || 0;
+
+    res.json({
+      totalInvoices,
+      totalCredit,
+      totalDebit,
+      totalOutstanding,
+    });
+  } catch (err) {
+    console.error("Error in getSummary:", err);
+    res.status(500).json({ error: "Failed to fetch summary" });
+  }
+};
+
+//
+// 🧾 INVOICES
+//
+const getInvoices = async (req, res) => {
+  try {
+    const invoices = await Invoice.findAll({
+      order: [["invoiceDate", "DESC"]],
+    });
+    res.json({ invoices });
+  } catch (err) {
+    console.error("Error in getInvoices:", err);
+    res.status(500).json({ error: "Failed to fetch invoices" });
+  }
+};
+
+const createInvoice = async (req, res) => {
+  try {
+    const invoice = await Invoice.create(req.body);
+    res.status(201).json({ message: "Invoice created", invoice });
+  } catch (err) {
+    console.error("Error in createInvoice:", err);
+    res.status(500).json({ error: "Failed to create invoice" });
+  }
+};
+
+const updateInvoice = async (req, res) => {
+  try {
+    const invoice = await Invoice.findByPk(req.params.id);
+    if (!invoice) return res.status(404).json({ error: "Invoice not found" });
+    await invoice.update(req.body);
+    res.json({ message: "Invoice updated", invoice });
+  } catch (err) {
+    console.error("Error in updateInvoice:", err);
+    res.status(500).json({ error: "Failed to update invoice" });
+  }
+};
+
+const deleteInvoice = async (req, res) => {
+  try {
+    await Invoice.destroy({ where: { id: req.params.id } });
+    res.json({ message: "Invoice deleted" });
+  } catch (err) {
+    console.error("Error in deleteInvoice:", err);
+    res.status(500).json({ error: "Failed to delete invoice" });
+  }
+};
+
+//
+// 💼 CREDIT/DEBIT NOTES
+//
+const getNotes = async (req, res) => {
+  try {
+    const notes = await CreditDebitNote.findAll({
+      order: [["noteDate", "DESC"]],
+    });
+    res.json({ notes });
+  } catch (err) {
+    console.error("Error in getNotes:", err);
+    res.status(500).json({ error: "Failed to fetch notes" });
+  }
+};
+
+const createNote = async (req, res) => {
+  try {
+    const note = await CreditDebitNote.create(req.body);
+    res.status(201).json({ message: "Note created", note });
+  } catch (err) {
+    console.error("Error in createNote:", err);
+    res.status(500).json({ error: "Failed to create note" });
+  }
+};
+
+const updateNote = async (req, res) => {
+  try {
+    const note = await CreditDebitNote.findByPk(req.params.id);
+    if (!note) return res.status(404).json({ error: "Note not found" });
+    await note.update(req.body);
+    res.json({ message: "Note updated", note });
+  } catch (err) {
+    console.error("Error in updateNote:", err);
+    res.status(500).json({ error: "Failed to update note" });
+  }
+};
+
+const deleteNote = async (req, res) => {
+  try {
+    await CreditDebitNote.destroy({ where: { id: req.params.id } });
+    res.json({ message: "Note deleted" });
+  } catch (err) {
+    console.error("Error in deleteNote:", err);
+    res.status(500).json({ error: "Failed to delete note" });
+  }
+};
+
+//
+// 📚 ACCOUNT STATEMENTS
+//
+const getStatements = async (req, res) => {
+  try {
+    const statements = await AccountStatement.findAll({
+      order: [["statementDate", "DESC"]],
+    });
+    res.json({ statements });
+  } catch (err) {
+    console.error("Error in getStatements:", err);
+    res.status(500).json({ error: "Failed to fetch statements" });
+  }
+};
+
+const createStatement = async (req, res) => {
+  try {
+    const stmt = await AccountStatement.create(req.body);
+    res.status(201).json({ message: "Statement added", stmt });
+  } catch (err) {
+    console.error("Error in createStatement:", err);
+    res.status(500).json({ error: "Failed to create statement" });
+  }
+};
+
+const updateStatement = async (req, res) => {
+  try {
+    const stmt = await AccountStatement.findByPk(req.params.id);
+    if (!stmt) return res.status(404).json({ error: "Statement not found" });
+    await stmt.update(req.body);
+    res.json({ message: "Statement updated", stmt });
+  } catch (err) {
+    console.error("Error in updateStatement:", err);
+    res.status(500).json({ error: "Failed to update statement" });
+  }
+};
+
+//
+// 🔁 RECONCILIATION (unpaid invoices)
+//
+const getReconciliation = async (req, res) => {
+  try {
+    const invoices = await Invoice.findAll({
+      where: { status: { [Op.ne]: "paid" } },
+    });
+    res.json({ pending: invoices });
+  } catch (err) {
+    console.error("Error in getReconciliation:", err);
+    res.status(500).json({ error: "Failed to fetch reconciliation" });
+  }
+};
+
+module.exports = {
+  getSummary,
+  getInvoices,
+  createInvoice,
+  updateInvoice,
+  deleteInvoice,
+  getNotes,
+  createNote,
+  updateNote,
+  deleteNote,
+  getStatements,
+  createStatement,
+  updateStatement,
+  getReconciliation,
+};
+</file>
+
+<file path="src/controllers/adminController.js">
+const { Dealer, SalesGroup, PricingUpdate, Document, User,Region, AuditLog,Role, sequelize } = require('../models');
+const { Op,fn, col, literal } = require('sequelize');
+
+// ✅ Block or unblock dealer with reason
+const blockDealer = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isBlocked, reason } = req.body;
+
+    const dealer = await Dealer.findByPk(id);
+    if (!dealer) return res.status(404).json({ error: 'Dealer not found' });
+
+    await dealer.update({ isBlocked, blockReason: reason });
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: isBlocked ? 'BLOCK_DEALER' : 'UNBLOCK_DEALER',
+      entity: 'Dealer',
+      entityId: dealer.id,
+      changes: { isBlocked, reason },
+      ipAddress: req.ip
+    });
+
+    res.json({ message: `Dealer ${isBlocked ? 'blocked' : 'unblocked'} successfully`, dealer });
+  } catch (err) {
+    console.error('blockDealer:', err);
+    res.status(500).json({ error: 'Failed to update dealer block status' });
+  }
+};
+
+// ✅ Verify onboarding & license
+const verifyDealer = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { licenseNumber, licenseDocument } = req.body;
+
+    const dealer = await Dealer.findByPk(id);
+    if (!dealer) return res.status(404).json({ error: 'Dealer not found' });
+
+    await dealer.update({
+      isVerified: true,
+      licenseNumber,
+      licenseDocument,
+      verifiedBy: req.user.username,
+      verifiedAt: new Date()
+    });
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: 'VERIFY_DEALER',
+      entity: 'Dealer',
+      entityId: dealer.id,
+      changes: { licenseNumber },
+      ipAddress: req.ip
+    });
+
+    res.json({ message: 'Dealer verified successfully', dealer });
+  } catch (err) {
+    console.error('verifyDealer:', err);
+    res.status(500).json({ error: 'Failed to verify dealer' });
+  }
+};
+
+// ✅ Merge or manage sales groups
+const mergeSalesGroups = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const { groupIds = [], newName, region, description } = req.body;
+    if (groupIds.length < 2) return res.status(400).json({ error: 'Need at least two groups to merge' });
+
+    const groups = await SalesGroup.findAll({ where: { id: groupIds }, include: ['dealers'], transaction: t });
+
+    const newGroup = await SalesGroup.create({ name: newName, region, description }, { transaction: t });
+
+    const dealerIds = [...new Set(groups.flatMap(g => g.dealers.map(d => d.id)))];
+    await newGroup.addDealers(dealerIds, { transaction: t });
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: 'MERGE_SALES_GROUPS',
+      entity: 'SalesGroup',
+      entityId: newGroup.id,
+      changes: { groupIds, mergedDealers: dealerIds },
+      ipAddress: req.ip
+    }, { transaction: t });
+
+    await t.commit();
+    res.json({ message: 'Groups merged successfully', newGroup });
+  } catch (err) {
+    await t.rollback();
+    console.error('mergeSalesGroups:', err);
+    res.status(500).json({ error: 'Failed to merge groups' });
+  }
+};
+
+// ✅ Approve or reject documents
+const reviewDocument = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { action, remarks } = req.body;
+    const document = await Document.findByPk(id);
+    if (!document) return res.status(404).json({ error: 'Document not found' });
+
+    const status = action === 'approve' ? 'approved' : 'rejected';
+    await document.update({ status, reviewRemarks: remarks, reviewedBy: req.user.username });
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: `DOCUMENT_${status.toUpperCase()}`,
+      entity: 'Document',
+      entityId: document.id,
+      changes: { status, remarks },
+      ipAddress: req.ip
+    });
+
+    res.json({ message: `Document ${status} successfully`, document });
+  } catch (err) {
+    console.error('reviewDocument:', err);
+    res.status(500).json({ error: 'Failed to review document' });
+  }
+};
+
+// ✅ Oversee pricing distribution (approve/reject updates)
+const reviewPricingUpdate = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const { id } = req.params;
+    const { action, remarks } = req.body;
+    const pricing = await PricingUpdate.findByPk(id, { transaction: t });
+    if (!pricing) return res.status(404).json({ error: 'Pricing update not found' });
+
+    const status = action === 'approve' ? 'approved' : 'rejected';
+    await pricing.update({ status, remarks, approvedBy: req.user.username, approvedAt: new Date() }, { transaction: t });
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: `PRICING_${status.toUpperCase()}`,
+      entity: 'PricingUpdate',
+      entityId: pricing.id,
+      changes: { status, remarks },
+      ipAddress: req.ip
+    }, { transaction: t });
+
+    await t.commit();
+    res.json({ message: `Pricing ${status}`, pricing });
+  } catch (err) {
+    await t.rollback();
+    console.error('reviewPricingUpdate:', err);
+    res.status(500).json({ error: 'Failed to process pricing update' });
+  }
+};
+
+// ✅ User management
+const getAllUsers = async (req, res) => {
+  try {
+    const users = await User.findAll({ order: [['createdAt', 'DESC']] });
+    res.json({ users });
+  } catch (err) {
+    console.error('getAllUsers:', err);
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+};
+const createUser = async (req, res) => {
+  try {
+    const { username, email, password, roleId, dealerId, regionId, isActive } = req.body;
+
+    // Check for duplicate email
+    const existing = await User.findOne({ where: { email } });
+    if (existing) return res.status(400).json({ error: "Email already exists" });
+
+    const user = await User.create({
+      username,
+      email,
+      password, // assuming hooks handle hashing
+      roleId,
+      dealerId: dealerId || null,
+      regionId: regionId || null,
+      isActive
+    });
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: "CREATE_USER",
+      entity: "User",
+      entityId: user.id,
+      changes: req.body,
+      ipAddress: req.ip
+    });
+
+    res.json({ message: "User created", user });
+  } catch (err) {
+    console.error("createUser:", err);
+    res.status(500).json({ error: "Failed to create user" });
+  }
+};
+const updateUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { username, email, roleId, dealerId, regionId, isActive, password } = req.body;
+
+    const user = await User.findByPk(id);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    // Prepare update payload
+    const updatePayload = {
+      username,
+      email,
+      roleId,
+      dealerId: dealerId || null,
+      regionId: regionId || null,
+      isActive
+    };
+
+    if (password && password.trim() !== "") {
+      updatePayload.password = password; // hashing handled by model hook
+    }
+
+    // ---- Update USER ----
+    await user.update(updatePayload);
+
+    // ---- NEW: Auto-update dealer region ----
+    if (dealerId && regionId) {
+      await Dealer.update(
+        { regionId },
+        { where: { id: dealerId } }
+      );
+    }
+
+    // ---- Audit Log ----
+    await AuditLog.create({
+      userId: req.user.id,
+      action: "UPDATE_USER",
+      entity: "User",
+      entityId: id,
+      changes: updatePayload,
+      ipAddress: req.ip
+    });
+
+    res.json({ message: "User updated", user });
+  } catch (err) {
+    console.error("updateUser:", err);
+    res.status(500).json({ error: "Failed to update user" });
+  }
+};
+
+
+const updateUserRole = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { role } = req.body;
+    const user = await User.findByPk(id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    await user.update({ role });
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: 'UPDATE_USER_ROLE',
+      entity: 'User',
+      entityId: user.id,
+      changes: { role },
+      ipAddress: req.ip
+    });
+
+    res.json({ message: 'User role updated', user });
+  } catch (err) {
+    console.error('updateUserRole:', err);
+    res.status(500).json({ error: 'Failed to update role' });
+  }
+};
+
+const deleteUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await User.destroy({ where: { id } });
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: 'DELETE_USER',
+      entity: 'User',
+      entityId: id,
+      ipAddress: req.ip
+    });
+
+    res.json({ message: 'User deleted successfully' });
+  } catch (err) {
+    console.error('deleteUser:', err);
+    res.status(500).json({ error: 'Failed to delete user' });
+  }
+};
+
+
+
+const getAdminReport = async (req, res) => {
+  try {
+    // ---------- KPIs ----------
+    const totalUsers = await User.count();
+    const totalRoles = await Role.count();
+    const totalDealers = await Dealer.count();
+    const totalDocuments = await Document.count();
+    const totalPricingUpdates = await PricingUpdate.count();
+
+    const pendingDocuments = await Document.count({ where: { status: "pending" } });
+    const approvedDocuments = await Document.count({ where: { status: "approved" } });
+    const rejectedDocuments = await Document.count({ where: { status: "rejected" } });
+
+    const pendingPricing = await PricingUpdate.count({ where: { status: "pending" } });
+    const approvedPricing = await PricingUpdate.count({ where: { status: "approved" } });
+    const rejectedPricing = await PricingUpdate.count({ where: { status: "rejected" } });
+
+
+    // ---------- User Growth ----------
+    const userGrowth = await User.findAll({
+      attributes: [
+        [fn("to_char", col("createdAt"), "Mon YYYY"), "month"],
+        [fn("count", col("id")), "count"],
+      ],
+      group: [literal("month")],
+      order: [[literal("month"), "ASC"]],
+      limit: 12
+    });
+
+
+    // ---------- Documents Per Month ----------
+    const docsPerMonth = await Document.findAll({
+      attributes: [
+        [fn("to_char", col("createdAt"), "Mon YYYY"), "month"],
+        [fn("count", col("id")), "count"],
+      ],
+      group: [literal("month")],
+      order: [[literal("month"), "ASC"]],
+      limit: 12
+    });
+
+// ---------- Dealer Distribution By Region ----------
+// ---------- Dealer Distribution By Region ----------
+const dealerDistribution = await Region.findAll({
+  attributes: [
+    "id",
+    "name",
+    [sequelize.fn("COUNT", sequelize.col("dealers.id")), "count"]
+  ],
+  include: [
+    {
+      model: Dealer,
+      as: "dealers",      // ⭐ ensure this matches your association alias
+      attributes: [],
+      required: false     // LEFT JOIN → includes regions with 0 dealers
+    }
+  ],
+  group: ["Region.id"],
+  order: [["name", "ASC"]]
+});
+
+// Add "Unassigned" region (dealers with null regionId)
+const unassignedDealers = await Dealer.count({ where: { regionId: null } });
+
+dealerDistribution.push({
+  id: null,
+  name: "Unassigned",
+  count: unassignedDealers
+});
+
+
+
+
+
+    // ---------- Pricing Trend ----------
+    const pricingTrend = await PricingUpdate.findAll({
+      attributes: [
+        [fn("to_char", col("createdAt"), "Mon YYYY"), "month"],
+        [fn("count", col("id")), "count"]
+      ],
+      group: [literal("month")],
+      order: [[literal("month"), "ASC"]],
+      limit: 12
+    });
+
+
+    // ---------- Recent Activity ----------
+    const recentActivity = await AuditLog.findAll({
+      limit: 10,
+      order: [["timestamp", "DESC"]],
+
+    });
+
+
+    // ---------- FINAL RESPONSE ----------
+    res.json({
+      kpis: {
+        totalUsers,
+        totalRoles,
+        totalDealers,
+        totalDocuments,
+        totalPricingUpdates,
+
+        pendingDocuments,
+        approvedDocuments,
+        rejectedDocuments,
+
+        pendingPricing,
+        approvedPricing,
+        rejectedPricing
+      },
+      charts: {
+        userGrowth,
+        docsPerMonth,
+        dealerDistribution,
+        pricingTrend
+      },
+      recentActivity
+    });
+
+  } catch (err) {
+    console.error("getAdminReport:", err);
+    res.status(500).json({ error: "Failed to generate report" });
+  }
+};
+
+const assignRegion = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { regionId } = req.body;
+
+    const dealer = await Dealer.findByPk(id);
+    if (!dealer) return res.status(404).json({ error: 'Dealer not found' });
+
+    await dealer.update({ regionId });
+
+    res.json({ message: "Region assigned successfully", dealer });
+  } catch (err) {
+    console.error("assignRegion:", err);
+    res.status(500).json({ error: "Failed to assign region" });
+  }
+};
+
+
+
+
+module.exports = {
+  blockDealer,
+  verifyDealer,
+  mergeSalesGroups,
+  reviewDocument,
+  reviewPricingUpdate,
+  getAllUsers,
+  createUser,
+  updateUser,
+  updateUserRole,
+  deleteUser,
+  getAdminReport,
+  assignRegion,
+  
+};
+</file>
+
+<file path="src/controllers/authController.js">
+const { User, Dealer, Role, AuditLog } = require("../models");
+const { generateToken } = require("../utils/jwt");
+
+// -------------------------------
+// LOGIN (Step 1 → Generate OTP)
+// -------------------------------
+const login = async (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    const user = await User.findOne({
+      where: { username },
+      include: [{ model: Role, as: "roleDetails" }]
+    });
+
+    if (!user) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    if (!user.isActive || user.isBlocked) {
+      return res.status(403).json({ error: "Account is inactive or blocked" });
+    }
+
+    const isValidPassword = await user.validatePassword(password);
+    if (!isValidPassword) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    // OTP
+    const otp = user.generateOTP();
+    await user.save();
+
+    await AuditLog.create({
+      userId: user.id,
+      action: "LOGIN_OTP_GENERATED",
+      entity: "User",
+      entityId: user.id,
+      ipAddress: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+
+    res.json({
+      message: "OTP sent successfully",
+      userId: user.id,
+      otpSent: true,
+    });
+  } catch (error) {
+    console.error("Login error:", error);
+    res.status(500).json({ error: "Login failed" });
+  }
+};
+
+// ---------------------------------
+// VERIFY OTP (Step 2 → Issue Token)
+// ---------------------------------
+const verifyOTP = async (req, res) => {
+  try {
+    const { userId, otp } = req.body;
+
+    const user = await User.findByPk(userId, {
+      include: [
+        { model: Dealer, as: "dealer" },
+        { model: Role, as: "roleDetails" }
+      ]
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    if (!user.validateOTP(otp)) {
+      return res.status(401).json({ error: "Invalid or expired OTP" });
+    }
+
+    // Clean OTP
+    user.otp = null;
+    user.otpExpiry = null;
+    user.lastLogin = new Date();
+    await user.save();
+
+    const token = generateToken(user.id, user.roleId);
+
+    await AuditLog.create({
+      userId: user.id,
+      action: "LOGIN_SUCCESS",
+      entity: "User",
+      entityId: user.id,
+      ipAddress: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        role: user.roleDetails?.name,  // 🔥 correct
+        roleId: user.roleId,
+        dealer: user.dealer,
+      },
+    });
+  } catch (error) {
+    console.error("OTP verification error:", error);
+    res.status(500).json({ error: "OTP verification failed" });
+  }
+};
+
+// -------------------------------
+// PASSWORD RESET REQUEST (OTP)
+// -------------------------------
+const resetPassword = async (req, res) => {
+  try {
+    const { username, email } = req.body;
+
+    const user = await User.findOne({ where: { username, email } });
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const otp = user.generateOTP();
+    await user.save();
+
+    await AuditLog.create({
+      userId: user.id,
+      action: "PASSWORD_RESET_REQUESTED",
+      entity: "User",
+      entityId: user.id,
+      ipAddress: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+
+    res.json({
+      message: "Password reset OTP sent",
+      userId: user.id,
+    });
+  } catch (error) {
+    console.error("Password reset error:", error);
+    res.status(500).json({ error: "Password reset failed" });
+  }
+};
+
+// --------------------------------------
+// PASSWORD RESET CONFIRMATION (VERIFY OTP)
+// --------------------------------------
+const resetPasswordConfirm = async (req, res) => {
+  try {
+    const { userId, otp, newPassword } = req.body;
+
+    const user = await User.findByPk(userId);
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    if (!user.validateOTP(otp)) {
+      return res.status(401).json({ error: "Invalid or expired OTP" });
+    }
+
+    user.password = newPassword;
+    user.otp = null;
+    user.otpExpiry = null;
+    await user.save();
+
+    await AuditLog.create({
+      userId: user.id,
+      action: "PASSWORD_RESET_SUCCESS",
+      entity: "User",
+      entityId: user.id,
+      ipAddress: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+
+    res.json({ message: "Password reset successfully" });
+  } catch (error) {
+    console.error("Password reset confirm error:", error);
+    res.status(500).json({ error: "Password reset confirmation failed" });
+  }
+};
+
+module.exports = {
+  login,
+  verifyOTP,
+  resetPassword,
+  resetPasswordConfirm
+};
+</file>
+
+<file path="src/controllers/campaignController.js">
+const { Campaign, AuditLog } = require('../models');
+const { Op } = require('sequelize');
+
+const getAllCampaigns = async (req, res) => {
+  try {
+    const { page = 1, limit = 10, isActive, campaignType } = req.query;
+    const offset = (page - 1) * limit;
+
+    const where = {};
+    if (isActive !== undefined) where.isActive = isActive === 'true';
+    if (campaignType) where.campaignType = campaignType;
+
+    if (req.user.role === 'dealer') {
+      where.isActive = true;
+      where.startDate = { [Op.lte]: new Date() };
+      where.endDate = { [Op.gte]: new Date() };
+    }
+
+    const { count, rows } = await Campaign.findAndCountAll({
+      where,
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      order: [['startDate', 'DESC']]
+    });
+
+    res.json({
+      campaigns: rows,
+      total: count,
+      page: parseInt(page),
+      totalPages: Math.ceil(count / limit)
+    });
+  } catch (error) {
+    console.error('Get campaigns error:', error);
+    res.status(500).json({ error: 'Failed to fetch campaigns' });
+  }
+};
+// Get active campaigns
+const getActiveCampaigns = async (req, res) => {
+  try {
+    const campaigns = await Campaign.findAll({
+      where: { isActive: true },
+      order: [["createdAt", "DESC"]],
+    });
+    res.status(200).json(campaigns);
+  } catch (error) {
+    console.error("Error fetching active campaigns:", error);
+    res.status(500).json({ error: "Failed to fetch active campaigns" });
+  }
+};
+
+const getCampaignById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const campaign = await Campaign.findByPk(id);
+
+    if (!campaign) {
+      return res.status(404).json({ error: 'Campaign not found' });
+    }
+
+    res.json(campaign);
+  } catch (error) {
+    console.error('Get campaign error:', error);
+    res.status(500).json({ error: 'Failed to fetch campaign' });
+  }
+};
+
+const createCampaign = async (req, res) => {
+  try {
+    const campaign = await Campaign.create(req.body);
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: 'CREATE_CAMPAIGN',
+      entity: 'Campaign',
+      entityId: campaign.id,
+      changes: req.body,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent']
+    });
+
+    res.status(201).json(campaign);
+  } catch (error) {
+    console.error('Create campaign error:', error);
+    res.status(500).json({ error: 'Failed to create campaign' });
+  }
+};
+
+const updateCampaign = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const campaign = await Campaign.findByPk(id);
+
+    if (!campaign) {
+      return res.status(404).json({ error: 'Campaign not found' });
+    }
+
+    const oldData = campaign.toJSON();
+    await campaign.update(req.body);
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: 'UPDATE_CAMPAIGN',
+      entity: 'Campaign',
+      entityId: campaign.id,
+      changes: { old: oldData, new: req.body },
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent']
+    });
+
+    res.json(campaign);
+  } catch (error) {
+    console.error('Update campaign error:', error);
+    res.status(500).json({ error: 'Failed to update campaign' });
+  }
+};
+
+const deleteCampaign = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const campaign = await Campaign.findByPk(id);
+
+    if (!campaign) {
+      return res.status(404).json({ error: 'Campaign not found' });
+    }
+
+    await campaign.destroy();
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: 'DELETE_CAMPAIGN',
+      entity: 'Campaign',
+      entityId: campaign.id,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent']
+    });
+
+    res.json({ message: 'Campaign deleted successfully' });
+  } catch (error) {
+    console.error('Delete campaign error:', error);
+    res.status(500).json({ error: 'Failed to delete campaign' });
+  }
+};
+
+module.exports = {
+  getAllCampaigns,
+  getActiveCampaigns,
+  getCampaignById,
+  createCampaign,
+  updateCampaign,
+  deleteCampaign
+};
+</file>
+
+<file path="src/controllers/dealerController.js">
+const { Dealer, User, AuditLog } = require('../models');
+const { Op } = require('sequelize');
+const { verifyDealer } = require('./adminController');
+
+const getAllDealers = async (req, res) => {
+  try {
+    const { page = 1, limit = 10, search, state, isActive } = req.query;
+    const offset = (page - 1) * limit;
+
+    const where = {};
+
+    // 🔍 Search filter
+    if (search) {
+      where[Op.or] = [
+        { dealerCode: { [Op.like]: `%${search}%` } },
+        { businessName: { [Op.like]: `%${search}%` } }
+      ];
+    }
+
+    // 🌍 State filter
+    if (state) where.state = state;
+
+    // ✅ Active/inactive filter
+    if (isActive !== undefined) where.isActive = isActive === 'true';
+
+    // 👇 Restrict data visibility for TM / AM users
+    if (req.user.role === 'tm' || req.user.role === 'am') {
+      if (req.user.region) where.region = req.user.region;
+      if (req.user.territory) where.territory = req.user.territory;
+    }
+
+    // 📊 Pagination and ordering
+    const { count, rows } = await Dealer.findAndCountAll({
+      where,
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      order: [['createdAt', 'DESC']]
+    });
+
+    // 🧾 Response
+    res.json({
+      dealers: rows,
+      total: count,
+      page: parseInt(page),
+      totalPages: Math.ceil(count / limit)
+    });
+  } catch (error) {
+    console.error('Get dealers error:', error);
+    res.status(500).json({ error: 'Failed to fetch dealers' });
+  }
+};
+
+const getDealerById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const dealer = await Dealer.findByPk(id);
+
+    if (!dealer) {
+      return res.status(404).json({ error: 'Dealer not found' });
+    }
+
+    res.json(dealer);
+  } catch (error) {
+    console.error('Get dealer error:', error);
+    res.status(500).json({ error: 'Failed to fetch dealer' });
+  }
+};
+
+const createDealer = async (req, res) => {
+  try {
+    const dealer = await Dealer.create(req.body);
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: 'CREATE_DEALER',
+      entity: 'Dealer',
+      entityId: dealer.id,
+      changes: req.body,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent']
+    });
+
+    res.status(201).json(dealer);
+  } catch (error) {
+    console.error('Create dealer error:', error);
+    res.status(500).json({ error: 'Failed to create dealer' });
+  }
+};
+
+const updateDealer = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const dealer = await Dealer.findByPk(id);
+
+    if (!dealer) {
+      return res.status(404).json({ error: 'Dealer not found' });
+    }
+
+    const oldData = dealer.toJSON();
+    await dealer.update(req.body);
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: 'UPDATE_DEALER',
+      entity: 'Dealer',
+      entityId: dealer.id,
+      changes: { old: oldData, new: req.body },
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent']
+    });
+
+    res.json(dealer);
+  } catch (error) {
+    console.error('Update dealer error:', error);
+    res.status(500).json({ error: 'Failed to update dealer' });
+  }
+};
+
+const blockDealer = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isBlocked } = req.body;
+
+    const dealer = await Dealer.findByPk(id);
+
+    if (!dealer) {
+      return res.status(404).json({ error: 'Dealer not found' });
+    }
+
+    await dealer.update({ isBlocked });
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: isBlocked ? 'BLOCK_DEALER' : 'UNBLOCK_DEALER',
+      entity: 'Dealer',
+      entityId: dealer.id,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent']
+    });
+
+    res.json(dealer);
+  } catch (error) {
+    console.error('Block dealer error:', error);
+    res.status(500).json({ error: 'Failed to block/unblock dealer' });
+  }
+};
+
+const getDealerProfile = async (req, res) => {
+  try {
+    if (req.user.role !== 'dealer') {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+
+    const dealer = await Dealer.findByPk(req.user.dealerId);
+
+    if (!dealer) {
+      return res.status(404).json({ error: 'Dealer profile not found' });
+    }
+
+    res.json(dealer);
+  } catch (error) {
+    console.error('Get dealer profile error:', error);
+    res.status(500).json({ error: 'Failed to fetch dealer profile' });
+  }
+};
+exports.verifyDealer = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const dealer = await Dealer.findByPk(id);
+    if (!dealer) return res.status(404).json({ error: "Dealer not found" });
+
+    dealer.isVerified = true;
+    await dealer.save();
+
+    res.json({ message: "Dealer verified successfully", dealer });
+  } catch (error) {
+    console.error("verifyDealer error:", error);
+    res.status(500).json({ error: "Failed to verify dealer" });
+  }
+};
+// =============================
+// MANAGER: Get Assigned Dealers
+// =============================
+const getDealersByManager = async (req, res) => {
+  try {
+    if (!["tm", "am", "sm"].includes(req.user.role)) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const dealers = await Dealer.findAll({
+      where: { managerId: req.user.id },
+      order: [["createdAt", "DESC"]],
+    });
+
+    res.json({ dealers });
+  } catch (err) {
+    console.error("getDealersByManager error:", err);
+    res.status(500).json({ error: "Failed to fetch assigned dealers" });
+  }
+};
+
+
+
+module.exports = {
+  getAllDealers,
+  getDealerById,
+  createDealer,
+  updateDealer,
+  blockDealer,
+  getDealerProfile,
+  verifyDealer,
+  getDealersByManager
+};
+</file>
+
+<file path="src/controllers/documentController.js">
+const { Document, Dealer, AuditLog, Notification } = require('../models');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+// ========================= Multer Storage Config =========================
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadPath = path.join(__dirname, '../../uploads');
+    if (!fs.existsSync(uploadPath)) {
+      fs.mkdirSync(uploadPath, { recursive: true });
+    }
+    cb(null, uploadPath);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /pdf|doc|docx|jpg|jpeg|png/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
+    if (mimetype && extname) cb(null, true);
+    else cb(new Error('Only PDF, DOC, DOCX, JPG, JPEG, PNG files are allowed'));
+  },
+});
+
+// ========================= Get All Documents =========================
+const getAllDocuments = async (req, res) => {
+  try {
+    const { page = 1, limit = 10, dealerId, documentType } = req.query;
+    const offset = (page - 1) * limit;
+
+    const where = {};
+    if (dealerId) where.dealerId = dealerId;
+    if (documentType) where.documentType = documentType;
+    if (req.user.role === 'dealer') where.dealerId = req.user.dealerId;
+
+    const { count, rows } = await Document.findAndCountAll({
+      where,
+      include: [{ model: Dealer, as: 'dealer' }],
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      order: [['createdAt', 'DESC']],
+    });
+
+    res.json({
+      documents: rows,
+      total: count,
+      page: parseInt(page),
+      totalPages: Math.ceil(count / limit),
+    });
+  } catch (error) {
+    console.error('Get documents error:', error);
+    res.status(500).json({ error: 'Failed to fetch documents' });
+  }
+};
+
+// ========================= Upload Document =========================
+const uploadDocument = async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+    const { documentType, description, dealerId } = req.body;
+
+    const document = await Document.create({
+      documentType,
+      documentName: req.file.originalname,
+      filePath: req.file.path,
+      fileSize: req.file.size,
+      mimeType: req.file.mimetype,
+      uploadedBy: req.user.username,
+      description,
+      dealerId: req.user.role === 'dealer' ? req.user.dealerId : dealerId,
+    });
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: 'UPLOAD_DOCUMENT',
+      entity: 'Document',
+      entityId: document.id,
+      changes: { documentName: req.file.originalname, documentType },
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    // ✅ Notify managers (real-time + persistent)
+    const io = req.app.get('io');
+    if (io) {
+      io.to('role:tm').emit('document:new', { dealerId: document.dealerId });
+      io.to('role:am').emit('document:new', { dealerId: document.dealerId });
+    }
+
+    // 🔔 Create notification entry for managers
+    await Notification.create({
+      senderId: req.user.id,
+      recipientRole: 'tm',
+      title: 'New Document Uploaded',
+      message: `${req.user.username} uploaded "${document.documentName}".`,
+      type: 'document',
+      relatedId: document.id,
+    });
+
+    if (io) {
+      io.to('role:tm').emit('notification', {
+        title: 'New Document Uploaded',
+        message: `${req.user.username} uploaded "${document.documentName}".`,
+        type: 'document',
+      });
+    }
+
+    res.status(201).json(document);
+  } catch (error) {
+    console.error('Upload document error:', error);
+    res.status(500).json({ error: 'Failed to upload document' });
+  }
+};
+
+// ========================= Download Document =========================
+const downloadDocument = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const where = { id };
+    if (req.user.role === 'dealer') where.dealerId = req.user.dealerId;
+
+    const document = await Document.findOne({ where });
+    if (!document) return res.status(404).json({ error: 'Document not found' });
+    if (!fs.existsSync(document.filePath))
+      return res.status(404).json({ error: 'File not found on server' });
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: 'DOWNLOAD_DOCUMENT',
+      entity: 'Document',
+      entityId: document.id,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    res.download(document.filePath, document.documentName);
+  } catch (error) {
+    console.error('Download document error:', error);
+    res.status(500).json({ error: 'Failed to download document' });
+  }
+};
+
+// ========================= Delete Document =========================
+const deleteDocument = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const document = await Document.findByPk(id);
+    if (!document) return res.status(404).json({ error: 'Document not found' });
+
+    if (fs.existsSync(document.filePath)) fs.unlinkSync(document.filePath);
+    await document.destroy();
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: 'DELETE_DOCUMENT',
+      entity: 'Document',
+      entityId: document.id,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    res.json({ message: 'Document deleted successfully' });
+  } catch (error) {
+    console.error('Delete document error:', error);
+    res.status(500).json({ error: 'Failed to delete document' });
+  }
+};
+
+// ========================= Approve / Reject Document =========================
+const approveDocument = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { action, reason } = req.body;
+    if (!['approve', 'reject'].includes(action))
+      return res.status(400).json({ error: 'Invalid action' });
+
+    const document = await Document.findByPk(id);
+    if (!document) return res.status(404).json({ error: 'Document not found' });
+
+    document.status = action === 'approve' ? 'approved' : 'rejected';
+    document.approvedBy = req.user.id;
+    document.approvedAt = new Date();
+    document.rejectionReason = action === 'reject' ? reason : null;
+    await document.save();
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: action === 'approve' ? 'APPROVE_DOCUMENT' : 'REJECT_DOCUMENT',
+      entity: 'Document',
+      entityId: document.id,
+      changes: { status: document.status, reason },
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    // ✅ Notify dealer in DB + via socket
+    const io = req.app.get('io');
+
+    await Notification.create({
+      senderId: req.user.id,
+      recipientId: document.dealerId,
+      title: `Document ${document.status}`,
+      message:
+        document.status === 'approved'
+          ? `Your document "${document.documentName}" was approved by ${req.user.username}.`
+          : `Your document "${document.documentName}" was rejected. Reason: ${document.rejectionReason || 'N/A'}.`,
+      type: 'document',
+      relatedId: document.id,
+    });
+
+    if (io) {
+      io.to(`user:${document.dealerId}`).emit('notification', {
+        title: `Document ${document.status}`,
+        message:
+          document.status === 'approved'
+            ? `✅ "${document.documentName}" approved`
+            : `❌ "${document.documentName}" rejected`,
+        type: 'document',
+      });
+
+      io.to('role:tm').emit('document:pending:update');
+      io.to('role:am').emit('document:pending:update');
+    }
+
+    res.json({ message: `Document ${document.status}`, document });
+  } catch (err) {
+    console.error('Approve document error:', err);
+    res.status(500).json({ error: 'Failed to update document status' });
+  }
+};
+
+const getManagerDocuments = async (req, res) => {
+  try {
+    const managerId = req.user.id;
+
+    const documents = await Document.findAll({
+      include: [
+        {
+          model: Dealer,
+          as: 'dealer',
+          where: { managerId },
+        },
+      ],
+      order: [['createdAt', 'DESC']],
+    });
+
+    res.json({ documents });
+  } catch (err) {
+    console.error('getManagerDocuments:', err);
+    res.status(500).json({ error: 'Failed to fetch documents' });
+  }
+};
+
+module.exports = {
+  upload,
+  getAllDocuments,
+  uploadDocument,
+  downloadDocument,
+  deleteDocument,
+  approveDocument,
+  getManagerDocuments,
+};
+</file>
+
+<file path="src/controllers/inventoryController.js">
+// src/controllers/inventoryController.js
+const { Dealer, Invoice, Campaign, AuditLog } = require("../models");
+const ExcelJS = require("exceljs");
+const PDFDocument = require("pdfkit");
+
+// 🧾 Mock data (replace later with DB or SAP)
+let inventoryList = [
+  { id: 1, product: "Laptop", available: 100, plant: "Mumbai", reorderLevel: 20, updatedAt: "2025-11-01" },
+  { id: 2, product: "Printer", available: 5, plant: "Pune", reorderLevel: 10, updatedAt: "2025-11-02" },
+  { id: 3, product: "Monitor", available: 50, plant: "Delhi", reorderLevel: 15, updatedAt: "2025-11-03" },
+];
+
+// 🧮 Summary for dashboard
+// src/controllers/inventoryController.js
+exports.getInventorySummary = async (req, res) => {
+  try {
+    const role = req.user.role;
+
+    // base mock data
+    const baseInventory = [
+      { id: 1, product: "Laptop", available: 100, plant: "Mumbai", reorderLevel: 20, updatedAt: "2025-11-01" },
+      { id: 2, product: "Printer", available: 5, plant: "Pune", reorderLevel: 10, updatedAt: "2025-11-02" },
+      { id: 3, product: "Monitor", available: 50, plant: "Delhi", reorderLevel: 15, updatedAt: "2025-11-03" },
+    ];
+
+    // filter by role
+    let visibleInventory;
+    if (role === "dealer") {
+      visibleInventory = baseInventory.map((i) => ({
+        product: i.product,
+        available: i.available,
+      }));
+    } else if (role === "manager") {
+      visibleInventory = baseInventory.map((i) => ({
+        product: i.product,
+        available: i.available,
+        plant: i.plant,
+      }));
+    } else {
+      visibleInventory = baseInventory; // admin or inventory user
+    }
+
+    res.json({
+      role,
+      inventory: visibleInventory,
+      summary: { totalDealers: 50, totalInvoices: 120, activeCampaigns: 8 },
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch inventory" });
+  }
+};
+
+// 📋 Get detailed inventory list
+exports.getInventoryDetails = async (req, res) => {
+  try {
+    res.json(inventoryList);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch detailed inventory" });
+  }
+};
+
+// ➕ Add new inventory item
+exports.addItem = async (req, res) => {
+  try {
+    const { product, available, plant, reorderLevel } = req.body;
+    const newItem = {
+      id: inventoryList.length + 1,
+      product,
+      available: parseInt(available),
+      plant,
+      reorderLevel: parseInt(reorderLevel || 10),
+      updatedAt: new Date().toISOString(),
+    };
+    inventoryList.push(newItem);
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: "ADD_INVENTORY_ITEM",
+      entity: "Inventory",
+      entityId: newItem.id,
+      changes: newItem,
+      ipAddress: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+
+    res.status(201).json({ message: "Item added successfully", item: newItem });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to add item" });
+  }
+};
+
+// ✏️ Update inventory item
+exports.updateItem = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const index = inventoryList.findIndex((i) => i.id == id);
+    if (index === -1) return res.status(404).json({ error: "Item not found" });
+
+    const updated = { ...inventoryList[index], ...req.body, updatedAt: new Date().toISOString() };
+    inventoryList[index] = updated;
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: "UPDATE_INVENTORY_ITEM",
+      entity: "Inventory",
+      entityId: id,
+      changes: updated,
+      ipAddress: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+
+    res.json({ message: "Item updated", item: updated });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to update item" });
+  }
+};
+
+// ❌ Delete inventory item
+exports.deleteItem = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const index = inventoryList.findIndex((i) => i.id == id);
+    if (index === -1) return res.status(404).json({ error: "Item not found" });
+
+    const deleted = inventoryList[index];
+    inventoryList.splice(index, 1);
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: "DELETE_INVENTORY_ITEM",
+      entity: "Inventory",
+      entityId: id,
+      changes: deleted,
+      ipAddress: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+
+    res.json({ message: `Item ${id} deleted`, deleted });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to delete item" });
+  }
+};
+
+// 📤 Export inventory (Excel / PDF)
+exports.exportInventory = async (req, res) => {
+  try {
+    const format = req.query.format || "excel";
+
+    if (format === "pdf") {
+      const doc = new PDFDocument();
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", "attachment; filename=inventory.pdf");
+      doc.text("Inventory Report", { align: "center" }).moveDown();
+      inventoryList.forEach((i) =>
+        doc.text(`${i.product} - ${i.available} units (${i.plant})`)
+      );
+      doc.pipe(res);
+      doc.end();
+    } else {
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet("Inventory");
+      sheet.columns = [
+        { header: "Product", key: "product", width: 20 },
+        { header: "Available", key: "available", width: 15 },
+        { header: "Plant", key: "plant", width: 20 },
+        { header: "Reorder Level", key: "reorderLevel", width: 20 },
+      ];
+      sheet.addRows(inventoryList);
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+      res.setHeader("Content-Disposition", "attachment; filename=inventory.xlsx");
+      await workbook.xlsx.write(res);
+      res.end();
+    }
+  } catch (err) {
+    console.error("Export error:", err);
+    res.status(500).json({ error: "Failed to export inventory" });
+  }
+};
+</file>
+
+<file path="src/controllers/invoiceController.js">
+const { Invoice, Dealer, AuditLog } = require('../models');
+const { Op } = require('sequelize');
+const PDFDocument = require('pdfkit');
+const fs = require('fs');
+const path = require('path');
+
+const getAllInvoices = async (req, res) => {
+  try {
+    const { page = 1, limit = 10, dealerId, status, productGroup, startDate, endDate } = req.query;
+    const offset = (page - 1) * limit;
+
+    const where = {};
+    if (dealerId) where.dealerId = dealerId;
+    if (status) where.status = status;
+    if (productGroup) where.productGroup = productGroup;
+    if (startDate && endDate) {
+      where.invoiceDate = {
+        [Op.between]: [new Date(startDate), new Date(endDate)]
+      };
+    }
+
+    if (req.user.role === 'dealer') {
+      where.dealerId = req.user.dealerId;
+    }
+
+    const { count, rows } = await Invoice.findAndCountAll({
+      where,
+      include: [{ model: Dealer, as: 'dealer' }],
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      order: [['invoiceDate', 'DESC']]
+    });
+
+    res.json({
+      invoices: rows,
+      total: count,
+      page: parseInt(page),
+      totalPages: Math.ceil(count / limit)
+    });
+  } catch (error) {
+    console.error('Get invoices error:', error);
+    res.status(500).json({ error: 'Failed to fetch invoices' });
+  }
+};
+
+const getInvoiceById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const where = { id };
+
+    if (req.user.role === 'dealer') {
+      where.dealerId = req.user.dealerId;
+    }
+
+    const invoice = await Invoice.findOne({
+      where,
+      include: [{ model: Dealer, as: 'dealer' }]
+    });
+
+    if (!invoice) {
+      return res.status(404).json({ error: 'Invoice not found' });
+    }
+
+    res.json(invoice);
+  } catch (error) {
+    console.error('Get invoice error:', error);
+    res.status(500).json({ error: 'Failed to fetch invoice' });
+  }
+};
+
+const createInvoice = async (req, res) => {
+  try {
+    const invoiceData = {
+      ...req.body,
+      balanceAmount: req.body.totalAmount - (req.body.paidAmount || 0)
+    };
+
+    const invoice = await Invoice.create(invoiceData);
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: 'CREATE_INVOICE',
+      entity: 'Invoice',
+      entityId: invoice.id,
+      changes: invoiceData,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent']
+    });
+
+    res.status(201).json(invoice);
+  } catch (error) {
+    console.error('Create invoice error:', error);
+    res.status(500).json({ error: 'Failed to create invoice' });
+  }
+};
+
+const updateInvoice = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const invoice = await Invoice.findByPk(id);
+
+    if (!invoice) {
+      return res.status(404).json({ error: 'Invoice not found' });
+    }
+
+    const oldData = invoice.toJSON();
+    const updateData = {
+      ...req.body,
+      balanceAmount: req.body.totalAmount - (req.body.paidAmount || 0)
+    };
+
+    await invoice.update(updateData);
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: 'UPDATE_INVOICE',
+      entity: 'Invoice',
+      entityId: invoice.id,
+      changes: { old: oldData, new: updateData },
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent']
+    });
+
+    res.json(invoice);
+  } catch (error) {
+    console.error('Update invoice error:', error);
+    res.status(500).json({ error: 'Failed to update invoice' });
+  }
+};
+
+const generateInvoicePDF = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const where = { id };
+
+    if (req.user.role === 'dealer') {
+      where.dealerId = req.user.dealerId;
+    }
+
+    const invoice = await Invoice.findOne({
+      where,
+      include: [{ model: Dealer, as: 'dealer' }]
+    });
+
+    if (!invoice) {
+      return res.status(404).json({ error: 'Invoice not found' });
+    }
+
+    const doc = new PDFDocument();
+    const filename = `invoice-${invoice.invoiceNumber}.pdf`;
+    const filepath = path.join(__dirname, '../../uploads', filename);
+
+    doc.pipe(fs.createWriteStream(filepath));
+
+    doc.fontSize(20).text('INVOICE', 50, 50);
+    doc.fontSize(12);
+    doc.text(`Invoice Number: ${invoice.invoiceNumber}`, 50, 100);
+    doc.text(`Invoice Date: ${invoice.invoiceDate.toDateString()}`, 50, 120);
+    doc.text(`Due Date: ${invoice.dueDate ? invoice.dueDate.toDateString() : 'N/A'}`, 50, 140);
+
+    doc.text('Bill To:', 50, 180);
+    doc.text(`${invoice.dealer.businessName}`, 50, 200);
+    doc.text(`${invoice.dealer.address}`, 50, 220);
+    doc.text(`${invoice.dealer.city}, ${invoice.dealer.state} ${invoice.dealer.pincode}`, 50, 240);
+
+    doc.text('Description:', 50, 280);
+    doc.text(invoice.description || 'Invoice for products/services', 50, 300);
+
+    doc.text(`Amount: ₹${invoice.amount}`, 50, 340);
+    doc.text(`Tax Amount: ₹${invoice.taxAmount}`, 50, 360);
+    doc.text(`Total Amount: ₹${invoice.totalAmount}`, 50, 380);
+    doc.text(`Paid Amount: ₹${invoice.paidAmount}`, 50, 400);
+    doc.text(`Balance Amount: ₹${invoice.balanceAmount}`, 50, 420);
+    doc.text(`Status: ${invoice.status.toUpperCase()}`, 50, 440);
+
+    doc.end();
+
+    await invoice.update({ pdfPath: filepath });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
+    
+    const stream = fs.createReadStream(filepath);
+    stream.pipe(res);
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: 'DOWNLOAD_INVOICE_PDF',
+      entity: 'Invoice',
+      entityId: invoice.id,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent']
+    });
+
+  } catch (error) {
+    console.error('Generate invoice PDF error:', error);
+    res.status(500).json({ error: 'Failed to generate invoice PDF' });
+  }
+};
+
+module.exports = {
+  getAllInvoices,
+  getInvoiceById,
+  createInvoice,
+  updateInvoice,
+  generateInvoicePDF
+};
+</file>
+
+<file path="src/controllers/managerController.js">
+const {
+  Dealer,
+  Invoice,
+  Document,
+  PricingUpdate,
+  AccountStatement,
+  Product,
+} = require('../models');
+const { Op } = require('sequelize');
+
+module.exports = {
+  // ======================================
+  // ✅ GET /api/managers/summary
+  // ======================================
+  getSummary: async (req, res) => {
+    try {
+      const managerId = req.user.id;
+
+      // 1️⃣ Fetch dealers managed by this user
+      const dealers = await Dealer.findAll({
+        where: { managerId },
+        attributes: ['id', 'dealerCode', 'businessName', 'isBlocked', 'outstandingAmount'],
+      });
+
+      const dealerIds = dealers.map((d) => d.id);
+      const totalDealers = dealers.length;
+      const totalOutstanding = dealers.reduce(
+        (s, d) => s + Number(d.outstandingAmount || 0),
+        0
+      );
+
+      // 2️⃣ Count pending documents for these dealers
+      const pendingDocuments = await Document.count({
+        where: {
+          dealerId: { [Op.in]: dealerIds },
+          status: 'pending',
+        },
+      });
+
+      // 3️⃣ Count pending pricing requests
+      const pendingPricing = await PricingUpdate.count({
+        where: {
+          dealerId: { [Op.in]: dealerIds },
+          status: 'pending',
+        },
+      });
+
+      // 4️⃣ Get invoices from last 30 days
+      const invoices = await Invoice.findAll({
+        where: {
+          dealerId: { [Op.in]: dealerIds },
+          invoiceDate: { [Op.gte]: new Date(Date.now() - 30 * 24 * 3600 * 1000) },
+        },
+        attributes: ['totalAmount', 'status'],
+      });
+
+      const recentSales = invoices.reduce((s, i) => s + Number(i.totalAmount || 0), 0);
+
+      res.json({
+        totalDealers,
+        totalOutstanding,
+        pendingDocuments,
+        pendingPricing,
+        recentSales,
+        dealers,
+      });
+    } catch (err) {
+      console.error('❌ manager.getSummary Error:', err);
+      res.status(500).json({ error: 'Failed to get manager summary' });
+    }
+  },
+
+  // ======================================
+  // ✅ GET /api/managers/dealers
+  // ======================================
+  // ======================================
+// ✅ GET /api/managers/dealers (with linked user info)
+// ======================================
+getDealers: async (req, res) => {
+  try {
+    const managerId = req.user.id;
+
+    const dealers = await Dealer.findAll({
+      where: { managerId },
+      include: [
+        {
+          model: Invoice,
+          as: "invoices",
+          limit: 5,
+          order: [["invoiceDate", "DESC"]],
+        },
+        {
+          // 🔹 Add the associated User record (used for messaging)
+          model: require("../models").User,
+          as: "users",
+          attributes: ["id", "username", "email", "role"],
+        },
+      ],
+    });
+
+    res.json({ dealers });
+  } catch (err) {
+    console.error("❌ manager.getDealers Error:", err);
+    res.status(500).json({ error: "Failed to fetch dealers" });
+  }
+},
+
+
+  // ======================================
+  // ✅ GET /api/managers/dealers/:id
+  // ======================================
+  getDealerById: async (req, res) => {
+    try {
+      const managerId = req.user.id;
+      const { id } = req.params;
+
+      const dealer = await Dealer.findOne({
+        where: { id, managerId },
+        include: [
+          { model: Invoice, as: 'invoices', order: [['invoiceDate', 'DESC']] },
+          { model: Document, as: 'documents', order: [['createdAt', 'DESC']] },
+          {
+            model: AccountStatement,
+            as: 'accountStatements',
+            order: [['statementDate', 'DESC']],
+          },
+        ],
+      });
+
+      if (!dealer)
+        return res
+          .status(404)
+          .json({ error: 'Dealer not found or not under your management' });
+
+      res.json(dealer);
+    } catch (err) {
+      console.error('❌ manager.getDealerById Error:', err);
+      res.status(500).json({ error: 'Failed to fetch dealer' });
+    }
+  },
+
+  // ======================================
+  // ✅ GET /api/managers/pricing
+  // ======================================
+getPricingRequests: async (req, res) => {
+  try {
+    const managerId = req.user.id;
+    console.log("🔹 Logged-in managerId from token:", managerId);
+
+    // 1️⃣ Get all dealers under this manager
+    const dealerIds = (
+      await Dealer.findAll({
+        where: { managerId },
+        attributes: ['id'],
+      })
+    ).map((d) => d.id);
+
+    console.log("🔹 Dealer IDs under this manager:", dealerIds);
+
+    // 2️⃣ Build filter
+    const where = { dealerId: { [Op.in]: dealerIds } };
+    if (req.query.status) {
+      where.status = req.query.status.toLowerCase();
+      console.log("🔹 Filtering by status:", where.status);
+    }
+
+    // 3️⃣ Fetch pricing updates
+    const updates = await PricingUpdate.findAll({
+      where,
+      include: [
+        {
+          model: Dealer,
+          as: 'dealer',
+          attributes: ['dealerCode', 'businessName'],
+        },
+        {
+          model: Product,
+          as: 'product',
+          attributes: ['id', 'name', 'plant', 'stock', 'uom'],
+        },
+      ],
+      order: [['createdAt', 'DESC']],
+    });
+
+    console.log("✅ Found updates:", updates.length);
+    console.table(
+      updates.map((u) => ({
+        id: u.id,
+        dealer: u.dealer?.businessName,
+        status: u.status,
+        newPrice: u.newPrice,
+      }))
+    );
+
+    // 4️⃣ Return structured response
+    res.json({ updates });
+  } catch (err) {
+    console.error('❌ manager.getPricingRequests Error:', err);
+    res.status(500).json({ error: 'Failed to fetch pricing requests' });
+  }
+},
+
+  // ======================================
+  // ✅ PATCH /api/managers/pricing/:id/forward
+  // ======================================
+  forwardPricingToAdmin: async (req, res) => {
+    try {
+      const managerId = req.user.id;
+      const { id } = req.params;
+      const { action, remarks } = req.body;
+
+      const pricing = await PricingUpdate.findByPk(id);
+      if (!pricing) return res.status(404).json({ error: 'Pricing request not found' });
+
+      const dealer = await Dealer.findOne({
+        where: { id: pricing.dealerId, managerId },
+      });
+      if (!dealer)
+        return res.status(403).json({ error: 'Not authorized to manage this request' });
+
+      if (action === 'forward') {
+        pricing.status = 'pending';
+        pricing.remarks =
+          (pricing.remarks ? pricing.remarks + '\n' : '') +
+          `Forwarded by ${req.user.username}: ${remarks || ''}`;
+        await pricing.save();
+        return res.json({ message: 'Forwarded to admin', pricing });
+      }
+
+      if (action === 'approve' || action === 'reject') {
+        pricing.status = action === 'approve' ? 'approved' : 'rejected';
+        pricing.approvedBy = req.user.username;
+        pricing.approvedAt = new Date();
+        pricing.remarks =
+          (pricing.remarks ? pricing.remarks + '\n' : '') +
+          `${action} by ${req.user.username}: ${remarks || ''}`;
+        await pricing.save();
+
+        if (action === 'approve') {
+          await Product.update(
+            { price: pricing.newPrice },
+            { where: { id: pricing.productId } }
+          );
+        }
+
+        return res.json({ message: 'Pricing updated', pricing });
+      }
+
+      res.status(400).json({ error: 'Invalid action' });
+    } catch (err) {
+      console.error('❌ manager.forwardPricingToAdmin Error:', err);
+      res.status(500).json({ error: 'Failed to process pricing request' });
+    }
+  },
+
+  // ======================================
+  // ✅ POST /api/managers/assign-dealer
+  // ======================================
+  assignDealerToManager: async (req, res) => {
+    try {
+      const { dealerId, managerId } = req.body;
+      if (!dealerId || !managerId)
+        return res.status(400).json({ error: 'dealerId and managerId required' });
+
+      const dealer = await Dealer.findByPk(dealerId);
+      if (!dealer) return res.status(404).json({ error: 'Dealer not found' });
+
+      dealer.managerId = managerId;
+      await dealer.save();
+
+      res.json({ message: 'Dealer assigned successfully', dealer });
+    } catch (err) {
+      console.error('❌ manager.assignDealerToManager Error:', err);
+      res.status(500).json({ error: 'Failed to assign dealer' });
+    }
+  },
+};
+</file>
+
+<file path="src/controllers/materialController.js">
+// src/controllers/materialController.js
+const { Material, MaterialGroup } = require('../models');
+
+
+exports.createMaterial = async (req, res) => {
+try {
+const payload = req.body;
+const mat = await Material.create(payload);
+// optional audit log: adjust or remove if you don't have AuditLog
+if (req.models && req.models.AuditLog) {
+await req.models.AuditLog.create({ userId: req.user?.id || null, action: 'CREATE_MATERIAL', entity: 'Material', entityId: mat.id, ipAddress: req.ip });
+}
+res.status(201).json(mat);
+} catch (err) {
+console.error('createMaterial:', err);
+res.status(500).json({ error: 'Failed to create material', details: err.message });
+}
+};
+
+
+exports.getMaterials = async (req, res) => {
+try {
+const mats = await Material.findAll({ include: [{ model: MaterialGroup, as: 'group' }], order: [['createdAt','DESC']] });
+res.json({ materials: mats });
+} catch (err) {
+console.error('getMaterials:', err);
+res.status(500).json({ error: 'Failed to fetch materials' });
+}
+};
+
+
+exports.getMaterialById = async (req, res) => {
+try {
+const { id } = req.params;
+const mat = await Material.findByPk(id, { include: [{ model: MaterialGroup, as: 'group' }] });
+if (!mat) return res.status(404).json({ error: 'Material not found' });
+res.json(mat);
+} catch (err) {
+console.error('getMaterialById:', err);
+res.status(500).json({ error: 'Failed to fetch material' });
+}
+};
+
+
+exports.updateMaterial = async (req, res) => {
+try {
+const { id } = req.params;
+const mat = await Material.findByPk(id);
+if (!mat) return res.status(404).json({ error: 'Material not found' });
+await mat.update(req.body);
+res.json(mat);
+} catch (err) {
+console.error('updateMaterial:', err);
+res.status(500).json({ error: 'Failed to update material' });
+}
+};
+
+
+exports.deleteMaterial = async (req, res) => {
+try {
+const { id } = req.params;
+await Material.destroy({ where: { id } });
+res.json({ message: 'Deleted' });
+} catch (err) {
+console.error('deleteMaterial:', err);
+res.status(500).json({ error: 'Failed to delete' });
+}
+};
+</file>
+
+<file path="src/controllers/materialGroupController.js">
+// src/controllers/materialGroupController.js
+const { MaterialGroup, Material } = require('../models');
+
+
+exports.createGroup = async (req, res) => {
+try {
+const g = await MaterialGroup.create(req.body);
+res.status(201).json(g);
+} catch (err) {
+console.error('createGroup:', err);
+res.status(500).json({ error: 'Failed to create group' });
+}
+};
+
+
+exports.getGroups = async (req, res) => {
+try {
+const groups = await MaterialGroup.findAll({ include: [{ model: Material, as: 'materials' }] });
+res.json({ groups });
+} catch (err) {
+console.error('getGroups:', err);
+res.status(500).json({ error: 'Failed to fetch groups' });
+}
+};
+
+
+exports.assignMaterial = async (req, res) => {
+try {
+const { materialId } = req.body;
+const { id: groupId } = req.params;
+const group = await MaterialGroup.findByPk(groupId);
+if (!group) return res.status(404).json({ error: 'Group not found' });
+const mat = await Material.findByPk(materialId);
+if (!mat) return res.status(404).json({ error: 'Material not found' });
+await mat.update({ materialGroupId: groupId });
+res.json({ message: 'Assigned', material: mat });
+} catch (err) {
+console.error('assignMaterial:', err);
+res.status(500).json({ error: 'Failed to assign' });
+}
+};
+</file>
+
+<file path="src/controllers/messageController.js">
+const { Message, User, Notification } = require("../models");
+const { Op } = require("sequelize");
+
+// 📩 Get all messages for the logged-in user
+exports.getMessages = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const messages = await Message.findAll({
+      where: {
+        [Op.or]: [{ senderId: userId }, { recipientId: userId }],
+      },
+      include: [
+        {
+          model: User,
+          as: "sender",
+          attributes: ["id", "username", "email", "role"],
+        },
+        {
+          model: User,
+          as: "recipient",
+          attributes: ["id", "username", "email", "role"],
+        },
+      ],
+      order: [["createdAt", "DESC"]],
+    });
+
+    res.json({ messages });
+  } catch (error) {
+    console.error("Error fetching messages:", error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// 📨 Send a new message
+exports.sendMessage = async (req, res) => {
+  try {
+    const { recipientId, subject, body } = req.body;
+    const senderId = req.user.id;
+
+    // Create the message
+    const message = await Message.create({
+      senderId,
+      recipientId,
+      subject: subject || "Chat",
+      body,
+      status: "unread",
+    });
+
+    const io = req.app.get("io");
+
+    // 1️⃣ Real-time message push to recipient
+    if (io) io.to(`user:${recipientId}`).emit("message:new", message);
+
+    // 2️⃣ Save persistent notification
+    await Notification.create({
+      senderId,
+      recipientId,
+      title: "New Message Received",
+      message: `${req.user.username}: ${body.substring(0, 60)}...`,
+      type: "chat",
+      relatedId: message.id,
+    });
+
+    // 3️⃣ Emit a "notification" event to recipient
+    if (io) {
+      io.to(`user:${recipientId}`).emit("notification", {
+        title: "New Message Received",
+        message: `${req.user.username}: ${body.substring(0, 60)}...`,
+        type: "chat",
+      });
+    }
+
+    res.status(201).json({ message });
+  } catch (error) {
+    console.error("Error sending message:", error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// ✅ Mark message as read
+exports.markAsRead = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const message = await Message.findByPk(id);
+
+    if (!message) return res.status(404).json({ error: "Message not found" });
+
+    message.status = "read";
+    await message.save();
+
+    res.json({ message });
+  } catch (error) {
+    console.error("Error marking message as read:", error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// 💬 Get conversation between two users (Dealer ↔ Manager)
+exports.getConversation = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { partnerId } = req.params;
+
+    const messages = await Message.findAll({
+      where: {
+        [Op.or]: [
+          { senderId: userId, recipientId: partnerId },
+          { senderId: partnerId, recipientId: userId },
+        ],
+      },
+      include: [
+        { model: User, as: "sender", attributes: ["id", "username", "role"] },
+        { model: User, as: "recipient", attributes: ["id", "username", "role"] },
+      ],
+      order: [["createdAt", "ASC"]],
+    });
+
+    res.json({ messages });
+  } catch (error) {
+    console.error("Error fetching conversation:", error);
+    res.status(500).json({ error: error.message });
+  }
+};
+</file>
+
+<file path="src/controllers/notificationsController.js">
+const { Notification,Dealer, Document } = require('../models');
+const { Op } = require('sequelize');
+
+// ========================= Get Manager Notifications =========================
+exports.getManagerNotifications = async (req, res) => {
+  try {
+    const { role, region, territory, id } = req.user;
+    const whereDealer = {};
+    if (region) whereDealer.region = region;
+    if (territory) whereDealer.territory = territory;
+
+    const expiringLicenses = await Dealer.count({
+      where: {
+        ...whereDealer,
+        licenses: { [Op.ne]: null },
+        updatedAt: { [Op.lt]: new Date(Date.now() - 330 * 24 * 60 * 60 * 1000) } // older than 11 months
+      }
+    });
+
+    const pendingDocs = await Document.count({
+      where: { status: 'pending', ...whereDealer }
+    });
+
+    const data = {
+      expiringLicenses,
+      pendingDocs,
+      message: 'Notifications fetched successfully'
+    };
+
+    // 🔌 SOCKET: emit real-time update to TM/AM dashboard
+    const io = req.app.get('io');
+    if (io) io.to(`user:${id}`).emit('notification:update', data);
+
+    res.json(data);
+  } catch (error) {
+    console.error('Manager notifications error:', error);
+    res.status(500).json({ error: 'Failed to fetch notifications' });
+  }
+};
+// src/controllers/notificationController.js
+
+// ========================= Manager Snapshot Notifications =========================
+exports.getManagerNotifications = async (req, res) => {
+  try {
+    const { role, region, territory, id } = req.user;
+    const whereDealer = {};
+    if (region) whereDealer.region = region;
+    if (territory) whereDealer.territory = territory;
+
+    const expiringLicenses = await Dealer.count({
+      where: {
+        ...whereDealer,
+        licenses: { [Op.ne]: null },
+        updatedAt: { [Op.lt]: new Date(Date.now() - 330 * 24 * 60 * 60 * 1000) },
+      },
+    });
+
+    const pendingDocs = await Document.count({
+      where: { status: 'pending', ...whereDealer },
+    });
+
+    const summary = {
+      expiringLicenses,
+      pendingDocs,
+      message: 'Notifications fetched successfully',
+    };
+
+    const io = req.app.get('io');
+    if (io) io.to(`user:${id}`).emit('notification:update', summary);
+
+    res.json(summary);
+  } catch (error) {
+    console.error('Manager notifications error:', error);
+    res.status(500).json({ error: 'Failed to fetch notifications' });
+  }
+};
+
+// ========================= Real Notification CRUD =========================
+exports.getUserNotifications = async (req, res) => {
+  try {
+    const { id, role } = req.user;
+    const where = {
+      [Op.or]: [
+        { recipientId: id },
+        { recipientRole: role },
+      ],
+    };
+
+    const notes = await Notification.findAll({
+      where,
+      order: [['createdAt', 'DESC']],
+    });
+
+    res.json({ notifications: notes });
+  } catch (err) {
+    console.error('Get notifications error:', err);
+    res.status(500).json({ error: 'Failed to fetch notifications' });
+  }
+};
+
+exports.markAsRead = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const note = await Notification.findByPk(id);
+    if (!note) return res.status(404).json({ error: 'Notification not found' });
+
+    await note.update({ isRead: true });
+    res.json({ message: 'Notification marked as read', note });
+  } catch (err) {
+    console.error('Mark notification read error:', err);
+    res.status(500).json({ error: 'Failed to update notification' });
+  }
+};
+</file>
+
+<file path="src/controllers/orderController.js">
+// src/controllers/orderController.js
+// src/controllers/orderController.js
+const { Order, OrderItem, Material, Dealer, sequelize } = require('../models');
+
+
+exports.placeOrder = async (req, res) => {
+const t = await sequelize.transaction();
+try {
+const dealerId = req.user?.dealerId || req.body.dealerId;
+if (!dealerId) return res.status(400).json({ error: 'Missing dealerId' });
+const { items = [], notes } = req.body;
+if (!items.length) return res.status(400).json({ error: 'No items' });
+
+
+let total = 0;
+for (const it of items) {
+const mat = await Material.findByPk(it.materialId);
+if (!mat) {
+await t.rollback();
+return res.status(404).json({ error: `Material ${it.materialId} not found` });
+}
+total += Number(it.qty) * Number(it.unitPrice || 0);
+}
+
+
+const order = await Order.create({
+dealerId,
+orderNumber: `ORD-${Date.now()}`,
+status: 'Pending',
+totalAmount: total,
+notes
+}, { transaction: t });
+
+
+for (const it of items) {
+const lineTotal = Number(it.qty) * Number(it.unitPrice || 0);
+await OrderItem.create({ orderId: order.id, materialId: it.materialId, qty: it.qty, unitPrice: it.unitPrice, lineTotal }, { transaction: t });
+}
+
+
+// optional notifications: implement as you like (email, socket, notification table)
+
+
+await t.commit();
+res.status(201).json({ orderId: order.id, orderNumber: order.orderNumber });
+} catch (err) {
+await t.rollback();
+console.error('placeOrder:', err);
+res.status(500).json({ error: 'Failed to place order', details: err.message });
+}
+};
+
+
+exports.getOrdersForDealer = async (req, res) => {
+try {
+const where = {};
+if (req.user?.role === 'dealer') where.dealerId = req.user.dealerId;
+const orders = await Order.findAll({ where, include: [{ model: OrderItem, as: 'items', include: [{ model: Material, as: 'material' }] }], order: [['createdAt','DESC']] });
+res.json({ orders });
+} catch (err) {
+console.error('getOrdersForDealer:', err);
+res.status(500).json({ error: 'Failed to fetch orders' });
+}
+};
+
+
+exports.updateOrderStatus = async (req, res) => {
+const t = await sequelize.transaction();
+try {
+const { id } = req.params;
+const { status } = req.body;
+const order = await Order.findByPk(id, { include: [{ model: OrderItem, as: 'items' }] });
+if (!order) return res.status(404).json({ error: 'Order not found' });
+order.status = status;
+await order.save({ transaction: t });
+
+
+// If moving to "Shipped" or "Processing" update material stock
+if (['Shipped','Processing'].includes(status)) {
+for (const item of order.items) {
+const mat = await Material.findByPk(item.materialId);
+if (mat) {
+mat.stock = Math.max(0, (mat.stock || 0) - item.qty);
+await mat.save({ transaction: t });
+}
+}
+}
+
+
+await t.commit();
+res.json({ order });
+} catch (err) {
+await t.rollback();
+console.error('updateOrderStatus:', err);
+res.status(500).json({ error: 'Failed to update status' });
+}
+};
+exports.approveOrder = async (req, res) => {
+  const order = await Order.findByPk(req.params.id);
+  if (!order) return res.status(404).json({ error: "Order not found" });
+
+  order.status = "Approved";
+  await order.save();
+
+  res.json({ message: "Order approved" });
+};
+exports.rejectOrder = async (req, res) => {
+  const { reason } = req.body;
+  const order = await Order.findByPk(req.params.id);
+  if (!order) return res.status(404).json({ error: "Order not found" });
+
+  order.status = "Rejected";
+  order.notes = reason;
+  await order.save();
+
+  res.json({ message: "Order rejected" });
+};
+exports.getMyOrders = async (req, res) => {
+  try {
+    const dealerId = req.user?.dealerId;
+
+    const orders = await Order.findAll({
+      where: { dealerId },
+      include: [
+        {
+          model: OrderItem,
+          include: [{ model: Material }]
+        }
+      ],
+      order: [["createdAt", "DESC"]],
+    });
+
+    res.json({ orders });
+  } catch (err) {
+    console.error("getMyOrders:", err);
+    res.status(500).json({ error: "Failed to load orders" });
+  }
+};
+
+exports.getAllOrders = async (req, res) => {
+  try {
+    const orders = await Order.findAll({
+      include: [
+        {
+          model: OrderItem,
+          as: "items",
+          include: [
+            { model: Material, as: "material" }
+          ]
+        },
+        {
+          model: Dealer,
+          as: "dealer"
+        }
+      ],
+      order: [["createdAt", "DESC"]]
+    });
+
+    res.json({ orders });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to load orders" });
+  }
+};
+</file>
+
+<file path="src/controllers/permissionController.js">
+const { Permission } = require("../models");
+
+module.exports = {
+  createPermission: async (req, res) => {
+    try {
+      const { key, description } = req.body;
+
+      const permission = await Permission.create({ key, description });
+
+      res.json({ message: "Permission created", permission });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to create permission" });
+    }
+  },
+
+  getPermissions: async (req, res) => {
+    try {
+      const permissions = await Permission.findAll();
+      res.json(permissions);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to fetch permissions" });
+    }
+  },
+};
+</file>
+
+<file path="src/controllers/pricingController.js">
+// ==============================
+// FILE: src/controllers/pricingController.js
+// ==============================
+
+const { PricingUpdate, AuditLog, Product, Dealer, Notification } = require("../models");
+const { Op } = require("sequelize");
+
+// ----------------------------
+// 1️⃣ Request Pricing Change (Dealer → Manager Notification)
+// ----------------------------
+exports.requestPricingChange = async (req, res) => {
+  try {
+    const { productId, oldPrice, newPrice, reason } = req.body;
+
+    if (!productId || newPrice == null) {
+      return res.status(400).json({ error: "productId and newPrice are required" });
+    }
+
+    const product = await Product.findByPk(productId);
+    if (!product) return res.status(404).json({ error: "Product not found" });
+
+    const update = await PricingUpdate.create({
+      productId,
+      oldPrice: oldPrice ?? product.price,
+      newPrice,
+      reason: reason || null,
+      dealerId: req.user.dealerId || null,
+      requestedBy: req.user.username || req.user.id,
+      requestedByUserId: req.user.id,
+      status: "pending",
+    });
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: "PRICING_REQUEST",
+      entity: "PricingUpdate",
+      entityId: update.id,
+      changes: { newPrice },
+      ipAddress: req.ip,
+    });
+
+    // ✅ Create & Emit Notification for Managers
+    const io = req.app.get("io");
+
+    await Notification.create({
+      senderId: req.user.id,
+      recipientRole: "tm",
+      title: "New Pricing Request Submitted",
+      message: `${req.user.username} submitted a new pricing request for product ID ${productId}.`,
+      type: "pricing",
+      relatedId: update.id,
+    });
+
+    if (io) {
+      io.to("role:tm").emit("notification", {
+        title: "New Pricing Request",
+        message: `${req.user.username} submitted a new pricing request for product ID ${productId}.`,
+        type: "pricing",
+      });
+    }
+
+    res.status(201).json({
+      message: "Pricing request submitted",
+      update,
+    });
+  } catch (err) {
+    console.error("requestPricingChange:", err);
+    res.status(500).json({ error: "Failed to submit pricing request" });
+  }
+};
+
+// ----------------------------
+// 2️⃣ Get Pricing Updates (Admin / Dealer)
+// ----------------------------
+exports.getPricingUpdates = async (req, res) => {
+  try {
+    const { mine, page = 1, limit = 50 } = req.query;
+    const offset = (page - 1) * limit;
+
+    const where = {};
+
+    // Dealers see their requests only
+    if (mine === "true" || req.user.role === "dealer") {
+      where.requestedByUserId = req.user.id;
+    }
+
+    const { count, rows } = await PricingUpdate.findAndCountAll({
+      where,
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      order: [["createdAt", "DESC"]],
+    });
+
+    res.json({ updates: rows, total: count });
+  } catch (err) {
+    console.error("getPricingUpdates:", err);
+    res.status(500).json({ error: "Failed to fetch pricing updates" });
+  }
+};
+
+// ----------------------------
+// 3️⃣ Admin Pricing Summary
+// ----------------------------
+exports.getPricingSummary = async (req, res) => {
+  try {
+    const approved = await PricingUpdate.count({ where: { status: "approved" } });
+    const pending = await PricingUpdate.count({ where: { status: "pending" } });
+    const rejected = await PricingUpdate.count({ where: { status: "rejected" } });
+
+    return res.json({ approved, pending, rejected });
+  } catch (error) {
+    console.error("Pricing summary error:", error);
+    res.status(500).json({ error: "Failed to fetch pricing summary" });
+  }
+};
+
+// ----------------------------
+// 4️⃣ Manager’s Region/Territory Requests
+// ----------------------------
+exports.getManagerPricingRequests = async (req, res) => {
+  try {
+    const managerId = req.user.id;
+
+    const updates = await PricingUpdate.findAll({
+      include: [
+        {
+          model: Dealer,
+          as: "dealer",
+          where: { managerId },
+        },
+      ],
+      order: [["createdAt", "DESC"]],
+    });
+
+    res.json({ updates });
+  } catch (err) {
+    console.error("getManagerPricingRequests:", err);
+    res.status(500).json({ error: "Failed to fetch manager pricing requests" });
+  }
+};
+
+// ----------------------------
+// 5️⃣ Update Pricing Status (Manager → Dealer Notification)
+// ----------------------------
+exports.updatePricingStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, remarks } = req.body;
+
+    if (!["approved", "rejected"].includes(status)) {
+      return res.status(400).json({ error: "Invalid status" });
+    }
+
+    const update = await PricingUpdate.findByPk(id);
+    if (!update) return res.status(404).json({ error: "Request not found" });
+
+    // If approved → update product price
+    if (status === "approved") {
+      await Product.update({ price: update.newPrice }, { where: { id: update.productId } });
+    }
+
+    update.status = status;
+    update.remarks = remarks;
+    update.approvedBy = req.user.username;
+    update.approvedAt = new Date();
+    await update.save();
+
+    // ✅ Create Notification for Dealer
+    const io = req.app.get("io");
+
+    await Notification.create({
+      senderId: req.user.id,
+      recipientId: update.requestedByUserId,
+      title: `Pricing ${status}`,
+      message:
+        status === "approved"
+          ? `Your pricing request for product ID ${update.productId} has been approved.`
+          : `Your pricing request for product ID ${update.productId} was rejected. Remarks: ${remarks || "N/A"}.`,
+      type: "pricing",
+      relatedId: update.id,
+    });
+
+    if (io) {
+      io.to(`user:${update.requestedByUserId}`).emit("notification", {
+        title: `Pricing ${status}`,
+        message:
+          status === "approved"
+            ? `✅ Your pricing request (Product ID ${update.productId}) was approved`
+            : `❌ Your pricing request (Product ID ${update.productId}) was rejected`,
+        type: "pricing",
+      });
+    }
+
+    res.json({ message: "Status updated", update });
+  } catch (err) {
+    console.error("updatePricingStatus:", err);
+    res.status(500).json({ error: "Failed to update pricing status" });
+  }
+};
+</file>
+
+<file path="src/controllers/productController.js">
+const { Product } = require("../models");
+
+exports.getProducts = async (req, res) => {
+  try {
+    const products = await Product.findAll({
+      order: [["name", "ASC"]],
+    });
+    res.json({ products });
+  } catch (err) {
+    console.error("getProducts error:", err);
+    res.status(500).json({ error: "Failed to fetch products" });
+  }
+};
+</file>
+
+<file path="src/controllers/regionController.js">
+const { Region } = require("../models");
+
+module.exports = {
+  getRegions: async (req, res) => {
+    try {
+      const regions = await Region.findAll({
+        order: [["name", "ASC"]],
+      });
+
+      res.json(regions);
+    } catch (err) {
+      console.error("Error fetching regions:", err);
+      res.status(500).json({ error: "Failed to fetch regions" });
+    }
+  },
+};
+</file>
+
+<file path="src/controllers/reportController.js">
+// =======================================================
+// ✅ REPORT CONTROLLER (CLEAN + FIXED + OPTIMIZED)
+// =======================================================
+
+const {
+  Dealer,
+  Invoice,
+  CreditDebitNote,
+  AccountStatement,
+  AuditLog,
+  Document,
+  Campaign,
+  PricingUpdate,   // ✅ The correct model
+  Order,
+} = require("../models");
+
+const { Op } = require("sequelize");
+const PDFDocument = require("pdfkit");
+const ExcelJS = require("exceljs");
+const fs = require("fs");
+const path = require("path");
+
+// =======================================================
+// ✅ DEALER PERFORMANCE REPORT
+// =======================================================
+const getDealerPerformanceReport = async (req, res) => {
+  try {
+    // ✅ If the logged-in user is a dealer → return THEIR OWN dashboard summary
+    if (req.user.role === "dealer") {
+      const dealerId = req.user.dealerId;
+
+      const dealer = await Dealer.findByPk(dealerId);
+      if (!dealer) return res.status(404).json({ error: "Dealer not found" });
+
+      // ✅ Fetch invoices
+      const invoices = await Invoice.findAll({
+        where: { dealerId },
+        order: [["invoiceDate", "DESC"]],
+      });
+
+      const totalSales = invoices.reduce(
+        (sum, inv) => sum + Number(inv.totalAmount || 0),
+        0
+      );
+
+      const deliveredOrders = invoices.filter(
+        (i) => i.status === "Delivered"
+      ).length;
+
+      const pendingOrders = invoices.filter(
+        (i) => i.status === "Pending"
+      ).length;
+
+      // ✅ Monthly Targets (fallback demo)
+      const monthlyTarget = dealer.monthlyTarget || 200000;
+      const quarterlyTarget = monthlyTarget * 3;
+      const yearlyTarget = monthlyTarget * 12;
+
+      // ✅ Category-wise sales (for pie chart)
+      const productGroups = {};
+      invoices.forEach((inv) => {
+        const group = inv.productGroup || "Others";
+        if (!productGroups[group]) productGroups[group] = 0;
+        productGroups[group] += Number(inv.totalAmount || 0);
+      });
+
+      // ✅ Pricing Status counts — FULLY FIXED ✅
+      const approved = await PricingUpdate.count({
+        where: { dealerId, status: "approved" },
+      });
+
+      const pending = await PricingUpdate.count({
+        where: { dealerId, status: "pending" },
+      });
+
+      const rejected = await PricingUpdate.count({
+        where: { dealerId, status: "rejected" },
+      });
+
+      const pricingBreakdown = { approved, pending, rejected };
+
+      // ✅ Return Dealer Dashboard JSON
+      return res.json({
+        dealerName: dealer.businessName,
+        dealerCode: dealer.dealerCode,
+        totalSales,
+        monthlyTarget,
+        quarterlyTarget,
+        yearlyTarget,
+        deliveredOrders,
+        pendingOrders,
+        productGroups,
+        pricingBreakdown,
+      });
+    }
+
+    // ✅ Admin Report (all dealers)
+    const dealers = await Dealer.findAll({
+      include: [{ model: Invoice, as: "invoices" }],
+    });
+
+    const reportData = dealers.map((dealer) => {
+      const invoices = dealer.invoices || [];
+      const totalSales = invoices.reduce(
+        (sum, inv) => sum + Number(inv.totalAmount || 0),
+        0
+      );
+
+      const deliveredOrders = invoices.filter(
+        (i) => i.status === "Delivered"
+      ).length;
+
+      const pendingOrders = invoices.filter(
+        (i) => i.status === "Pending"
+      ).length;
+
+      const monthlyTarget = dealer.monthlyTarget || 200000;
+      const quarterlyTarget = monthlyTarget * 3;
+      const yearlyTarget = monthlyTarget * 12;
+
+      const productGroups = {};
+      invoices.forEach((inv) => {
+        const group = inv.productGroup || "Others";
+        if (!productGroups[group]) productGroups[group] = 0;
+        productGroups[group] += Number(inv.totalAmount || 0);
+      });
+
+      return {
+        dealerName: dealer.businessName,
+        dealerCode: dealer.dealerCode,
+        totalSales,
+        monthlyTarget,
+        quarterlyTarget,
+        yearlyTarget,
+        deliveredOrders,
+        pendingOrders,
+        productGroups,
+      };
+    });
+
+    return res.json(reportData);
+  } catch (error) {
+    console.error("Dealer performance error:", error);
+    res.status(500).json({ error: "Failed to generate dealer performance report" });
+  }
+};
+
+// =======================================================
+// ✅ ADMIN SUMMARY
+// =======================================================
+const getAdminSummary = async (req, res) => {
+  try {
+    let totalDealers = await Dealer.count();
+    let blockedDealers = await Dealer.count({ where: { state: "BLOCKED" } });
+    let totalInvoices = await Invoice.count();
+
+    const outstandingInvoices = await Invoice.findAll({
+      attributes: ["balanceAmount"],
+      where: { balanceAmount: { [Op.gt]: 0 } },
+    });
+
+    const totalOutstanding = outstandingInvoices.reduce(
+      (sum, inv) => sum + Number(inv.balanceAmount || 0),
+      0
+    );
+
+    // ✅ Pending documents (flexible enum)
+    const pendingStatuses = ["pending"];
+    let pendingDocuments = await Document.count({
+      where: { status: { [Op.in]: pendingStatuses } },
+    });
+
+    // ✅ Pending Pricing Updates
+    let pendingPricing = await PricingUpdate.count({
+      where: { status: "pending" },
+    });
+
+    res.json({
+      totalDealers,
+      blockedDealers,
+      totalInvoices,
+      totalOutstanding,
+      pendingDocuments,
+      pendingPricing,
+      activeCampaigns: 0, // Placeholder
+    });
+  } catch (err) {
+    console.error("Admin summary error:", err);
+    res.status(500).json({ error: "Failed to generate admin summary" });
+  }
+};
+
+// =======================================================
+// ✅ ACCOUNT STATEMENT REPORT
+// =======================================================
+const getAccountStatementReport = async (req, res) => {
+  try {
+    const { dealerId, startDate, endDate, productGroup } = req.query;
+
+    const where = {};
+    if (dealerId) where.dealerId = dealerId;
+    if (productGroup) where.productGroup = productGroup;
+
+    if (startDate && endDate) {
+      where.statementDate = {
+        [Op.between]: [new Date(startDate), new Date(endDate)],
+      };
+    }
+
+    if (req.user.role === "dealer") {
+      where.dealerId = req.user.dealerId;
+    }
+
+    const statements = await AccountStatement.findAll({
+      where,
+      include: [{ model: Dealer, as: "dealer" }],
+      order: [["statementDate", "ASC"]],
+    });
+
+    const openingBalance = statements[0]?.balance || 0;
+    const closingBalance = statements.at(-1)?.balance || 0;
+
+    const totalDebit = statements.reduce((sum, s) => sum + Number(s.debitAmount || 0), 0);
+    const totalCredit = statements.reduce((sum, s) => sum + Number(s.creditAmount || 0), 0);
+
+    res.json({
+      openingBalance,
+      closingBalance,
+      totalDebit,
+      totalCredit,
+      statements,
+    });
+  } catch (error) {
+    console.error("Account statement error:", error);
+    res.status(500).json({ error: "Failed to generate account statement report" });
+  }
+};
+
+// =======================================================
+// ✅ INVOICE REGISTER REPORT
+// =======================================================
+const getInvoiceRegisterReport = async (req, res) => {
+  try {
+    const { dealerId, productGroup, invoiceNumber, startDate, endDate, status } =
+      req.query;
+
+    const where = {};
+    if (dealerId) where.dealerId = dealerId;
+    if (productGroup) where.productGroup = productGroup;
+    if (invoiceNumber) where.invoiceNumber = { [Op.like]: `%${invoiceNumber}%` };
+    if (status) where.status = status;
+
+    if (startDate && endDate) {
+      where.invoiceDate = { [Op.between]: [startDate, endDate] };
+    }
+
+    if (req.user.role === "dealer") {
+      where.dealerId = req.user.dealerId;
+    }
+
+    const invoices = await Invoice.findAll({
+      where,
+      include: [{ model: Dealer, as: "dealer" }],
+      order: [["invoiceDate", "DESC"]],
+    });
+
+    res.json({ invoices });
+  } catch (error) {
+    console.error("Invoice register error:", error);
+    res.status(500).json({ error: "Failed to generate invoice register report" });
+  }
+};
+
+// =======================================================
+// ✅ CREDIT/DEBIT NOTE REPORT
+// =======================================================
+const getCreditDebitNoteReport = async (req, res) => {
+  try {
+    const { dealerId, startDate, endDate, reasonCode } = req.query;
+
+    const where = {};
+    if (dealerId) where.dealerId = dealerId;
+    if (reasonCode) where.reasonCode = reasonCode;
+
+    if (startDate && endDate) {
+      where.noteDate = { [Op.between]: [startDate, endDate] };
+    }
+
+    if (req.user.role === "dealer") {
+      where.dealerId = req.user.dealerId;
+    }
+
+    const notes = await CreditDebitNote.findAll({
+      where,
+      include: [{ model: Dealer, as: "dealer" }],
+      order: [["noteDate", "DESC"]],
+    });
+
+    const totalCredit = notes
+      .filter((n) => n.noteType === "credit")
+      .reduce((sum, n) => sum + Number(n.amount), 0);
+
+    const totalDebit = notes
+      .filter((n) => n.noteType === "debit")
+      .reduce((sum, n) => sum + Number(n.amount), 0);
+
+    res.json({ notes, totalCredit, totalDebit });
+  } catch (error) {
+    console.error("Credit/Debit Note error:", error);
+    res.status(500).json({ error: "Failed to generate credit/debit note report" });
+  }
+};
+
+// =======================================================
+// ✅ OUTSTANDING RECEIVABLES REPORT
+// =======================================================
+const getOutstandingReceivablesReport = async (req, res) => {
+  try {
+    const where = { status: { [Op.ne]: "paid" } };
+
+    if (req.user.role === "dealer") {
+      where.dealerId = req.user.dealerId;
+    }
+
+    const invoices = await Invoice.findAll({
+      where,
+      include: [{ model: Dealer, as: "dealer" }],
+      order: [["dueDate", "ASC"]],
+    });
+
+    const today = new Date();
+
+    const aging = { "0-30": 0, "31-60": 0, "61-90": 0, "90+": 0 };
+
+    invoices.forEach((inv) => {
+      const due = new Date(inv.dueDate);
+      const diff = Math.floor((today - due) / (1000 * 60 * 60 * 24));
+      const amt = Number(inv.balanceAmount || 0);
+
+      if (diff <= 30) aging["0-30"] += amt;
+      else if (diff <= 60) aging["31-60"] += amt;
+      else if (diff <= 90) aging["61-90"] += amt;
+      else aging["90+"] += amt;
+    });
+
+    res.json({
+      invoices,
+      aging,
+      totalOutstanding: invoices.reduce(
+        (sum, inv) => sum + Number(inv.balanceAmount || 0),
+        0
+      ),
+    });
+  } catch (error) {
+    console.error("Outstanding receivables error:", error);
+    res.status(500).json({ error: "Failed to generate outstanding receivables report" });
+  }
+};
+
+// =======================================================
+// ✅ PENDING APPROVALS
+// =======================================================
+const getPendingApprovals = async (req, res) => {
+  try {
+    const pendingDocs = await Document.findAll({
+      where: { status: "pending" },
+      include: [
+        {
+          model: Dealer,
+          as: "dealer",
+          attributes: ["id", "businessName"],
+        },
+      ],
+    });
+
+    const formatted = pendingDocs.map((doc) => ({
+      id: doc.id,
+      dealerId: doc.dealer?.id,
+      dealerName: doc.dealer?.businessName || "Unknown Dealer",
+      documentType: doc.documentType,
+      createdAt: doc.createdAt,
+      status: doc.status,
+    }));
+
+    res.json(formatted);
+  } catch (err) {
+    console.error("Pending approvals error:", err);
+    res.status(500).json({ error: "Failed to fetch pending approvals" });
+  }
+};
+// =======================================================
+// ✅ TERRITORY REPORT
+// =======================================================
+// =======================================================
+// ✅ TERRITORY REPORT (MATCHES FRONTEND FORMAT)
+// =======================================================
+const getTerritoryReport = async (req, res) => {
+  try {
+    const { state, territory, region } = req.query;
+
+    const where = {};
+    if (state) where.state = state;
+    if (territory) where.territory = territory;
+    if (region) where.region = region;
+
+    const dealers = await Dealer.findAll({
+      where,
+      include: [{ model: Invoice, as: "invoices" }],
+    });
+
+    let totalSales = 0;
+    let territorySalesMap = {};
+    let productGroupMap = {};
+    let dealerSales = [];
+
+    dealers.forEach((d) => {
+      const sales = d.invoices.reduce(
+        (sum, inv) => sum + Number(inv.totalAmount || 0),
+        0
+      );
+
+      totalSales += sales;
+
+      dealerSales.push({
+        dealerName: d.businessName,
+        dealerCode: d.dealerCode,
+        territory: d.territory,
+        totalSales: sales,
+      });
+
+      // Territory contribution
+      if (!territorySalesMap[d.territory]) territorySalesMap[d.territory] = 0;
+      territorySalesMap[d.territory] += sales;
+
+      // Product mix
+      d.invoices.forEach((inv) => {
+        const grp = inv.productGroup || "OTHERS";
+        if (!productGroupMap[grp]) productGroupMap[grp] = 0;
+        productGroupMap[grp] += Number(inv.totalAmount || 0);
+      });
+    });
+
+    const topDealer = dealerSales.sort((a, b) => b.totalSales - a.totalSales)[0] || null;
+    const bottomDealer = dealerSales.sort((a, b) => a.totalSales - b.totalSales)[0] || null;
+
+    const territoryContributionChart = Object.entries(territorySalesMap).map(
+      ([name, value]) => ({ name, value })
+    );
+
+    const productMixChart = Object.entries(productGroupMap).map(
+      ([name, value]) => ({ name, value })
+    );
+
+    res.json({
+      kpis: {
+        totalDealers: dealers.length,
+        totalSales,
+        topTerritory: territoryContributionChart[0]?.name || "-",
+        topProductGroup: productMixChart[0]?.name || "-",
+      },
+      dealerSalesChart: dealerSales,
+      territoryContributionChart,
+      productMixChart,
+      table: dealerSales,
+      highlights: {
+        topDealer,
+        bottomDealer,
+      },
+    });
+
+  } catch (error) {
+    console.error("Territory report error:", error);
+    res.status(500).json({ error: "Failed to generate territory report" });
+  }
+};
+
+// =======================================================
+// ✅ REGIONAL SALES SUMMARY REPORT (AS PER PPT)
+// =======================================================
+const getRegionalSalesSummary = async (req, res) => {
+  try {
+    const { region, state, territory } = req.query;
+
+    const where = {};
+    if (region) where.region = region;
+    if (state) where.state = state;
+    if (territory) where.territory = territory;
+
+    // 1️⃣ Fetch Dealers + Their Invoices
+    const dealers = await Dealer.findAll({
+      where,
+      include: [{ model: Invoice, as: "invoices" }]
+    });
+
+    // 2️⃣ Grouping → Region → Territory → Dealers
+    const result = {};
+
+    dealers.forEach((dealer) => {
+      const regionName = dealer.region || "UNASSIGNED";
+      const territoryName = dealer.territory || "UNASSIGNED";
+
+      if (!result[regionName]) {
+        result[regionName] = {
+          region: regionName,
+          totalSales: 0,
+          totalOutstanding: 0,
+          territories: {}
+        };
+      }
+
+      if (!result[regionName].territories[territoryName]) {
+        result[regionName].territories[territoryName] = {
+          territory: territoryName,
+          totalSales: 0,
+          totalOutstanding: 0,
+          dealers: []
+        };
+      }
+
+      const totalSales = dealer.invoices.reduce(
+        (sum, inv) => sum + Number(inv.totalAmount || 0),
+        0
+      );
+
+      const outstanding = dealer.invoices.reduce(
+        (sum, inv) => sum + Number(inv.balanceAmount || 0),
+        0
+      );
+
+      // Push Dealer Row
+      result[regionName].territories[territoryName].dealers.push({
+        dealerCode: dealer.dealerCode,
+        dealerName: dealer.businessName,
+        totalSales,
+        outstanding
+      });
+
+      // Update totals
+      result[regionName].territories[territoryName].totalSales += totalSales;
+      result[regionName].territories[territoryName].totalOutstanding += outstanding;
+
+      result[regionName].totalSales += totalSales;
+      result[regionName].totalOutstanding += outstanding;
+    });
+
+    res.json({
+      generatedAt: new Date(),
+      regions: result
+    });
+
+  } catch (error) {
+    console.error("Regional sales summary error:", error);
+    res.status(500).json({ error: "Failed to generate regional sales summary" });
+  }
+};
+
+// =======================================================
+// ✅ EXPORT
+// =======================================================
+module.exports = {
+  getDealerPerformanceReport,
+  getAdminSummary,
+  getAccountStatementReport,
+  getInvoiceRegisterReport,
+  getCreditDebitNoteReport,
+  getOutstandingReceivablesReport,
+  getTerritoryReport,
+  getPendingApprovals,
+  getRegionalSalesSummary,
+};
+</file>
+
+<file path="src/controllers/roleController.js">
+// src/controllers/roleController.js
+const { Role, Permission, RolePermission, sequelize } = require("../models");
+
+module.exports = {
+  // Create Role
+  createRole: async (req, res) => {
+    try {
+      const { name, category, description } = req.body;
+
+      const role = await Role.create({ name, category, description });
+
+      res.json({ message: "Role created", role });
+    } catch (err) {
+      console.error("createRole:", err);
+      res.status(500).json({ error: "Failed to create role" });
+    }
+  },
+
+  // Get all roles (with permissions)
+  getRoles: async (req, res) => {
+    try {
+      const roles = await Role.findAll({
+        include: [
+          {
+            model: Permission,
+            as: "permissions",
+            through: { attributes: [] }, // hide junction table
+          },
+        ],
+        order: [["id", "ASC"]],
+      });
+
+      res.json(roles);
+    } catch (err) {
+      console.error("getRoles:", err);
+      res.status(500).json({ error: "Failed to fetch roles" });
+    }
+  },
+
+  // Assign a single permission to a role (keeps old behaviour but implemented safely)
+  assignPermission: async (req, res) => {
+    try {
+      const { roleId, permissionId } = req.body;
+
+      const role = await Role.findByPk(roleId);
+      const permission = await Permission.findByPk(permissionId);
+
+      if (!role || !permission) {
+        return res.status(404).json({ error: "Role or Permission not found" });
+      }
+
+      // Use association helper to avoid duplicates
+      await role.addPermission(permission);
+
+      res.json({ message: "Permission assigned to role" });
+    } catch (err) {
+      console.error("assignPermission:", err);
+      res.status(500).json({ error: "Failed to assign permission" });
+    }
+  },
+
+  // NEW: Replace all permissions for a role (atomic)
+  updateRolePermissions: async (req, res) => {
+    const t = await sequelize.transaction();
+    try {
+      const { roleId } = req.params;
+      const { permissionIds } = req.body;
+
+      if (!Array.isArray(permissionIds)) {
+        await t.rollback();
+        return res
+          .status(400)
+          .json({ error: "permissionIds must be an array of integers" });
+      }
+
+      const role = await Role.findByPk(roleId, { transaction: t });
+      if (!role) {
+        await t.rollback();
+        return res.status(404).json({ error: "Role not found" });
+      }
+
+      // Option A: Use Sequelize association helper (clean & will sync junction table)
+      // This will remove existing associations and add the provided ones.
+      await role.setPermissions(permissionIds, { transaction: t });
+
+      // Fetch updated role (with permissions)
+      const updatedRole = await Role.findByPk(roleId, {
+        include: [{ model: Permission, as: "permissions", through: { attributes: [] } }],
+        transaction: t,
+      });
+
+      await t.commit();
+      res.json({
+        message: "Permissions updated successfully",
+        role: updatedRole,
+      });
+    } catch (err) {
+      await t.rollback();
+      console.error("updateRolePermissions:", err);
+      res.status(500).json({ error: "Unable to update role permissions" });
+    }
+  },
+};
+</file>
+
+<file path="src/controllers/sapController.js">
+const { Dealer, Invoice, CreditDebitNote, AccountStatement, AuditLog } = require('../models');
+
+
+const syncDealers = async (req, res) => {
+  try {
+    const mockSAPDealers = [
+      {
+        dealerCode: 'D001',
+        businessName: 'ABC Distributors',
+        sapCustomerNumber: 'C100001',
+        sapVendorNumber: 'V100001',
+        email: 'abc@example.com',
+        phoneNumber: '9876543210',
+        address: '123 Main Street',
+        city: 'Mumbai',
+        state: 'Maharashtra',
+        pincode: '400001',
+        gstNumber: '27AABCU9603R1ZM',
+        panNumber: 'AABCU9603R',
+        territory: 'West',
+        region: 'Mumbai'
+      }
+    ];
+
+    const syncedDealers = [];
+    for (const sapDealer of mockSAPDealers) {
+      const [dealer, created] = await Dealer.findOrCreate({
+        where: { dealerCode: sapDealer.dealerCode },
+        defaults: sapDealer
+      });
+
+      if (!created) {
+        await dealer.update(sapDealer);
+      }
+
+      syncedDealers.push(dealer);
+    }
+
+    await AuditLog.create({
+      userId: req.user?.id,
+      action: 'SAP_DEALER_SYNC',
+      entity: 'Dealer',
+      changes: { syncedCount: syncedDealers.length },
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent']
+    });
+
+    res.json({
+      message: 'Dealers synced successfully',
+      syncedCount: syncedDealers.length,
+      dealers: syncedDealers
+    });
+  } catch (error) {
+    console.error('SAP dealer sync error:', error);
+    res.status(500).json({ error: 'Failed to sync dealers from SAP' });
+  }
+};
+
+const fetchCustomerAccount = async (req, res) => {
+  try {
+    const { dealerId } = req.params;
+    
+    const dealer = await Dealer.findByPk(dealerId);
+    
+    if (!dealer) {
+      return res.status(404).json({ error: 'Dealer not found' });
+    }
+
+    const mockAccountData = {
+      customerNumber: dealer.sapCustomerNumber,
+      openingBalance: 50000,
+      currentBalance: dealer.outstandingAmount,
+      creditLimit: dealer.creditLimit,
+      lastTransactionDate: new Date()
+    };
+
+    res.json(mockAccountData);
+  } catch (error) {
+    console.error('SAP customer account fetch error:', error);
+    res.status(500).json({ error: 'Failed to fetch customer account from SAP' });
+  }
+};
+
+const fetchVendorAccount = async (req, res) => {
+  try {
+    const { dealerId } = req.params;
+    
+    const dealer = await Dealer.findByPk(dealerId);
+    
+    if (!dealer) {
+      return res.status(404).json({ error: 'Dealer not found' });
+    }
+
+    const mockVendorData = {
+      vendorNumber: dealer.sapVendorNumber,
+      paymentTerms: dealer.paymentTerms,
+      bankDetails: {
+        bankName: dealer.bankName,
+        accountNumber: dealer.bankAccountNumber,
+        ifsc: dealer.bankIFSC
+      }
+    };
+
+    res.json(mockVendorData);
+  } catch (error) {
+    console.error('SAP vendor account fetch error:', error);
+    res.status(500).json({ error: 'Failed to fetch vendor account from SAP' });
+  }
+};
+
+const createCreditDebitNote = async (req, res) => {
+  try {
+    const { dealerId, noteType, amount, reasonCode, description } = req.body;
+
+    const dealer = await Dealer.findByPk(dealerId);
+    
+    if (!dealer) {
+      return res.status(404).json({ error: 'Dealer not found' });
+    }
+
+    const noteNumber = `${noteType === 'credit' ? 'CN' : 'DN'}-${Date.now()}`;
+    
+    const note = await CreditDebitNote.create({
+      noteNumber,
+      noteType,
+      noteDate: new Date(),
+      amount,
+      reasonCode,
+      description,
+      dealerId,
+      sapDocumentNumber: `SAP-${noteNumber}`,
+      status: 'approved'
+    });
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: 'SAP_CREATE_NOTE',
+      entity: 'CreditDebitNote',
+      entityId: note.id,
+      changes: req.body,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent']
+    });
+
+    res.status(201).json({
+      message: 'Credit/Debit note created in SAP',
+      note
+    });
+  } catch (error) {
+    console.error('SAP create note error:', error);
+    res.status(500).json({ error: 'Failed to create credit/debit note in SAP' });
+  }
+};
+
+const syncInvoices = async (req, res) => {
+  try {
+    const { dealerId } = req.params;
+    
+    const dealer = await Dealer.findByPk(dealerId);
+    
+    if (!dealer) {
+      return res.status(404).json({ error: 'Dealer not found' });
+    }
+
+    const mockSAPInvoices = [
+      {
+        invoiceNumber: `INV-${Date.now()}-001`,
+        invoiceDate: new Date(),
+        dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        amount: 100000,
+        taxAmount: 18000,
+        totalAmount: 118000,
+        paidAmount: 0,
+        balanceAmount: 118000,
+        status: 'unpaid',
+        productGroup: 'Electronics',
+        description: 'Product sales invoice',
+        sapDocumentNumber: `SAP-INV-${Date.now()}`,
+        dealerId: dealer.id
+      }
+    ];
+
+    const syncedInvoices = [];
+    for (const sapInvoice of mockSAPInvoices) {
+      const [invoice, created] = await Invoice.findOrCreate({
+        where: { invoiceNumber: sapInvoice.invoiceNumber },
+        defaults: sapInvoice
+      });
+
+      syncedInvoices.push(invoice);
+    }
+
+    await AuditLog.create({
+      userId: req.user?.id,
+      action: 'SAP_INVOICE_SYNC',
+      entity: 'Invoice',
+      changes: { dealerId, syncedCount: syncedInvoices.length },
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent']
+    });
+
+    res.json({
+      message: 'Invoices synced successfully from SAP',
+      syncedCount: syncedInvoices.length,
+      invoices: syncedInvoices
+    });
+  } catch (error) {
+    console.error('SAP invoice sync error:', error);
+    res.status(500).json({ error: 'Failed to sync invoices from SAP' });
+  }
+};
+
+module.exports = {
+  syncDealers,
+  fetchCustomerAccount,
+  fetchVendorAccount,
+  createCreditDebitNote,
+  syncInvoices
+};
+</file>
+
+<file path="src/middleware/auth.js">
+const { verifyToken } = require('../utils/jwt');
+const { User } = require('../models');
+
+const authenticate = async (req, res, next) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    
+    if (!token) {
+      return res.status(401).json({ error: 'No token provided' });
+    }
+
+    const decoded = verifyToken(token);
+    if (!decoded) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+
+    const user = await User.findByPk(decoded.userId);
+    if (!user || !user.isActive || user.isBlocked) {
+      return res.status(401).json({ error: 'User not authorized' });
+    }
+
+    req.user = user;
+    next();
+  } catch (error) {
+    console.error('Authentication error:', error);
+    res.status(401).json({ error: 'Authentication failed' });
+  }
+};
+
+const authorize = (...roles) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    if (!roles.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Not authorized for this action' });
+    }
+
+    next();
+  };
+};
+
+module.exports = { authenticate, authorize };
+</file>
+
+<file path="src/middleware/checkPermission.js">
+const { RolePermission, Permission } = require("../models");
+
+module.exports = (permissionKey) => {
+  return async (req, res, next) => {
+    try {
+      const roleId = req.user.roleId;
+
+      const match = await Permission.findOne({
+        where: { key: permissionKey },
+        include: {
+          model: RolePermission,
+          where: { roleId }
+        }
+      });
+
+      if (!match) {
+        return res.status(403).json({ error: "Access denied: Permission missing" });
+      }
+
+      next();
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Permission check failed" });
+    }
+  };
+};
+</file>
+
+<file path="src/middleware/checkRole.js">
+module.exports = (requiredRoles) => {
+  return (req, res, next) => {
+    if (!requiredRoles.includes(req.user.role)) {
+      return res.status(403).json({ error: "Access denied: Role not allowed" });
+    }
+    next();
+  };
+};
+</file>
+
+<file path="src/models/AccountStatement.js">
+const { DataTypes } = require('sequelize');
+
+module.exports = (sequelize, DataTypes) => {
+
+  const AccountStatement = sequelize.define('AccountStatement', {
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true
+    },
+    statementDate: {
+      type: DataTypes.DATE,
+      allowNull: false
+    },
+    documentType: {
+      type: DataTypes.STRING
+    },
+    documentNumber: {
+      type: DataTypes.STRING
+    },
+    description: {
+      type: DataTypes.TEXT
+    },
+    debitAmount: {
+      type: DataTypes.DECIMAL(15, 2),
+      defaultValue: 0
+    },
+    creditAmount: {
+      type: DataTypes.DECIMAL(15, 2),
+      defaultValue: 0
+    },
+    balance: {
+      type: DataTypes.DECIMAL(15, 2),
+      allowNull: false
+    },
+    productGroup: {
+      type: DataTypes.STRING
+    },
+    sapDocumentNumber: {
+      type: DataTypes.STRING
+    }
+  }, {
+    timestamps: true
+  });
+
+  return AccountStatement;
+};
+</file>
+
+<file path="src/models/AuditLog.js">
+const { DataTypes } = require('sequelize');
+module.exports = (sequelize, DataTypes) => {
+
+  const AuditLog = sequelize.define('AuditLog', {
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true
+    },
+    userId: {
+      type: DataTypes.UUID
+    },
+    action: {
+      type: DataTypes.STRING,
+      allowNull: false
+    },
+    entity: {
+      type: DataTypes.STRING,
+      allowNull: false
+    },
+    entityId: {
+      type: DataTypes.STRING
+    },
+    changes: {
+      type: DataTypes.JSON
+    },
+    ipAddress: {
+      type: DataTypes.STRING
+    },
+    userAgent: {
+      type: DataTypes.TEXT
+    },
+    timestamp: {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW
+    }
+  }, {
+    timestamps: false
+  });
+
+  return AuditLog;
+};
+</file>
+
+<file path="src/models/Campaign.js">
+const { DataTypes } = require('sequelize');
+
+module.exports = (sequelize, DataTypes) => {
+
+  const Campaign = sequelize.define('Campaign', {
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true
+    },
+    campaignName: {
+      type: DataTypes.STRING,
+      allowNull: false
+    },
+    campaignType: {
+      type: DataTypes.ENUM('promotion', 'sales_scheme', 'seasonal_offer'),
+      allowNull: false
+    },
+    description: {
+      type: DataTypes.TEXT
+    },
+    startDate: {
+      type: DataTypes.DATE,
+      allowNull: false
+    },
+    endDate: {
+      type: DataTypes.DATE,
+      allowNull: false
+    },
+    productGroup: {
+      type: DataTypes.STRING
+    },
+    discountPercentage: {
+      type: DataTypes.DECIMAL(5, 2)
+    },
+    discountAmount: {
+      type: DataTypes.DECIMAL(15, 2)
+    },
+    targetAudience: {
+      type: DataTypes.JSON
+    },
+    isActive: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: true
+    },
+    terms: {
+      type: DataTypes.TEXT
+    },
+    bannerImage: {
+      type: DataTypes.STRING
+    }
+  }, {
+    timestamps: true
+  });
+
+  return Campaign;
+};
+</file>
+
+<file path="src/models/CreditDebitNote.js">
+const { DataTypes } = require('sequelize');
+module.exports = (sequelize, DataTypes) => {
+
+  const CreditDebitNote = sequelize.define('CreditDebitNote', {
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true
+    },
+    noteNumber: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      unique: true
+    },
+    noteType: {
+      type: DataTypes.ENUM('credit', 'debit'),
+      allowNull: false
+    },
+    noteDate: {
+      type: DataTypes.DATE,
+      allowNull: false
+    },
+    amount: {
+      type: DataTypes.DECIMAL(15, 2),
+      allowNull: false
+    },
+    reasonCode: {
+      type: DataTypes.STRING
+    },
+    description: {
+      type: DataTypes.TEXT
+    },
+    referenceInvoiceNumber: {
+      type: DataTypes.STRING
+    },
+    status: {
+      type: DataTypes.ENUM('pending', 'approved', 'rejected'),
+      defaultValue: 'pending'
+    },
+    pdfPath: {
+      type: DataTypes.STRING
+    },
+    sapDocumentNumber: {
+      type: DataTypes.STRING
+    }
+  }, {
+    timestamps: true
+  });
+
+  return CreditDebitNote;
+};
+</file>
+
+<file path="src/models/Dealer.js">
+module.exports = (sequelize, DataTypes) => {
+  const Dealer = sequelize.define(
+    "Dealer",
+    {
+      id: {
+        type: DataTypes.UUID,
+        defaultValue: DataTypes.UUIDV4,
+        primaryKey: true,
+      },
+
+      dealerCode: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        unique: true,
+      },
+
+      businessName: {
+        type: DataTypes.STRING,
+        allowNull: false,
+      },
+
+      contactPerson: DataTypes.STRING,
+      email: { type: DataTypes.STRING, validate: { isEmail: true } },
+      phoneNumber: DataTypes.STRING,
+      address: DataTypes.TEXT,
+      city: DataTypes.STRING,
+      state: DataTypes.STRING,
+      pincode: DataTypes.STRING,
+      gstNumber: DataTypes.STRING,
+      panNumber: DataTypes.STRING,
+
+      bankName: DataTypes.STRING,
+      bankAccountNumber: DataTypes.STRING,
+      bankIFSC: DataTypes.STRING,
+      paymentTerms: DataTypes.STRING,
+
+      creditLimit: { type: DataTypes.DECIMAL(15, 2), defaultValue: 0 },
+      outstandingAmount: { type: DataTypes.DECIMAL(15, 2), defaultValue: 0 },
+
+      territory: DataTypes.STRING,
+
+      // ❌ removed old 'region: DataTypes.STRING,'
+
+      sapCustomerNumber: DataTypes.STRING,
+      sapVendorNumber: DataTypes.STRING,
+
+      isActive: { type: DataTypes.BOOLEAN, defaultValue: true },
+      isBlocked: { type: DataTypes.BOOLEAN, defaultValue: false },
+      blockReason: DataTypes.TEXT,
+      isVerified: { type: DataTypes.BOOLEAN, defaultValue: false },
+
+      managerId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        comment: "User ID of TM/AM/RM managing this dealer",
+      },
+
+      licenseNumber: DataTypes.STRING,
+      licenseDocument: DataTypes.STRING,
+      verifiedBy: DataTypes.STRING,
+      verifiedAt: DataTypes.DATE,
+      licenses: DataTypes.JSON,
+
+      // ✅ REAL REGION RELATION
+      regionId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
+    },
+    {
+      timestamps: true,
+      tableName: "dealers",
+      freezeTableName: true,
+    }
+  );
+
+  Dealer.associate = (models) => {
+    Dealer.hasOne(models.User, {
+      foreignKey: "dealerId",
+      as: "user",
+      onDelete: "SET NULL",
+      onUpdate: "CASCADE",
+    });
+
+    Dealer.belongsTo(models.User, {
+      foreignKey: { name: "managerId", allowNull: true },
+      as: "manager",
+      onDelete: "SET NULL",
+      onUpdate: "CASCADE",
+    });
+
+    Dealer.hasMany(models.Invoice, {
+      foreignKey: "dealerId",
+      as: "invoices",
+      onDelete: "CASCADE",
+      onUpdate: "CASCADE",
+    });
+
+    Dealer.hasMany(models.Document, {
+      foreignKey: "dealerId",
+      as: "documents",
+    });
+
+    Dealer.hasMany(models.PricingUpdate, {
+      foreignKey: "dealerId",
+      as: "pricingUpdates",
+    });
+
+    // ✅ FIXED: Region relationship
+    Dealer.belongsTo(models.Region, {
+      foreignKey: "regionId",
+      as: "region",
+    });
+  };
+
+  return Dealer;
+};
+</file>
+
+<file path="src/models/Document.js">
+module.exports = (sequelize, DataTypes) => {
+  const Document = sequelize.define(
+    "Document",
+    {
+      id: {
+        type: DataTypes.UUID,
+        defaultValue: DataTypes.UUIDV4,
+        primaryKey: true,
+      },
+
+      dealerId: {
+        type: DataTypes.UUID,
+        allowNull: false,
+      },
+
+      documentType: {
+        type: DataTypes.ENUM(
+          "statement",
+          "certificate",
+          "invoice",
+          "credit_note",
+          "debit_note",
+          "other"
+        ),
+        allowNull: false,
+      },
+
+      documentName: { type: DataTypes.STRING, allowNull: false },
+      filePath: { type: DataTypes.STRING, allowNull: false },
+      fileSize: DataTypes.INTEGER,
+      mimeType: DataTypes.STRING,
+      uploadedBy: DataTypes.STRING,
+      description: DataTypes.TEXT,
+
+      status: {
+        type: DataTypes.ENUM("pending", "approved", "rejected"),
+        defaultValue: "pending",
+      },
+      approvedBy: { type: DataTypes.UUID },
+      approvedAt: { type: DataTypes.DATE },
+      rejectionReason: { type: DataTypes.TEXT },
+
+      sapDocumentId: { type: DataTypes.STRING },
+    },
+    {
+      timestamps: true,
+      tableName: "documents",
+    }
+  );
+
+  Document.associate = (models) => {
+    Document.belongsTo(models.Dealer, {
+      foreignKey: "dealerId",
+      as: "dealer",
+      onDelete: "CASCADE",
+    });
+  };
+
+  return Document;
+};
+</file>
+
+<file path="src/models/index.js">
+const fs = require("fs");
+const path = require("path");
+const { sequelize } = require("../config/database");
+const Sequelize = require("sequelize");
+
+const db = {};
+const basename = path.basename(__filename);
+
+// Load all models
+fs.readdirSync(__dirname)
+  .filter(
+    (file) =>
+      file.indexOf(".") !== 0 &&
+      file !== basename &&
+      file.slice(-3) === ".js"
+  )
+  .forEach((file) => {
+    const model = require(path.join(__dirname, file))(
+      sequelize,
+      Sequelize.DataTypes
+    );
+    db[model.name] = model;
+  });
+
+// Run associations
+Object.keys(db).forEach((modelName) => {
+  if (db[modelName].associate) {
+    db[modelName].associate(db);
+  }
+});
+
+db.sequelize = sequelize;
+db.Sequelize = Sequelize;
+
+// ADD THIS ⬇⬇⬇
+db.syncDatabase = async () => {
+  try {
+    await db.sequelize.sync();
+
+    console.log("✅ Database synchronized successfully.");
+  } catch (error) {
+    console.error("❌ Error synchronizing database:", error);
+  }
+};
+
+// EXPORT ALL
+module.exports = db;
+</file>
+
+<file path="src/models/Inventory.js">
+const { DataTypes } = require('sequelize');
+
+module.exports = (sequelize, DataTypes) => {
+
+  const Inventory = sequelize.define('Inventory', {
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true
+    },
+    name: {
+      type: DataTypes.STRING,
+      allowNull: false
+    },
+    plant: {
+      type: DataTypes.STRING,
+      allowNull: false
+    },
+    stock: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0
+    },
+    uom: {
+      type: DataTypes.STRING,
+      defaultValue: 'Units'
+    },
+    lastUpdatedAt: {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW
+    },
+    sapMaterialNumber: {
+      type: DataTypes.STRING
+    }
+  }, {
+    timestamps: true
+  });
+
+  return Inventory;
+};
+</file>
+
+<file path="src/models/Invoice.js">
+module.exports = (sequelize, DataTypes) => {
+  const Invoice = sequelize.define(
+    "Invoice",
+    {
+      id: {
+        type: DataTypes.UUID,
+        defaultValue: DataTypes.UUIDV4,
+        primaryKey: true,
+      },
+
+      dealerId: {
+        type: DataTypes.UUID,
+        allowNull: false,
+      },
+
+      invoiceNumber: { type: DataTypes.STRING, allowNull: false, unique: true },
+      invoiceDate: { type: DataTypes.DATE, allowNull: false },
+      dueDate: DataTypes.DATE,
+
+      amount: { type: DataTypes.DECIMAL(15, 2), allowNull: false },
+      taxAmount: { type: DataTypes.DECIMAL(15, 2), defaultValue: 0 },
+      totalAmount: { type: DataTypes.DECIMAL(15, 2), allowNull: false },
+
+      paidAmount: { type: DataTypes.DECIMAL(15, 2), defaultValue: 0 },
+      balanceAmount: DataTypes.DECIMAL(15, 2),
+
+      status: {
+        type: DataTypes.ENUM("paid", "unpaid", "partial", "overdue"),
+        defaultValue: "unpaid",
+      },
+
+      productGroup: DataTypes.STRING,
+      description: DataTypes.TEXT,
+      pdfPath: DataTypes.STRING,
+      sapDocumentNumber: DataTypes.STRING,
+      paymentDate: DataTypes.DATE,
+    },
+    {
+      timestamps: true,
+      tableName: "invoices",
+    }
+  );
+
+  Invoice.associate = (models) => {
+    Invoice.belongsTo(models.Dealer, {
+      foreignKey: "dealerId",
+      as: "dealer",
+      onDelete: "CASCADE",
+    });
+  };
+
+  return Invoice;
+};
+</file>
+
+<file path="src/models/Material.js">
+// src/models/Material.js
+module.exports = (sequelize, DataTypes) => {
+  const Material = sequelize.define('Material', {
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true
+    },
+    materialNumber: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      unique: true
+    },
+    name: {
+      type: DataTypes.STRING,
+      allowNull: false
+    },
+    description: {
+      type: DataTypes.TEXT
+    },
+    uom: {
+      type: DataTypes.STRING
+    },
+    plant: {
+      type: DataTypes.STRING
+    },
+    stock: {
+      type: DataTypes.INTEGER,
+      defaultValue: 0
+    },
+    materialGroupId: {
+      type: DataTypes.UUID,
+      allowNull: true
+    }
+  }, {
+    tableName: 'materials',
+    timestamps: true
+  });
+
+  Material.associate = (models) => {
+    Material.belongsTo(models.MaterialGroup, { as: 'group', foreignKey: 'materialGroupId' });
+    Material.hasMany(models.OrderItem, {
+  as: "orderItems",
+  foreignKey: "materialId"
+});
+
+  };
+
+  return Material;
+};
+</file>
+
+<file path="src/models/MaterialGroup.js">
+// src/models/MaterialGroup.js
+module.exports = (sequelize, DataTypes) => {
+const MaterialGroup = sequelize.define('MaterialGroup', {
+id: {
+  type: DataTypes.UUID,
+  defaultValue: DataTypes.UUIDV4,
+  primaryKey: true
+}
+,
+code: { type: DataTypes.STRING, allowNull: false, unique: true },
+name: { type: DataTypes.STRING, allowNull: false },
+description: { type: DataTypes.TEXT, allowNull: true }
+}, {
+tableName: 'material_groups',
+timestamps: true
+});
+
+
+MaterialGroup.associate = (models) => {
+MaterialGroup.hasMany(models.Material, { as: 'materials', foreignKey: 'materialGroupId' });
+};
+
+
+return MaterialGroup;
+};
+</file>
+
+<file path="src/models/Message.js">
+// backend/src/models/Message.js
+const { DataTypes } = require("sequelize");
+
+module.exports = (sequelize, DataTypes) => {
+
+  const Message = sequelize.define(
+    "Message",
+    {
+      id: {
+        type: DataTypes.UUID,
+        defaultValue: DataTypes.UUIDV4,
+        primaryKey: true,
+      },
+      senderId: {
+        type: DataTypes.UUID,
+        allowNull: false,
+      },
+      recipientId: {
+        type: DataTypes.UUID,
+        allowNull: false,
+      },
+      subject: {
+        type: DataTypes.STRING,
+        allowNull: false,
+      },
+      body: {
+        type: DataTypes.TEXT,
+        allowNull: false,
+      },
+      status: {
+        type: DataTypes.ENUM("unread", "read"),
+        defaultValue: "unread",
+      },
+messageType: {
+  type: DataTypes.ENUM("chat", "system", "announcement"),
+  defaultValue: "chat", // helps separate chat vs system messages
+},
+
+    },
+    {
+      tableName: "messages",
+      timestamps: true,
+    }
+  );
+
+  Message.associate = (models) => {
+    Message.belongsTo(models.User, {
+      foreignKey: "senderId",
+      as: "sender",
+    });
+    Message.belongsTo(models.User, {
+      foreignKey: "recipientId",
+      as: "recipient",
+    });
+  };
+
+  return Message;
+};
+</file>
+
+<file path="src/models/Notification.js">
+// src/models/Notification.js
+module.exports = (sequelize, DataTypes) => {
+  const Notification = sequelize.define('Notification', {
+    // Optional sender (the user who triggered the event)
+    senderId: { type: DataTypes.UUID, allowNull: true },
+
+    // Optional recipient (null if broadcasted to a role)
+    recipientId: { type: DataTypes.UUID, allowNull: true },
+
+    // Role-based broadcast target (e.g., 'manager', 'dealer', 'admin')
+    recipientRole: { type: DataTypes.STRING, allowNull: true },
+
+    title: { type: DataTypes.STRING, allowNull: false },
+    message: { type: DataTypes.TEXT, allowNull: false },
+
+    // Category: 'document', 'pricing', 'chat', etc.
+    type: { type: DataTypes.STRING, allowNull: true },
+
+    // Related record ID (documentId, pricingId, etc.)
+    relatedId: { type: DataTypes.INTEGER, allowNull: true },
+
+    isRead: { type: DataTypes.BOOLEAN, defaultValue: false },
+  });
+
+  return Notification;
+};
+</file>
+
+<file path="src/models/Order.js">
+// src/models/Order.js
+module.exports = (sequelize, DataTypes) => {
+  const Order = sequelize.define('Order', {
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true
+    },
+    dealerId: {
+      type: DataTypes.UUID,   // FIXED HERE
+      allowNull: false
+    },
+    orderNumber: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      unique: true
+    },
+    status: {
+      type: DataTypes.ENUM(
+        'Pending',
+        'Approved',
+        'Rejected',
+        'Processing',
+        'Shipped',
+        'Delivered',
+        'Cancelled'
+      ),
+      defaultValue: 'Pending'
+    },
+    totalAmount: {
+      type: DataTypes.DECIMAL(12, 2),
+      defaultValue: 0
+    },
+    notes: {
+      type: DataTypes.TEXT
+    }
+  }, {
+    tableName: 'orders',
+    timestamps: true
+  });
+
+  Order.associate = (models) => {
+    Order.belongsTo(models.Dealer, {
+      as: 'dealer',
+      foreignKey: 'dealerId'
+    });
+    Order.hasMany(models.OrderItem, {
+      as: 'items',
+      foreignKey: 'orderId'
+    });
+  };
+
+  return Order;
+};
+</file>
+
+<file path="src/models/OrderItem.js">
+// src/models/OrderItem.js
+module.exports = (sequelize, DataTypes) => {
+  const OrderItem = sequelize.define('OrderItem', {
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true
+    },
+    orderId: {
+      type: DataTypes.UUID,   // FIXED
+      allowNull: false
+    },
+    materialId: {
+      type: DataTypes.UUID,   // should match Material.id
+      allowNull: false
+    },
+    qty: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 1
+    },
+    unitPrice: {
+      type: DataTypes.DECIMAL(12, 2),
+      allowNull: false,
+      defaultValue: 0
+    },
+    lineTotal: {
+      type: DataTypes.DECIMAL(12, 2),
+      allowNull: false,
+      defaultValue: 0
+    }
+  }, {
+    tableName: 'order_items',
+    timestamps: true
+  });
+
+  OrderItem.associate = (models) => {
+    OrderItem.belongsTo(models.Order, { as: 'order', foreignKey: 'orderId' });
+    OrderItem.belongsTo(models.Material, { as: 'material', foreignKey: 'materialId' });
+  };
+
+  return OrderItem;
+};
+</file>
+
+<file path="src/models/Permission.js">
+module.exports = (sequelize, DataTypes) => {
+  const Permission = sequelize.define(
+    "Permission",
+    {
+      id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
+      key: { type: DataTypes.STRING, allowNull: false, unique: true },
+      description: { type: DataTypes.STRING, allowNull: true },
+    },
+    {
+      tableName: "permissions",
+      timestamps: true,
+    }
+  );
+
+  Permission.associate = (models) => {
+    Permission.belongsToMany(models.Role, {
+      through: "rolepermissions",
+      foreignKey: "permissionId",
+      otherKey: "roleId",
+      as: "roles", // ALIAS
+    });
+  };
+
+  return Permission;
+};
+</file>
+
+<file path="src/models/PricingUpdate.js">
+module.exports = (sequelize, DataTypes) => {
+  const PricingUpdate = sequelize.define('PricingUpdate', {
+    productId: { type: DataTypes.UUID, allowNull: false },
+    dealerId: { type: DataTypes.UUID, allowNull: false },
+    oldPrice: { type: DataTypes.DECIMAL(13, 2) },
+    newPrice: { type: DataTypes.DECIMAL(13, 2), allowNull: false },
+    reason: { type: DataTypes.TEXT },
+    requestedBy: { type: DataTypes.STRING },
+    requestedByUserId: { type: DataTypes.UUID },
+    status: {
+      type: DataTypes.ENUM('pending', 'approved', 'rejected'),
+      defaultValue: 'pending',
+    },
+    remarks: { type: DataTypes.TEXT },
+    approvedBy: { type: DataTypes.STRING },
+    approvedAt: { type: DataTypes.DATE },
+  });
+
+  PricingUpdate.associate = (models) => {
+    // ✅ Each pricing update belongs to a product
+    PricingUpdate.belongsTo(models.Product, {
+      foreignKey: 'productId',
+      as: 'product',
+      onDelete: 'CASCADE',
+      onUpdate: 'CASCADE',
+    });
+
+    // ✅ Each pricing update belongs to a dealer
+    PricingUpdate.belongsTo(models.Dealer, {
+      foreignKey: 'dealerId',
+      as: 'dealer',
+      onDelete: 'CASCADE',
+      onUpdate: 'CASCADE',
+    });
+  };
+
+  return PricingUpdate;
+};
+</file>
+
+<file path="src/models/Product.js">
+const { DataTypes } = require("sequelize");
+
+module.exports = (sequelize, DataTypes) => {
+
+  const Product = sequelize.define("Product", {
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true,
+    },
+    name: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
+    plant: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
+    stock: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0,
+    },
+    uom: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    lastUpdatedAt: {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
+    },
+  });
+
+  return Product;
+};
+</file>
+
+<file path="src/models/Region.js">
+module.exports = (sequelize, DataTypes) => {
+  const Region = sequelize.define(
+    "Region",
+    {
+      id: {
+        type: DataTypes.UUID,
+        defaultValue: DataTypes.UUIDV4,
+        primaryKey: true,
+      },
+      name: { type: DataTypes.STRING, allowNull: false, unique: true },
+    },
+    {
+      tableName: "Regions",
+      timestamps: true,
+    }
+  );
+
+  Region.associate = (models) => {
+    Region.hasMany(models.User, {
+      foreignKey: "regionId",
+      as: "users",
+    });
+
+    // ✅ Add dealer association
+    Region.hasMany(models.Dealer, {
+      foreignKey: "regionId",
+      as: "dealers",
+    });
+  };
+
+  return Region;
+};
+</file>
+
+<file path="src/models/Role.js">
+module.exports = (sequelize, DataTypes) => {
+  const Role = sequelize.define(
+    "Role",
+    {
+      id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
+      name: { type: DataTypes.STRING, allowNull: false, unique: true },
+      category: { type: DataTypes.STRING, allowNull: true },
+      description: { type: DataTypes.STRING, allowNull: true },
+    },
+    {
+      tableName: "roles",
+      timestamps: true,
+    }
+  );
+
+  Role.associate = (models) => {
+    // Role → Users
+    Role.hasMany(models.User, {
+      foreignKey: "roleId",
+      as: "users",
+    });
+
+    // Role → Permissions (Many-to-Many)
+    Role.belongsToMany(models.Permission, {
+      through: "rolepermissions",
+      foreignKey: "roleId",
+      otherKey: "permissionId",
+      as: "permissions",  // IMPORTANT ALIAS
+    });
+  };
+
+  return Role;
+};
+</file>
+
+<file path="src/models/RolePermission.js">
+module.exports = (sequelize, DataTypes) => {
+  const RolePermission = sequelize.define(
+    "RolePermission",
+    {
+      id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
+      roleId: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        references: { model: "roles", key: "id" },
+      },
+      permissionId: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        references: { model: "permissions", key: "id" },
+      },
+    },
+    {
+      tableName: "rolepermissions",
+      timestamps: true,
+    }
+  );
+
+  return RolePermission;
+};
+</file>
+
+<file path="src/models/SalesGroup.js">
+// src/models/SalesGroup.js
+module.exports = (sequelize, DataTypes) => {
+  const SalesGroup = sequelize.define('SalesGroup', {
+    id: {
+      type: DataTypes.INTEGER,
+      primaryKey: true,
+      autoIncrement: true
+    },
+    name: { type: DataTypes.STRING, allowNull: false },
+    region: { type: DataTypes.STRING },
+    description: { type: DataTypes.TEXT },
+    metadata: { type: DataTypes.JSONB, defaultValue: {} }
+  }, {
+    tableName: 'sales_groups'
+  });
+
+  SalesGroup.associate = (models) => {
+    // Many-to-many with Dealer via SalesGroupMembers
+    SalesGroup.belongsToMany(models.Dealer, {
+      through: 'SalesGroupMembers',
+      as: 'dealers',
+      foreignKey: 'salesGroupId',
+      otherKey: 'dealerId'
+    });
+  };
+
+  return SalesGroup;
+};
+</file>
+
+<file path="src/models/User.js">
+const bcrypt = require("bcryptjs");
+
+module.exports = (sequelize, DataTypes) => {
+
+  const User = sequelize.define(
+    "User",
+    {
+      id: {
+        type: DataTypes.UUID,
+        defaultValue: DataTypes.UUIDV4,
+        primaryKey: true,
+      },
+
+      username: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        unique: true,
+      },
+
+      email: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        unique: true,
+        validate: { isEmail: true },
+      },
+
+      // 🔥 Link to roles table (RBAC)
+      roleId: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: { model: "roles", key: "id" },
+      },
+
+      // 🔥 Link to Regions table
+      regionId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: { model: "Regions", key: "id" },
+      },
+
+      // (Old ENUM – we can remove later)
+      role: {
+        type: DataTypes.ENUM(
+          "dealer",
+          "tm",
+          "am",
+          "sm",
+          "admin",
+          "key_user",
+          "accounts",
+          "inventory"
+        ),
+        allowNull: false,
+        defaultValue: "dealer",
+      },
+
+      password: {
+        type: DataTypes.STRING,
+        allowNull: false,
+      },
+
+      phoneNumber: DataTypes.STRING,
+      isActive: { type: DataTypes.BOOLEAN, defaultValue: true },
+      isBlocked: { type: DataTypes.BOOLEAN, defaultValue: false },
+
+      lastLogin: DataTypes.DATE,
+      otp: DataTypes.STRING,
+      otpExpiry: DataTypes.DATE,
+    },
+    {
+      timestamps: true,
+      tableName: "Users",
+      freezeTableName: true,
+
+      hooks: {
+        beforeCreate: async (user) => {
+          if (user.password)
+            user.password = await bcrypt.hash(user.password, 10);
+        },
+        beforeUpdate: async (user) => {
+          if (user.changed("password"))
+            user.password = await bcrypt.hash(user.password, 10);
+        },
+      },
+    }
+  );
+
+  // ============================
+  // INSTANCE METHODS
+  // ============================
+  User.prototype.validatePassword = function (password) {
+    return bcrypt.compare(password, this.password);
+  };
+
+  User.prototype.generateOTP = function () {
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  this.otp = otp;
+  this.otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+
+  console.log(`🔐 OTP generated for user: ${this.username} → ${otp}`);
+
+  return otp;
+};
+
+
+  User.prototype.validateOTP = function (otp) {
+    if (!this.otp || !this.otpExpiry) return false;
+    return this.otp === otp && new Date() < this.otpExpiry;
+  };
+
+  // ============================
+  // ASSOCIATIONS
+  // ============================
+  User.associate = (models) => {
+    // Dealer profile
+    User.belongsTo(models.Dealer, {
+      foreignKey: "dealerId",
+      as: "dealer",
+    });
+
+    // Managers manage many dealers
+    User.hasMany(models.Dealer, {
+      foreignKey: "managerId",
+      as: "managedDealers",
+    });
+
+    // RBAC Role
+    User.belongsTo(models.Role, {
+      foreignKey: "roleId",
+      as: "roleDetails",
+    });
+
+    // Region
+    User.belongsTo(models.Region, {
+      foreignKey: "regionId",
+      as: "region",
+    });
+
+    // Chat
+    User.hasMany(models.Message, {
+      foreignKey: "senderId",
+      as: "sentMessages",
+    });
+
+    User.hasMany(models.Message, {
+      foreignKey: "recipientId",
+      as: "receivedMessages",
+    });
+  };
+
+  return User;
+};
+</file>
+
+<file path="src/routes/accountsRoutes.js">
+const express = require("express");
+const router = express.Router();
+const { authenticate, authorize } = require("../middleware/auth");
+const accountsController = require("../controllers/accountsController");
+
+// 📊 Summary
+router.get(
+  "/summary",
+  authenticate,
+  authorize("accounts", "admin"),
+  accountsController.getSummary
+);
+
+// 🧾 Invoices
+router.get(
+  "/invoices",
+  authenticate,
+  authorize("accounts", "admin"),
+  accountsController.getInvoices
+);
+router.post(
+  "/invoices",
+  authenticate,
+  authorize("accounts", "admin"),
+  accountsController.createInvoice
+);
+router.put(
+  "/invoices/:id",
+  authenticate,
+  authorize("accounts", "admin"),
+  accountsController.updateInvoice
+);
+router.delete(
+  "/invoices/:id",
+  authenticate,
+  authorize("accounts", "admin"),
+  accountsController.deleteInvoice
+);
+
+// 💼 Notes
+router.get(
+  "/notes",
+  authenticate,
+  authorize("accounts", "admin"),
+  accountsController.getNotes
+);
+router.post(
+  "/notes",
+  authenticate,
+  authorize("accounts", "admin"),
+  accountsController.createNote
+);
+router.put(
+  "/notes/:id",
+  authenticate,
+  authorize("accounts", "admin"),
+  accountsController.updateNote
+);
+router.delete(
+  "/notes/:id",
+  authenticate,
+  authorize("accounts", "admin"),
+  accountsController.deleteNote
+);
+
+// 📚 Statements
+router.get(
+  "/statements",
+  authenticate,
+  authorize("accounts", "admin"),
+  accountsController.getStatements
+);
+router.post(
+  "/statements",
+  authenticate,
+  authorize("accounts", "admin"),
+  accountsController.createStatement
+);
+router.put(
+  "/statements/:id",
+  authenticate,
+  authorize("accounts", "admin"),
+  accountsController.updateStatement
+);
+
+// 🔁 Reconciliation
+router.get(
+  "/reconciliation",
+  authenticate,
+  authorize("accounts", "admin"),
+  accountsController.getReconciliation
+);
+
+module.exports = router;
+</file>
+
+<file path="src/routes/adminRoutes.js">
+const express = require('express');
+const router = express.Router();
+
+// ✅ Import the *right* controller (adminController, not authController)
+const adminController = require('../controllers/adminController');
+
+// ✅ Destructure authenticate and authorize from your middleware
+const { authenticate, authorize } = require('../middleware/auth');
+const pricingController = require('../controllers/pricingController');
+
+router.get('/pricing-updates', authenticate, authorize('admin'), pricingController.getPricingUpdates);
+router.patch('/pricing-updates/:id/review', authenticate, authorize('admin'), adminController.reviewPricingUpdate);
+
+
+
+// ✅ Apply authentication for all admin routes
+router.use(authenticate);
+
+// ---------------- Dealer Management ----------------
+router.put('/dealers/:id/block', authorize('admin'), adminController.blockDealer);
+router.put('/dealers/:id/verify', authorize('admin'), adminController.verifyDealer);
+
+// ---------------- Sales Groups ----------------
+router.post('/sales-groups/merge', authorize('admin'), adminController.mergeSalesGroups);
+
+// ---------------- Documents ----------------
+router.put('/documents/:id/review', authorize('admin'), adminController.reviewDocument);
+
+// ---------------- Pricing ----------------
+router.put('/pricing/:id/review', authorize('admin'), adminController.reviewPricingUpdate);
+
+// ---------------- User Management ----------------
+router.get('/users', authorize('admin'), adminController.getAllUsers);
+router.post('/users', authorize('admin'), adminController.createUser);   // ✅ ADD
+router.put('/users/:id', authorize('admin'), adminController.updateUser);  // ✅ ADD
+router.put('/users/:id/role', authorize('admin'), adminController.updateUserRole);
+router.delete('/users/:id', authorize('admin'), adminController.deleteUser);
+router.put('/dealers/:id/assign-region', authorize('admin'), adminController.assignRegion);
+router.put('/users/:id', authorize('admin'), adminController.updateUser);
+
+
+
+
+// ---------------- Reports ----------------
+router.get('/reports', authorize('admin'), adminController.getAdminReport);
+
+module.exports = router;
+</file>
+
+<file path="src/routes/authRoutes.js">
+const express = require('express');
+const router = express.Router();
+const authController = require('../controllers/authController');
+
+router.post('/login', authController.login);
+router.post('/verify-otp', authController.verifyOTP);
+router.post('/reset-password', authController.resetPassword);
+router.post('/reset-password-confirm', authController.resetPasswordConfirm);
+
+module.exports = router;
+</file>
+
+<file path="src/routes/campaignRoutes.js">
+const express = require('express');
+const router = express.Router();
+const campaignController = require('../controllers/campaignController');
+const { authenticate, authorize } = require('../middleware/auth');
+
+router.get('/', authenticate, campaignController.getAllCampaigns);
+router.get(
+  "/active",
+  authenticate,
+  authorize("dealer", "tm", "am", "admin"),
+  campaignController.getActiveCampaigns
+);
+//router.get('/:id', authenticate, campaignController.getCampaignById);
+router.get(
+  "/:id",
+  authenticate,
+  authorize("dealer", "tm", "am", "admin"),
+  campaignController.getCampaignById
+);
+router.post('/', authenticate, authorize('admin', 'key_user'), campaignController.createCampaign);
+router.put('/:id', authenticate, authorize('admin', 'key_user'), campaignController.updateCampaign);
+router.delete('/:id', authenticate, authorize('admin', 'key_user'), campaignController.deleteCampaign);
+
+module.exports = router;
+</file>
+
+<file path="src/routes/dealerRoutes.js">
+const express = require('express');
+const router = express.Router();
+const dealerController = require('../controllers/dealerController');
+const { authenticate, authorize } = require('../middleware/auth');
+const { Dealer, User } = require('../models'); // ✅ needed
+
+// 🧩 List all dealers
+router.get('/', authenticate, dealerController.getAllDealers);
+
+// 🧩 Dealer profile
+router.get('/profile', authenticate, authorize('dealer'), dealerController.getDealerProfile);
+
+// ✅ FIX: Place this BEFORE "/:id"
+router.get("/my-manager", authenticate, authorize("dealer"), async (req, res) => {
+  try {
+    console.log("🟢 req.user:", req.user);
+
+    const dealerId = req.user.dealerId; // ✅ FIXED
+    if (!dealerId) return res.status(400).json({ error: "Dealer ID missing in user token" });
+
+    const dealer = await Dealer.findByPk(dealerId);
+
+    if (!dealer || !dealer.managerId)
+      return res.status(404).json({ error: "No manager assigned" });
+
+    const manager = await User.findByPk(dealer.managerId, {
+      attributes: ["id", "username", "email", "role"]
+    });
+
+    if (!manager)
+      return res.status(404).json({ error: "Assigned manager not found" });
+
+    res.json({ manager });
+  } catch (err) {
+    console.error("Error fetching dealer’s manager:", err);
+    res.status(500).json({ error: "Failed to fetch manager" });
+  }
+});
+
+
+// 🧩 Manager → Dealers
+router.get(
+  "/assigned",
+  authenticate,
+  authorize("tm", "am", "sm"),
+  dealerController.getDealersByManager
+);
+
+// 🧩 Dealer by ID (keep this at the bottom)
+router.get('/:id', authenticate, dealerController.getDealerById);
+router.post('/', authenticate, authorize('admin', 'key_user'), dealerController.createDealer);
+router.put('/:id', authenticate, authorize('admin', 'key_user'), dealerController.updateDealer);
+router.put('/:id/block', authenticate, authorize('admin'), dealerController.blockDealer);
+router.put('/:id/verify', authenticate, authorize('admin', 'key_user'), dealerController.verifyDealer);
+
+module.exports = router;
+</file>
+
+<file path="src/routes/documentRoutes.js">
+const express = require('express');
+const router = express.Router();
+const documentController = require('../controllers/documentController');
+const { authenticate, authorize } = require('../middleware/auth');
+
+router.get('/', authenticate, documentController.getAllDocuments);
+router.post('/', authenticate, documentController.upload.single('file'), documentController.uploadDocument);
+router.get('/:id/download', authenticate, documentController.downloadDocument);
+router.delete('/:id', authenticate, documentController.deleteDocument);
+router.patch('/:id/status', authenticate, authorize('admin','tm','am'), documentController.approveDocument);
+router.get("/manager",authenticate,authorize("tm", "am", "sm"),documentController.getManagerDocuments);
+
+
+
+module.exports = router;
+</file>
+
+<file path="src/routes/inventoryRoutes.js">
+const express = require("express");
+const router = express.Router();
+const { authenticate, authorize } = require("../middleware/auth");
+const inventoryController = require("../controllers/inventoryController");
+
+// ✅ Fetch summary — visible to Inventory, Admin, and Key Users
+router.get(
+  "/summary",
+  authenticate,
+  authorize("inventory", "admin", "key_user","dealer", "tm"),
+  inventoryController.getInventorySummary
+);
+
+// ✅ Fetch detailed list — visible to Inventory and Admin
+router.get(
+  "/details",
+  authenticate,
+  authorize("inventory", "admin"),
+  inventoryController.getInventoryDetails
+);
+
+// ✅ Add new inventory item
+router.post(
+  "/",
+  authenticate,
+  authorize("inventory", "admin"),
+  inventoryController.addItem
+);
+
+// ✅ Update existing inventory item
+router.put(
+  "/:id",
+  authenticate,
+  authorize("inventory", "admin"),
+  inventoryController.updateItem
+);
+
+// ✅ Delete inventory item
+router.delete(
+  "/:id",
+  authenticate,
+  authorize("inventory", "admin"),
+  inventoryController.deleteItem
+);
+
+// ✅ Export inventory as Excel or PDF
+router.get(
+  "/export",
+  authenticate,
+  authorize("inventory", "admin", "key_user"),
+  inventoryController.exportInventory
+);
+
+module.exports = router;
+</file>
+
+<file path="src/routes/invoiceRoutes.js">
+const express = require('express');
+const router = express.Router();
+const invoiceController = require('../controllers/invoiceController');
+const { authenticate, authorize } = require('../middleware/auth');
+
+router.get('/', authenticate, invoiceController.getAllInvoices);
+router.get('/:id', authenticate, invoiceController.getInvoiceById);
+router.get('/:id/pdf', authenticate, invoiceController.generateInvoicePDF);
+router.post('/', authenticate, authorize('admin', 'key_user'), invoiceController.createInvoice);
+router.put('/:id', authenticate, authorize('admin', 'key_user'), invoiceController.updateInvoice);
+
+module.exports = router;
+</file>
+
+<file path="src/routes/managerRoutes.js">
+const express = require('express');
+const router = express.Router();
+const managerCtrl = require('../controllers/managerController');
+const { authenticate, authorize } = require('../middleware/auth');
+
+// Manager summary & dealers
+router.get('/summary', authenticate, authorize('tm','am','sm'), managerCtrl.getSummary);
+router.get('/dealers', authenticate, authorize('tm','am','sm'), managerCtrl.getDealers);
+router.get('/dealers/:id', authenticate, authorize('tm','am','sm'), managerCtrl.getDealerById);
+
+// Pricing triage
+router.get('/pricing', authenticate, authorize('tm','am','sm'), managerCtrl.getPricingRequests);
+router.patch('/pricing/:id/forward', authenticate, authorize('tm','am','sm'), managerCtrl.forwardPricingToAdmin);
+
+// Assign (admin or key_user)
+router.post('/assign-dealer', authenticate, authorize('admin','key_user'), managerCtrl.assignDealerToManager);
+
+module.exports = router;
+</file>
+
+<file path="src/routes/materialRoutes.js">
+// src/routes/materialRoutes.js
+const express = require("express");
+const router = express.Router();
+const materialController = require("../controllers/materialController");
+const materialGroupController = require("../controllers/materialGroupController");
+const { authenticate, authorize } = require("../middleware/auth");
+
+// Material Groups
+router.get("/groups", authenticate, materialGroupController.getGroups);
+
+router.post(
+  "/groups/:id/assign-material",
+  authenticate,
+  authorize("admin"),
+  materialGroupController.assignMaterial
+);
+
+// Material Master
+router.get("/", authenticate, materialController.getMaterials);
+router.get("/:id", authenticate, materialController.getMaterialById);
+router.post("/", authenticate, authorize("admin", "inventory"), materialController.createMaterial);
+router.put("/:id", authenticate, authorize("admin", "inventory"), materialController.updateMaterial);
+router.delete("/:id", authenticate, authorize("admin", "inventory"), materialController.deleteMaterial);
+router.post("/groups", authenticate, authorize("admin", "dealer", "inventory"), materialGroupController.createGroup);
+
+module.exports = router;
+</file>
+
+<file path="src/routes/messageRoutes.js">
+// routes/messageRoutes.js
+const express = require("express");
+const router = express.Router();
+const messageController = require("../controllers/messageController");
+const { authenticate, authorize } = require("../middleware/auth");
+
+// 📨 Fetch all messages (visible to TM/AM/Admin/Dealer)
+router.get(
+  "/",
+  authenticate,
+  authorize("tm", "am", "admin", "dealer"),
+  messageController.getMessages
+);
+
+// 💬 Get conversation between a dealer and a manager
+router.get(
+  "/conversation/:partnerId",
+  authenticate,
+  authorize("tm", "am", "admin", "dealer"), // both sides can access
+  messageController.getConversation // ✅ fixed name (was messageCtrl)
+);
+
+// 📨 Send a new message (dealer OR manager)
+router.post(
+  "/",
+  authenticate,
+  authorize("tm", "am", "admin", "dealer"),
+  messageController.sendMessage
+);
+
+// ✅ Mark message as read
+router.patch(
+  "/:id/read",
+  authenticate,
+  authorize("tm", "am", "admin", "dealer"),
+  messageController.markAsRead
+);
+
+module.exports = router;
+</file>
+
+<file path="src/routes/notificationRoutes.js">
+// src/routes/notificationRoutes.js
+const express = require('express');
+const router = express.Router();
+const {
+  getManagerNotifications,
+  getUserNotifications,
+  markAsRead,
+} = require('../controllers/notificationsController');
+const { authenticate, authorize } = require('../middleware/auth');
+
+router.get('/manager', authenticate, authorize('tm', 'am'), getManagerNotifications);
+router.get('/', authenticate, getUserNotifications);
+router.put('/:id/read', authenticate, markAsRead);
+
+module.exports = router;
+</file>
+
+<file path="src/routes/orderRoutes.js">
+// src/routes/orderRoutes.js
+const express = require("express");
+const router = express.Router();
+const orderController = require("../controllers/orderController");
+const { authenticate, authorize } = require("../middleware/auth");
+
+// Dealer placing order
+router.post("/", authenticate, authorize("dealer"), orderController.placeOrder);
+
+// Dealer/admin getting orders
+router.get("/", authenticate, orderController.getOrdersForDealer);
+
+// Admin/manager updating order status
+router.patch("/:id/status", authenticate, authorize("admin", "manager"), orderController.updateOrderStatus);
+router.patch("/:id/approve", authenticate, authorize("admin","manager"), orderController.approveOrder);
+router.patch("/:id/reject", authenticate, authorize("admin","manager"), orderController.rejectOrder);
+router.get("/my", authenticate, authorize("dealer"), orderController.getMyOrders);
+router.get("/", authenticate, authorize("dealer"), orderController.getAllOrders);
+
+
+module.exports = router;
+</file>
+
+<file path="src/routes/permissions.js">
+const router = require("express").Router();
+const controller = require("../controllers/permissionController");
+
+router.post("/", controller.createPermission);
+router.get("/", controller.getPermissions);
+
+module.exports = router;
+</file>
+
+<file path="src/routes/pricingRoutes.js">
+// ==============================
+// FILE: src/routes/pricingRoutes.js
+// ==============================
+
+const express = require("express");
+const router = express.Router();
+const pricingController = require("../controllers/pricingController");
+const { authenticate, authorize } = require("../middleware/auth");
+
+// ✅ Dealers & Managers can request price change
+router.post(
+  "/request",
+  authenticate,
+  authorize("dealer", "am", "tm"),
+  pricingController.requestPricingChange
+);
+
+// ✅ Admin, AM, TM, Dealer can view pricing updates
+router.get(
+  "/",
+  authenticate,
+  authorize("admin", "am", "tm", "dealer"),
+  pricingController.getPricingUpdates
+);
+
+// ✅ Admin-only pricing summary (for dashboard)
+router.get(
+  "/summary",
+  authenticate,
+  authorize("admin"),
+  pricingController.getPricingSummary
+);
+router.patch("/:id", authenticate, authorize("admin","tm","am"), pricingController.updatePricingStatus);
+router.get(
+  "/manager",
+  authenticate,
+  authorize("tm", "am", "sm"),
+  pricingController.getManagerPricingRequests
+);
+
+module.exports = router;
+</file>
+
+<file path="src/routes/productRoutes.js">
+const express = require("express");
+const router = express.Router();
+const { authenticate } = require("../middleware/auth");
+const productController = require("../controllers/productController");
+
+router.get("/", authenticate, productController.getProducts);
+
+module.exports = router;
+</file>
+
+<file path="src/routes/regionRoutes.js">
+const express = require("express");
+const router = express.Router();
+
+const regionController = require("../controllers/regionController");
+
+// GET /api/regions
+router.get("/regions", regionController.getRegions);
+
+module.exports = router;
+</file>
+
+<file path="src/routes/reportRoutes.js">
+const express = require('express');
+const router = express.Router();
+const reportController = require('../controllers/reportController');
+const { authenticate, authorize } = require('../middleware/auth');
+//router.get('/dealer-performance', verifyToken, reportController.getDealerPerformanceReport);
+
+router.get('/dealer-performance', authenticate, reportController.getDealerPerformanceReport);
+router.get('/account-statement', authenticate, reportController.getAccountStatementReport);
+router.get('/invoice-register', authenticate, reportController.getInvoiceRegisterReport);
+router.get('/credit-debit-notes', authenticate, reportController.getCreditDebitNoteReport);
+router.get('/outstanding-receivables', authenticate, reportController.getOutstandingReceivablesReport);
+router.get('/territory', authenticate, reportController.getTerritoryReport);
+router.get("/admin-summary",
+  authenticate,
+  reportController.getAdminSummary
+);
+router.get(
+  "/pending-approvals",
+  authenticate,
+  authorize("tm", "am", "admin"),
+  reportController.getPendingApprovals
+);
+router.get(
+  "/regional-sales-summary",
+  authenticate,
+  authorize("admin", "am", "tm"),
+  reportController.getRegionalSalesSummary
+);
+
+
+
+module.exports = router;
+</file>
+
+<file path="src/routes/roles.js">
+// src/routes/roles.js
+const router = require("express").Router();
+const controller = require("../controllers/roleController");
+
+// existing routes
+router.post("/", controller.createRole);
+router.get("/", controller.getRoles);
+router.post("/assign-permission", controller.assignPermission);
+
+// NEW: update permissions for a role (frontend expects this: PUT /roles/:roleId/permissions)
+router.put("/:roleId/permissions", controller.updateRolePermissions);
+
+module.exports = router;
+</file>
+
+<file path="src/routes/sapRoutes.js">
+const express = require('express');
+const router = express.Router();
+const sapController = require('../controllers/sapController');
+const { authenticate, authorize } = require('../middleware/auth');
+
+router.post('/sync-dealers', authenticate, authorize('admin'), sapController.syncDealers);
+router.get('/customer-account/:dealerId', authenticate, sapController.fetchCustomerAccount);
+router.get('/vendor-account/:dealerId', authenticate, sapController.fetchVendorAccount);
+router.post('/credit-debit-note', authenticate, authorize('admin', 'key_user'), sapController.createCreditDebitNote);
+router.post('/sync-invoices/:dealerId', authenticate, authorize('admin'), sapController.syncInvoices);
+
+module.exports = router;
+</file>
+
+<file path="src/server.js">
+const express = require('express');
+const cors = require('cors');
+const helmet = require('helmet');
+const morgan = require('morgan');
+const rateLimit = require('express-rate-limit');
+require('dotenv').config();
+
+const { syncDatabase, sequelize } = require('./models');
+const authRoutes = require('./routes/authRoutes');
+const dealerRoutes = require('./routes/dealerRoutes');
+const invoiceRoutes = require('./routes/invoiceRoutes');
+const documentRoutes = require('./routes/documentRoutes');
+const campaignRoutes = require('./routes/campaignRoutes');
+const reportRoutes = require('./routes/reportRoutes');
+const sapRoutes = require('./routes/sapRoutes');
+const inventoryRoutes = require('./routes/inventoryRoutes');
+const messageRoutes = require('./routes/messageRoutes');
+const accountsRoutes = require("./routes/accountsRoutes");
+const pricingRoutes = require('./routes/pricingRoutes');
+const regionRoutes = require("./routes/regionRoutes");
+
+
+
+
+ // ✅ correct path only once
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// 🔒 Security and Middleware
+app.use(helmet());
+app.use(cors({
+  origin: process.env.CORS_ORIGIN || '*',
+  credentials: true
+}));
+
+const limiter = rateLimit({
+  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 900000,
+  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
+  message: 'Too many requests from this IP, please try again later.'
+});
+app.use('/api/', limiter);
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(morgan('combined'));
+
+// 🩺 Health Check
+app.get('/health', (req, res) => {
+  res.json({ status: 'OK', timestamp: new Date().toISOString() });
+});
+
+// 🧩 Routes
+app.use('/api/auth', authRoutes);
+app.use('/api/dealers', dealerRoutes);
+app.use('/api/invoices', invoiceRoutes);
+app.use('/api/documents', documentRoutes);
+app.use('/api/campaigns', campaignRoutes);
+app.use('/api/reports', reportRoutes);
+app.use('/api/sap', sapRoutes);
+app.use('/api/inventory', inventoryRoutes);
+app.use('/api/messages', messageRoutes); 
+app.use("/api/accounts", accountsRoutes);
+const adminRoutes = require('./routes/adminRoutes');
+app.use('/api/admin', adminRoutes);
+app.use('/api/pricing', pricingRoutes);
+const productRoutes = require("./routes/productRoutes");
+app.use("/api/products", productRoutes);
+
+app.use('/api/managers', require('./routes/managerRoutes'));
+app.use('/api/notifications', require('./routes/notificationRoutes'));
+app.use("/api/roles", require("./routes/roles"));
+app.use("/api/permissions", require("./routes/permissions"));
+app.use("/api", regionRoutes);
+app.use('/api/materials', require('./routes/materialRoutes'));
+app.use('/api/orders', require('./routes/orderRoutes'));
+
+
+
+
+
+
+ // /pricing/request and /pricing/
+// ✅ keep only this one
+
+// 🧨 Error Handling
+app.use((err, req, res, next) => {
+  console.error('Error:', err);
+  res.status(err.status || 500).json({
+    error: err.message || 'Internal server error',
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+  });
+});
+
+// ❌ Route Not Found
+app.use((req, res) => {
+  res.status(404).json({ error: 'Route not found' });
+});
+
+// 🚀 Start Server with Socket.IO
+const http = require('http');
+const { Server } = require('socket.io');
+
+const startServer = async () => {
+  try {
+    await sequelize.authenticate();
+    console.log('✅ Database connection established successfully.');
+    await syncDatabase();
+
+    // Create HTTP server and wrap Express app
+    const server = http.createServer(app);
+
+    // 🔌 Initialize Socket.IO
+    const io = new Server(server, {
+      cors: {
+        origin: process.env.CORS_ORIGIN || '*',
+        methods: ['GET', 'POST', 'PATCH'],
+        credentials: true
+      }
+    });
+
+    // ✅ Make io available inside controllers
+    app.set('io', io);
+
+    // 🔐 Handle connections
+    io.on('connection', (socket) => {
+      console.log(`⚡ User connected: ${socket.id}`);
+
+      // When frontend authenticates, join rooms based on user and role
+      socket.on('authenticate', ({ userId, role }) => {
+        if (userId) socket.join(`user:${userId}`);
+        if (role) socket.join(`role:${role}`);
+        console.log(`✅ Socket joined rooms: user:${userId}, role:${role}`);
+      });
+
+      socket.on('disconnect', () => {
+        console.log(`❌ User disconnected: ${socket.id}`);
+      });
+    });
+
+    // Start HTTP + Socket.IO server
+    server.listen(PORT, () => {
+      console.log(`🚀 Server + Socket.IO running on port ${PORT}`);
+      console.log(`🌍 Health check: http://localhost:${PORT}/health`);
+    });
+  } catch (error) {
+    console.error('❌ Failed to start server:', error);
+    process.exit(1);
+  }
+};
+
+startServer();
+
+module.exports = app;
+</file>
+
+<file path="src/utils/jwt.js">
+const jwt = require('jsonwebtoken');
+require('dotenv').config();
+
+const generateToken = (userId, role) => {
+  return jwt.sign(
+    { userId, role },
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRE }
+  );
+};
+
+const verifyToken = (token) => {
+  try {
+    return jwt.verify(token, process.env.JWT_SECRET);
+  } catch (error) {
+    return null;
+  }
+};
+
+module.exports = { generateToken, verifyToken };
+</file>
+
+<file path="src/utils/seed.js">
+const { User, Dealer, Invoice, Campaign, CreditDebitNote, AccountStatement, syncDatabase } = require('../models');
+const { Product } = require('../models');
+
+const seedData = async () => {
+  try {
+    console.log('Starting database seeding...');
+
+    const dealer1 = await Dealer.create({
+      dealerCode: 'D001',
+      businessName: 'ABC Distributors Pvt Ltd',
+      contactPerson: 'Rajesh Kumar',
+      email: 'rajesh@abcdist.com',
+      phoneNumber: '9876543210',
+      address: '123 MG Road',
+      city: 'Mumbai',
+      state: 'Maharashtra',
+      pincode: '400001',
+      gstNumber: '27AABCU9603R1ZM',
+      panNumber: 'AABCU9603R',
+      bankName: 'HDFC Bank',
+      bankAccountNumber: '50100123456789',
+      bankIFSC: 'HDFC0001234',
+      paymentTerms: 'Net 30',
+      creditLimit: 500000,
+      outstandingAmount: 150000,
+      territory: 'West',
+      region: 'Mumbai',
+      sapCustomerNumber: 'C100001',
+      sapVendorNumber: 'V100001',
+      isActive: true,
+      isBlocked: false
+    });
+
+    const dealer2 = await Dealer.create({
+      dealerCode: 'D002',
+      businessName: 'XYZ Enterprises',
+      contactPerson: 'Priya Sharma',
+      email: 'priya@xyzent.com',
+      phoneNumber: '9876543211',
+      address: '456 Park Street',
+      city: 'Delhi',
+      state: 'Delhi',
+      pincode: '110001',
+      gstNumber: '07AABCX9603R1ZM',
+      panNumber: 'AABCX9603R',
+      bankName: 'ICICI Bank',
+      bankAccountNumber: '60200123456789',
+      bankIFSC: 'ICIC0001234',
+      paymentTerms: 'Net 45',
+      creditLimit: 750000,
+      outstandingAmount: 200000,
+      territory: 'North',
+      region: 'Delhi',
+      sapCustomerNumber: 'C100002',
+      sapVendorNumber: 'V100002',
+      isActive: true,
+      isBlocked: false
+    });
+
+    const dealer3 = await Dealer.create({
+      dealerCode: 'D003',
+      businessName: 'PQR Trading Company',
+      contactPerson: 'Amit Patel',
+      email: 'amit@pqrtrading.com',
+      phoneNumber: '9876543212',
+      address: '789 Brigade Road',
+      city: 'Bangalore',
+      state: 'Karnataka',
+      pincode: '560001',
+      gstNumber: '29AABCP9603R1ZM',
+      panNumber: 'AABCP9603R',
+      bankName: 'SBI',
+      bankAccountNumber: '70300123456789',
+      bankIFSC: 'SBIN0001234',
+      paymentTerms: 'Net 30',
+      creditLimit: 600000,
+      outstandingAmount: 100000,
+      territory: 'South',
+      region: 'Bangalore',
+      sapCustomerNumber: 'C100003',
+      sapVendorNumber: 'V100003',
+      isActive: true,
+      isBlocked: false
+    });
+    // PRODUCTS SEEDING
+await Product.bulkCreate([
+  {
+    name: "Cement Bag - 50kg",
+    plant: "Mumbai Plant",
+    stock: 1200,
+    uom: "Bag",
+  },
+  {
+    name: "Steel Rod - 10mm",
+    plant: "Delhi Plant",
+    stock: 800,
+    uom: "Ton",
+  },
+  {
+    name: "Paint Drum - 20L",
+    plant: "Bangalore Plant",
+    stock: 600,
+    uom: "Drum",
+  },
+  {
+    name: "Wall Putty - 40kg",
+    plant: "Chennai Plant",
+    stock: 500,
+    uom: "Bag",
+  },
+]);
+console.log("Products created successfully");
+
+
+    console.log('Dealers created successfully');
+
+    const adminUser = await User.create({
+      username: 'admin',
+      email: 'admin@dealerportal.com',
+      password: 'Admin@123',
+      role: 'admin',
+      isActive: true,
+      phoneNumber: '9999999999'
+    });
+
+    const dealerUser1 = await User.create({
+      username: 'dealer1',
+      email: 'rajesh@abcdist.com',
+      password: 'Dealer@123',
+      role: 'dealer',
+      dealerId: dealer1.id,
+      isActive: true,
+      phoneNumber: '9876543210'
+    });
+
+    const dealerUser2 = await User.create({
+      username: 'dealer2',
+      email: 'priya@xyzent.com',
+      password: 'Dealer@123',
+      role: 'dealer',
+      dealerId: dealer2.id,
+      isActive: true,
+      phoneNumber: '9876543211'
+    });
+
+    const dealerUser3 = await User.create({
+      username: 'dealer3',
+      email: 'amit@pqrtrading.com',
+      password: 'Dealer@123',
+      role: 'dealer',
+      dealerId: dealer3.id,
+      isActive: true,
+      phoneNumber: '9876543212'
+    });
+
+    const keyUser = await User.create({
+      username: 'keyuser',
+      email: 'keyuser@dealerportal.com',
+      password: 'Key@123',
+      role: 'key_user',
+      isActive: true,
+      phoneNumber: '9999999998'
+    });
+
+    const tmUser = await User.create({
+      username: 'tm_west',
+      email: 'tm.west@dealerportal.com',
+      password: 'TM@123',
+      role: 'tm',
+      isActive: true,
+      phoneNumber: '9999999997'
+    });
+    const accountsUser = await User.create({
+  username: 'accounts_user',
+  email: 'accounts@dealerportal.com',
+  password: 'Accounts@123',
+  role: 'accounts',
+  isActive: true,
+  phoneNumber: '9999999996'
+});
+const inventoryUser = await User.create({
+  username: 'inventory_user',
+  email: 'inventory@dealerportal.com',
+  password: 'Inventory@123', // will be hashed automatically
+  role: 'inventory',
+  isActive: true,
+  phoneNumber: '9999999976'
+});
+
+
+    console.log('Users created successfully');
+
+    await Invoice.create({
+      invoiceNumber: 'INV-2024-001',
+      invoiceDate: new Date('2024-01-15'),
+      dueDate: new Date('2024-02-15'),
+      amount: 100000,
+      taxAmount: 18000,
+      totalAmount: 118000,
+      paidAmount: 50000,
+      balanceAmount: 68000,
+      status: 'partial',
+      productGroup: 'Electronics',
+      description: 'Electronic goods supply',
+      dealerId: dealer1.id,
+      sapDocumentNumber: 'SAP-INV-001'
+    });
+
+    await Invoice.create({
+      invoiceNumber: 'INV-2024-002',
+      invoiceDate: new Date('2024-02-01'),
+      dueDate: new Date('2024-03-01'),
+      amount: 150000,
+      taxAmount: 27000,
+      totalAmount: 177000,
+      paidAmount: 0,
+      balanceAmount: 177000,
+      status: 'unpaid',
+      productGroup: 'Appliances',
+      description: 'Home appliances supply',
+      dealerId: dealer1.id,
+      sapDocumentNumber: 'SAP-INV-002'
+    });
+
+    await Invoice.create({
+      invoiceNumber: 'INV-2024-003',
+      invoiceDate: new Date('2024-01-20'),
+      dueDate: new Date('2024-02-20'),
+      amount: 200000,
+      taxAmount: 36000,
+      totalAmount: 236000,
+      paidAmount: 236000,
+      balanceAmount: 0,
+      status: 'paid',
+      productGroup: 'Electronics',
+      description: 'Electronic goods supply',
+      dealerId: dealer2.id,
+      sapDocumentNumber: 'SAP-INV-003'
+    });
+
+    await Invoice.create({
+      invoiceNumber: 'INV-2024-004',
+      invoiceDate: new Date('2024-02-10'),
+      dueDate: new Date('2024-03-10'),
+      amount: 120000,
+      taxAmount: 21600,
+      totalAmount: 141600,
+      paidAmount: 0,
+      balanceAmount: 141600,
+      status: 'unpaid',
+      productGroup: 'Furniture',
+      description: 'Office furniture supply',
+      dealerId: dealer3.id,
+      sapDocumentNumber: 'SAP-INV-004'
+    });
+
+    console.log('Invoices created successfully');
+
+    await Campaign.create({
+      campaignName: 'Summer Sale 2024',
+      campaignType: 'seasonal_offer',
+      description: 'Special discounts on all electronics during summer',
+      startDate: new Date('2024-04-01'),
+      endDate: new Date('2024-06-30'),
+      productGroup: 'Electronics',
+      discountPercentage: 15,
+      isActive: true,
+      terms: 'Valid on bulk orders above 50 units'
+    });
+
+    await Campaign.create({
+      campaignName: 'Festive Bonanza',
+      campaignType: 'promotion',
+      description: 'Festival special offers on all products',
+      startDate: new Date('2024-10-01'),
+      endDate: new Date('2024-11-15'),
+      productGroup: 'All',
+      discountPercentage: 20,
+      isActive: true,
+      terms: 'Applicable on all product categories'
+    });
+
+    await Campaign.create({
+      campaignName: 'New Year Scheme',
+      campaignType: 'sales_scheme',
+      description: 'Special pricing for new year',
+      startDate: new Date('2024-12-15'),
+      endDate: new Date('2025-01-15'),
+      productGroup: 'Appliances',
+      discountPercentage: 10,
+      isActive: true,
+      terms: 'Minimum order value Rs. 100,000'
+    });
+
+    console.log('Campaigns created successfully');
+
+    await CreditDebitNote.create({
+      noteNumber: 'CN-2024-001',
+      noteType: 'credit',
+      noteDate: new Date('2024-02-05'),
+      amount: 5000,
+      reasonCode: 'RETURN',
+      description: 'Product return credit note',
+      referenceInvoiceNumber: 'INV-2024-001',
+      status: 'approved',
+      dealerId: dealer1.id,
+      sapDocumentNumber: 'SAP-CN-001'
+    });
+
+    await CreditDebitNote.create({
+      noteNumber: 'DN-2024-001',
+      noteType: 'debit',
+      noteDate: new Date('2024-02-08'),
+      amount: 2000,
+      reasonCode: 'SHORTAGE',
+      description: 'Shortage debit note',
+      referenceInvoiceNumber: 'INV-2024-002',
+      status: 'approved',
+      dealerId: dealer1.id,
+      sapDocumentNumber: 'SAP-DN-001'
+    });
+
+    console.log('Credit/Debit notes created successfully');
+
+    await AccountStatement.create({
+      statementDate: new Date('2024-01-01'),
+      documentType: 'Opening Balance',
+      documentNumber: 'OB-2024',
+      description: 'Opening balance for the year',
+      debitAmount: 0,
+      creditAmount: 0,
+      balance: 50000,
+      dealerId: dealer1.id
+    });
+
+    await AccountStatement.create({
+      statementDate: new Date('2024-01-15'),
+      documentType: 'Invoice',
+      documentNumber: 'INV-2024-001',
+      description: 'Electronic goods supply',
+      debitAmount: 118000,
+      creditAmount: 0,
+      balance: 168000,
+      productGroup: 'Electronics',
+      dealerId: dealer1.id,
+      sapDocumentNumber: 'SAP-INV-001'
+    });
+
+    await AccountStatement.create({
+      statementDate: new Date('2024-01-20'),
+      documentType: 'Payment',
+      documentNumber: 'PMT-2024-001',
+      description: 'Payment received',
+      debitAmount: 0,
+      creditAmount: 50000,
+      balance: 118000,
+      dealerId: dealer1.id
+    });
+
+    console.log('Account statements created successfully');
+
+    console.log('\n=== Database seeding completed successfully ===');
+    console.log('\nTest Credentials:');
+    console.log('Admin: username=admin, password=Admin@123');
+    console.log('Dealer 1: username=dealer1, password=Dealer@123');
+    console.log('Dealer 2: username=dealer2, password=Dealer@123');
+    console.log('Dealer 3: username=dealer3, password=Dealer@123');
+    console.log('Key User: username=keyuser, password=Key@123');
+    console.log('TM: username=tm_west, password=TM@123');
+
+  } catch (error) {
+    console.error('Error seeding database:', error);
+    throw error;
+  }
+};
+
+if (require.main === module) {
+  syncDatabase().then(() => {
+    seedData().then(() => {
+      console.log('Seeding completed');
+      process.exit(0);
+    }).catch(error => {
+      console.error('Seeding failed:', error);
+      process.exit(1);
+    });
+  });
+}
+
+module.exports = { seedData };
+</file>
+
+<file path="src/utils/seedPermissions.js">
+// src/utils/seedPermissions.js
+// Run: node src/utils/seedPermissions.js
+
+const { sequelize, Role, Permission } = require("../models");
+
+const PERMISSIONS = [
+  // Dealer Module
+  { key: "dealer.view", description: "View dealers" },
+  { key: "dealer.create", description: "Create dealers" },
+  { key: "dealer.update", description: "Update dealers" },
+  { key: "dealer.delete", description: "Delete dealers" },
+
+  // Documents
+  { key: "document.upload", description: "Upload documents" },
+  { key: "document.verify", description: "Verify documents" },
+  { key: "document.approve", description: "Approve documents" },
+
+  // Pricing
+  { key: "pricing.view", description: "View pricing" },
+  { key: "pricing.request", description: "Request pricing change" },
+  { key: "pricing.approve", description: "Approve pricing" },
+
+  // Users / Roles / Permissions
+  { key: "users.view", description: "View user list" },
+  { key: "users.edit", description: "Edit user" },
+  { key: "users.suspend", description: "Suspend user" },
+
+  { key: "roles.view", description: "View roles" },
+  { key: "roles.create", description: "Create roles" },
+  { key: "roles.delete", description: "Delete roles" },
+  { key: "roles.assign.permissions", description: "Assign permissions to roles" },
+
+  { key: "permissions.view", description: "View permissions" },
+  { key: "permissions.assign", description: "Assign permissions (matrix) to roles" },
+
+  // Dashboard access
+  { key: "dashboard.view.superadmin", description: "View superadmin dashboard" },
+  { key: "dashboard.view.manager", description: "View manager dashboard" },
+
+  // Other
+  { key: "invoices.view", description: "View invoices" },
+  { key: "invoices.create", description: "Create invoices" },
+];
+
+const ROLES = [
+  "super_admin",
+  "technical_admin",
+  "regional_admin",
+  "regional_manager",
+  "area_manager",
+  "territory_manager",
+  "finance_admin",
+  "dealer_admin",
+  "dealer_staff",
+  "inventory_user",
+  "accounts_user",
+];
+
+const ROLE_TO_PERMS = {
+  super_admin: PERMISSIONS.map((p) => p.key), // all permissions
+  technical_admin: [
+    "permissions.view",
+    "permissions.assign",
+    "roles.view",
+    "roles.assign.permissions",
+    "users.view", // maybe they want to view users for audit
+  ],
+  regional_admin: [
+    "dealer.view",
+    "dealer.update",
+    "document.verify",
+    "roles.view",
+  ],
+  regional_manager: ["dashboard.view.manager", "dealer.view"],
+  finance_admin: ["invoices.view", "invoices.create", "pricing.view", "pricing.approve"],
+  dealer_admin: ["dealer.view", "document.upload", "document.verify"],
+  dealer_staff: ["dealer.view", "document.upload"],
+  inventory_user: ["dealer.view", "pricing.view"],
+  accounts_user: ["invoices.view", "dashboard.view.manager"],
+};
+
+async function seed() {
+  try {
+    await sequelize.authenticate();
+    console.log("✅ DB connection OK");
+
+    // Create permissions
+    const createdPermissions = {};
+    for (const p of PERMISSIONS) {
+      const [perm] = await Permission.findOrCreate({
+        where: { key: p.key },
+        defaults: { description: p.description },
+      });
+      createdPermissions[perm.key] = perm;
+    }
+    console.log(`Created/Found ${Object.keys(createdPermissions).length} permissions`);
+
+    // Create roles
+    const createdRoles = {};
+    for (const roleName of ROLES) {
+      const [role] = await Role.findOrCreate({
+        where: { name: roleName },
+      });
+      createdRoles[role.name] = role;
+    }
+    console.log(`Created/Found ${Object.keys(createdRoles).length} roles`);
+
+    // Assign permissions
+    for (const [roleName, permKeys] of Object.entries(ROLE_TO_PERMS)) {
+      const role = createdRoles[roleName];
+      if (!role) {
+        console.warn(`Role ${roleName} not found, skipping mapping`);
+        continue;
+      }
+
+      // Map permission keys to ids
+      const permIds = permKeys
+        .map((k) => createdPermissions[k])
+        .filter(Boolean)
+        .map((p) => p.id);
+
+      // setPermissions replaces current permissions with new ones
+      await role.setPermissions(permIds);
+      console.log(`Mapped ${permIds.length} perms -> ${roleName}`);
+    }
+
+    // For super_admin ensure it has ALL permissions
+    if (createdRoles.super_admin) {
+      const allIds = Object.values(createdPermissions).map((p) => p.id);
+      await createdRoles.super_admin.setPermissions(allIds);
+      console.log(`Granted all permissions to super_admin`);
+    }
+
+    console.log("✅ Seeding finished");
+    process.exit(0);
+  } catch (err) {
+    console.error("Seeding error:", err);
+    process.exit(1);
+  }
+}
+
+seed();
+</file>
+
+<file path="src/utils/seedProducts.js">
+// ==============================
+// FILE: src/seeders/seedProducts.js
+// ==============================
+const { sequelize, Product } = require("../models");
+
+const seedProducts = async () => {
+  try {
+    await sequelize.sync(); // ensure tables exist
+
+    const products = [
+      { name: "LED TV 42\"", plant: "Bangalore", stock: 25, uom: "unit" },
+      { name: "Refrigerator 260L", plant: "Pune", stock: 15, uom: "unit" },
+      { name: "Washing Machine 7kg", plant: "Mumbai", stock: 10, uom: "unit" },
+      { name: "Air Conditioner 1.5T", plant: "Chennai", stock: 20, uom: "unit" },
+      { name: "Microwave Oven", plant: "Delhi", stock: 18, uom: "unit" },
+    ];
+
+    await Product.bulkCreate(products, { ignoreDuplicates: true });
+    console.log("✅ Product seed completed!");
+    process.exit(0);
+  } catch (err) {
+    console.error("❌ Seeding error:", err);
+    process.exit(1);
+  }
+};
+
+seedProducts();
+</file>
+
+</files>

@@ -1,47 +1,47 @@
-const { sequelize } = require('../config/database');
+const fs = require("fs");
+const path = require("path");
+const { sequelize } = require("../config/database");
+const Sequelize = require("sequelize");
 
-const User = require('./User')(sequelize);
-const Dealer = require('./Dealer')(sequelize);
-const Invoice = require('./Invoice')(sequelize);
-const Document = require('./Document')(sequelize);
-const Campaign = require('./Campaign')(sequelize);
-const CreditDebitNote = require('./CreditDebitNote')(sequelize);
-const AuditLog = require('./AuditLog')(sequelize);
-const AccountStatement = require('./AccountStatement')(sequelize);
+const db = {};
+const basename = path.basename(__filename);
 
-User.belongsTo(Dealer, { foreignKey: 'dealerId', as: 'dealer' });
-Dealer.hasOne(User, { foreignKey: 'dealerId', as: 'user' });
+// Load all models
+fs.readdirSync(__dirname)
+  .filter(
+    (file) =>
+      file.indexOf(".") !== 0 &&
+      file !== basename &&
+      file.slice(-3) === ".js"
+  )
+  .forEach((file) => {
+    const model = require(path.join(__dirname, file))(
+      sequelize,
+      Sequelize.DataTypes
+    );
+    db[model.name] = model;
+  });
 
-Invoice.belongsTo(Dealer, { foreignKey: 'dealerId', as: 'dealer' });
-Dealer.hasMany(Invoice, { foreignKey: 'dealerId', as: 'invoices' });
+// Run associations
+Object.keys(db).forEach((modelName) => {
+  if (db[modelName].associate) {
+    db[modelName].associate(db);
+  }
+});
 
-Document.belongsTo(Dealer, { foreignKey: 'dealerId', as: 'dealer' });
-Dealer.hasMany(Document, { foreignKey: 'dealerId', as: 'documents' });
+db.sequelize = sequelize;
+db.Sequelize = Sequelize;
 
-CreditDebitNote.belongsTo(Dealer, { foreignKey: 'dealerId', as: 'dealer' });
-Dealer.hasMany(CreditDebitNote, { foreignKey: 'dealerId', as: 'creditDebitNotes' });
-
-AccountStatement.belongsTo(Dealer, { foreignKey: 'dealerId', as: 'dealer' });
-Dealer.hasMany(AccountStatement, { foreignKey: 'dealerId', as: 'accountStatements' });
-
-const syncDatabase = async () => {
+// ADD THIS ⬇⬇⬇
+db.syncDatabase = async () => {
   try {
-    await sequelize.sync({ alter: true });
-    console.log('Database synchronized successfully.');
+    await db.sequelize.sync();
+
+    console.log("✅ Database synchronized successfully.");
   } catch (error) {
-    console.error('Error synchronizing database:', error);
+    console.error("❌ Error synchronizing database:", error);
   }
 };
 
-module.exports = {
-  sequelize,
-  User,
-  Dealer,
-  Invoice,
-  Document,
-  Campaign,
-  CreditDebitNote,
-  AuditLog,
-  AccountStatement,
-  syncDatabase
-};
+// EXPORT ALL
+module.exports = db;

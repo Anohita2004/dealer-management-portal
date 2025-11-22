@@ -1,5 +1,6 @@
 const { Dealer, User, AuditLog } = require('../models');
 const { Op } = require('sequelize');
+const { verifyDealer } = require('./adminController');
 
 const getAllDealers = async (req, res) => {
   try {
@@ -7,15 +8,28 @@ const getAllDealers = async (req, res) => {
     const offset = (page - 1) * limit;
 
     const where = {};
+
+    // 🔍 Search filter
     if (search) {
       where[Op.or] = [
         { dealerCode: { [Op.like]: `%${search}%` } },
         { businessName: { [Op.like]: `%${search}%` } }
       ];
     }
+
+    // 🌍 State filter
     if (state) where.state = state;
+
+    // ✅ Active/inactive filter
     if (isActive !== undefined) where.isActive = isActive === 'true';
 
+    // 👇 Restrict data visibility for TM / AM users
+    if (req.user.role === 'tm' || req.user.role === 'am') {
+      if (req.user.region) where.region = req.user.region;
+      if (req.user.territory) where.territory = req.user.territory;
+    }
+
+    // 📊 Pagination and ordering
     const { count, rows } = await Dealer.findAndCountAll({
       where,
       limit: parseInt(limit),
@@ -23,6 +37,7 @@ const getAllDealers = async (req, res) => {
       order: [['createdAt', 'DESC']]
     });
 
+    // 🧾 Response
     res.json({
       dealers: rows,
       total: count,
@@ -148,6 +163,43 @@ const getDealerProfile = async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch dealer profile' });
   }
 };
+exports.verifyDealer = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const dealer = await Dealer.findByPk(id);
+    if (!dealer) return res.status(404).json({ error: "Dealer not found" });
+
+    dealer.isVerified = true;
+    await dealer.save();
+
+    res.json({ message: "Dealer verified successfully", dealer });
+  } catch (error) {
+    console.error("verifyDealer error:", error);
+    res.status(500).json({ error: "Failed to verify dealer" });
+  }
+};
+// =============================
+// MANAGER: Get Assigned Dealers
+// =============================
+const getDealersByManager = async (req, res) => {
+  try {
+    if (!["tm", "am", "sm"].includes(req.user.role)) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const dealers = await Dealer.findAll({
+      where: { managerId: req.user.id },
+      order: [["createdAt", "DESC"]],
+    });
+
+    res.json({ dealers });
+  } catch (err) {
+    console.error("getDealersByManager error:", err);
+    res.status(500).json({ error: "Failed to fetch assigned dealers" });
+  }
+};
+
+
 
 module.exports = {
   getAllDealers,
@@ -155,5 +207,7 @@ module.exports = {
   createDealer,
   updateDealer,
   blockDealer,
-  getDealerProfile
+  getDealerProfile,
+  verifyDealer,
+  getDealersByManager
 };

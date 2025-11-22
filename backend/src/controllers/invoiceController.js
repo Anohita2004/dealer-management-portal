@@ -1,4 +1,4 @@
-const { Invoice, Dealer, AuditLog } = require('../models');
+const { Invoice, Dealer, AuditLog, Order } = require('../models');
 const { Op } = require('sequelize');
 const PDFDocument = require('pdfkit');
 const fs = require('fs');
@@ -70,10 +70,38 @@ const getInvoiceById = async (req, res) => {
 
 const createInvoice = async (req, res) => {
   try {
-    const invoiceData = {
-      ...req.body,
-      balanceAmount: req.body.totalAmount - (req.body.paidAmount || 0)
-    };
+
+    // Business rule: dealer_staff may create invoice only for orders that
+    // belong to their dealer and are already Approved by dealer_admin.
+    const invoiceData = { ...req.body };
+
+    if (req.user.role === 'dealer_staff') {
+      const { orderId } = req.body;
+      if (!orderId) {
+        return res.status(400).json({ error: 'orderId is required for dealer staff invoice requests' });
+      }
+
+      const order = await Order.findByPk(orderId);
+      if (!order) return res.status(404).json({ error: 'Order not found' });
+
+      if ((order.dealerId || '') !== (req.user.dealerId || '')) {
+        return res.status(403).json({ error: 'Forbidden: order does not belong to your dealer' });
+      }
+
+      if (order.status !== 'Approved') {
+        return res.status(400).json({ error: 'Order must be Approved by dealer admin before creating invoice' });
+      }
+
+      // Derive invoice values from order if not provided
+      invoiceData.dealerId = order.dealerId;
+      invoiceData.orderId = order.id;
+      invoiceData.totalAmount = invoiceData.totalAmount || order.totalAmount;
+      invoiceData.invoiceNumber = invoiceData.invoiceNumber || `INV-${Date.now()}`;
+      invoiceData.invoiceDate = invoiceData.invoiceDate || new Date();
+    }
+
+    // compute balanceAmount
+    invoiceData.balanceAmount = (invoiceData.totalAmount || 0) - (invoiceData.paidAmount || 0);
 
     const invoice = await Invoice.create(invoiceData);
 
