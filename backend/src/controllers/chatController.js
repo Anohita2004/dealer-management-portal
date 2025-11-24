@@ -1,4 +1,6 @@
-const { User, Message, Role, Dealer, sequelize, Op } = require('../models');
+const { User, Message, Role, Dealer, sequelize} = require('../models');
+const { Op } = require('sequelize');
+
 
 
 // ------------------------------------------------------------
