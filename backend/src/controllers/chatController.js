@@ -386,6 +386,12 @@ exports.getConversation = async (req, res) => {
     const meId = req.user.id;
     const { partnerId } = req.params;
 
+    if (!partnerId) {
+      return res.status(400).json({ error: "partnerId is required" });
+    }
+
+    console.log("Fetching conversation:", { meId, partnerId });
+
     const messages = await Message.findAll({
       where: {
         [Op.or]: [
@@ -393,6 +399,10 @@ exports.getConversation = async (req, res) => {
           { senderId: partnerId, recipientId: meId },
         ],
       },
+      include: [
+        { model: User, as: "sender", attributes: ["id", "username", "role"] },
+        { model: User, as: "recipient", attributes: ["id", "username", "role"] },
+      ],
       order: [["createdAt", "ASC"]],
     });
 
@@ -451,25 +461,58 @@ exports.getAllowedUsersInternal = async (me) => {
 // ------------------------------------------------------------
 // MARK MESSAGE AS READ
 // ------------------------------------------------------------
+// controllers/chatController.js
+// PATCH /api/chat/:partnerId/read
 exports.markAsRead = async (req, res) => {
   try {
-    const { id } = req.params;
+    const userId = req.user.id;
+    // support both partnerId (user-to-user) and conversationId (conversation-based read)
+    const { partnerId } = req.params;
+    const conversationId = req.params.id || req.params.conversationId || null;
 
-    const msg = await Message.findByPk(id);
-    if (!msg) return res.status(404).json({ error: "Message not found" });
+    if (!partnerId && !conversationId) {
+      return res.status(400).json({ error: 'partnerId or conversationId is required' });
+    }
 
-    if (String(msg.recipientId) !== String(req.user.id))
-      return res.status(403).json({ error: "Not allowed" });
+    let updated;
+    if (conversationId) {
+      // mark all unread messages in the conversation where recipient is current user
+      updated = await Message.update(
+        { status: 'read' },
+        {
+          where: {
+            status: 'unread',
+            conversationId,
+            recipientId: userId,
+          },
+        }
+      );
+    } else {
+      // partnerId flow: mark messages between partner and user as read
+      updated = await Message.update(
+        { status: 'read' },
+        {
+          where: {
+            status: 'unread',
+            [Op.or]: [
+              { senderId: partnerId, recipientId: userId },
+              { senderId: userId, recipientId: partnerId },
+            ],
+          },
+        }
+      );
+    }
 
-    msg.status = "read";
-    await msg.save();
-
-    return res.json({ message: msg });
+    res.json({ success: true, updated: updated[0] });
   } catch (err) {
-    console.error("Mark read error:", err);
-    return res.status(500).json({ error: "Failed to mark as read" });
+    console.error("Error marking messages as read:", err);
+    res.status(500).json({ error: err.message });
   }
 };
+
+
+
+
 
 // ------------------------------------------------------------
 // UNREAD COUNT

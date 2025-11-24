@@ -13,8 +13,8 @@ router.get('/conversation/:partnerId', authenticate, chatCtrl.getConversation);
 // Send a message
 router.post('/send', authenticate, chatCtrl.sendMessage);
 
-// Mark a message as read
-router.patch('/:id/read', authenticate, chatCtrl.markAsRead);
+// Mark a message as read (partnerId expected by controller)
+router.patch('/:partnerId/read', authenticate, chatCtrl.markAsRead);
 
 // 🔥 FIXED unread-count endpoint
 router.get("/unread-count", authenticate, chatCtrl.getUnreadCount);
