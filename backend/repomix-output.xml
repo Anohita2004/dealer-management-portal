@@ -60,6 +60,7 @@ src/controllers/materialGroupController.js
 src/controllers/messageController.js
 src/controllers/notificationsController.js
 src/controllers/orderController.js
+src/controllers/paymentController.js
 src/controllers/permissionController.js
 src/controllers/pricingController.js
 src/controllers/productController.js
@@ -70,6 +71,7 @@ src/controllers/sapController.js
 src/middleware/auth.js
 src/middleware/checkPermission.js
 src/middleware/checkRole.js
+src/middleware/upload.js
 src/models/AccountStatement.js
 src/models/AuditLog.js
 src/models/Campaign.js
@@ -85,6 +87,7 @@ src/models/Message.js
 src/models/Notification.js
 src/models/Order.js
 src/models/OrderItem.js
+src/models/PaymenRequest.js
 src/models/Permission.js
 src/models/PricingUpdate.js
 src/models/Product.js
@@ -106,6 +109,7 @@ src/routes/materialRoutes.js
 src/routes/messageRoutes.js
 src/routes/notificationRoutes.js
 src/routes/orderRoutes.js
+src/routes/paymentRoutes.js
 src/routes/permissions.js
 src/routes/pricingRoutes.js
 src/routes/productRoutes.js
@@ -904,6 +908,7 @@ module.exports = {
 </file>
 
 <file path="src/controllers/authController.js">
+// src/controllers/authController.js
 const { User, Dealer, Role, AuditLog } = require("../models");
 const { generateToken } = require("../utils/jwt");
 
@@ -916,23 +921,17 @@ const login = async (req, res) => {
 
     const user = await User.findOne({
       where: { username },
-      include: [{ model: Role, as: "roleDetails" }]
+      include: [{ model: Role, as: "roleDetails" }],
     });
 
-    if (!user) {
-      return res.status(401).json({ error: "Invalid credentials" });
-    }
+    if (!user) return res.status(401).json({ error: "Invalid credentials" });
+    if (!user.isActive || user.isBlocked)
+      return res.status(403).json({ error: "Account inactive/blocked" });
 
-    if (!user.isActive || user.isBlocked) {
-      return res.status(403).json({ error: "Account is inactive or blocked" });
-    }
+    const valid = await user.validatePassword(password);
+    if (!valid) return res.status(401).json({ error: "Invalid credentials" });
 
-    const isValidPassword = await user.validatePassword(password);
-    if (!isValidPassword) {
-      return res.status(401).json({ error: "Invalid credentials" });
-    }
-
-    // OTP
+    // Generate OTP
     const otp = user.generateOTP();
     await user.save();
 
@@ -945,19 +944,15 @@ const login = async (req, res) => {
       userAgent: req.headers["user-agent"],
     });
 
-    res.json({
-      message: "OTP sent successfully",
-      userId: user.id,
-      otpSent: true,
-    });
-  } catch (error) {
-    console.error("Login error:", error);
-    res.status(500).json({ error: "Login failed" });
+    return res.json({ message: "OTP sent", userId: user.id, otpSent: true });
+  } catch (err) {
+    console.error("Login error:", err);
+    return res.status(500).json({ error: "Login failed" });
   }
 };
 
 // ---------------------------------
-// VERIFY OTP (Step 2 → Issue Token)
+// VERIFY OTP (Step 2 → Return Token)
 // ---------------------------------
 const verifyOTP = async (req, res) => {
   try {
@@ -966,19 +961,15 @@ const verifyOTP = async (req, res) => {
     const user = await User.findByPk(userId, {
       include: [
         { model: Dealer, as: "dealer" },
-        { model: Role, as: "roleDetails" }
-      ]
+        { model: Role, as: "roleDetails" },
+      ],
     });
 
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    if (!user.validateOTP(otp)) {
+    if (!user) return res.status(404).json({ error: "User not found" });
+    if (!user.validateOTP(otp))
       return res.status(401).json({ error: "Invalid or expired OTP" });
-    }
 
-    // Clean OTP
+    // clear otp
     user.otp = null;
     user.otpExpiry = null;
     user.lastLogin = new Date();
@@ -995,35 +986,31 @@ const verifyOTP = async (req, res) => {
       userAgent: req.headers["user-agent"],
     });
 
-    res.json({
-      token,
-      user: {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        role: user.roleDetails?.name,  // 🔥 correct
-        roleId: user.roleId,
-        dealer: user.dealer,
-      },
-    });
-  } catch (error) {
-    console.error("OTP verification error:", error);
-    res.status(500).json({ error: "OTP verification failed" });
+    return res.json({
+  token,
+  user: {
+    id: user.id,
+    username: user.username,
+    email: user.email,
+    role: user.roleDetails?.name,
+    roleId: user.roleId,
+    dealerId: user.dealerId || (user.dealer ? user.dealer.id : null),
+    dealer: user.dealer || null,
+  },
+});
+
+  } catch (err) {
+    console.error("OTP error:", err);
+    return res.status(500).json({ error: "OTP verification failed" });
   }
 };
 
-// -------------------------------
-// PASSWORD RESET REQUEST (OTP)
-// -------------------------------
 const resetPassword = async (req, res) => {
   try {
     const { username, email } = req.body;
 
     const user = await User.findOne({ where: { username, email } });
-
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
-    }
+    if (!user) return res.status(404).json({ error: "User not found" });
 
     const otp = user.generateOTP();
     await user.save();
@@ -1037,32 +1024,22 @@ const resetPassword = async (req, res) => {
       userAgent: req.headers["user-agent"],
     });
 
-    res.json({
-      message: "Password reset OTP sent",
-      userId: user.id,
-    });
-  } catch (error) {
-    console.error("Password reset error:", error);
-    res.status(500).json({ error: "Password reset failed" });
+    return res.json({ message: "Password reset OTP sent", userId: user.id });
+  } catch (err) {
+    console.error("Password reset error:", err);
+    return res.status(500).json({ error: "Password reset failed" });
   }
 };
 
-// --------------------------------------
-// PASSWORD RESET CONFIRMATION (VERIFY OTP)
-// --------------------------------------
 const resetPasswordConfirm = async (req, res) => {
   try {
     const { userId, otp, newPassword } = req.body;
 
     const user = await User.findByPk(userId);
+    if (!user) return res.status(404).json({ error: "User not found" });
 
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    if (!user.validateOTP(otp)) {
+    if (!user.validateOTP(otp))
       return res.status(401).json({ error: "Invalid or expired OTP" });
-    }
 
     user.password = newPassword;
     user.otp = null;
@@ -1078,10 +1055,10 @@ const resetPasswordConfirm = async (req, res) => {
       userAgent: req.headers["user-agent"],
     });
 
-    res.json({ message: "Password reset successfully" });
-  } catch (error) {
-    console.error("Password reset confirm error:", error);
-    res.status(500).json({ error: "Password reset confirmation failed" });
+    return res.json({ message: "Password reset successful" });
+  } catch (err) {
+    console.error("Password reset confirm error:", err);
+    return res.status(500).json({ error: "Password reset failed" });
   }
 };
 
@@ -1089,7 +1066,7 @@ module.exports = {
   login,
   verifyOTP,
   resetPassword,
-  resetPasswordConfirm
+  resetPasswordConfirm,
 };
 </file>
 
@@ -1922,7 +1899,7 @@ exports.exportInventory = async (req, res) => {
 </file>
 
 <file path="src/controllers/invoiceController.js">
-const { Invoice, Dealer, AuditLog } = require('../models');
+const { Invoice, Dealer, AuditLog, Order } = require('../models');
 const { Op } = require('sequelize');
 const PDFDocument = require('pdfkit');
 const fs = require('fs');
@@ -1994,10 +1971,38 @@ const getInvoiceById = async (req, res) => {
 
 const createInvoice = async (req, res) => {
   try {
-    const invoiceData = {
-      ...req.body,
-      balanceAmount: req.body.totalAmount - (req.body.paidAmount || 0)
-    };
+
+    // Business rule: dealer_staff may create invoice only for orders that
+    // belong to their dealer and are already Approved by dealer_admin.
+    const invoiceData = { ...req.body };
+
+    if (req.user.role === 'dealer_staff') {
+      const { orderId } = req.body;
+      if (!orderId) {
+        return res.status(400).json({ error: 'orderId is required for dealer staff invoice requests' });
+      }
+
+      const order = await Order.findByPk(orderId);
+      if (!order) return res.status(404).json({ error: 'Order not found' });
+
+      if ((order.dealerId || '') !== (req.user.dealerId || '')) {
+        return res.status(403).json({ error: 'Forbidden: order does not belong to your dealer' });
+      }
+
+      if (order.status !== 'Approved') {
+        return res.status(400).json({ error: 'Order must be Approved by dealer admin before creating invoice' });
+      }
+
+      // Derive invoice values from order if not provided
+      invoiceData.dealerId = order.dealerId;
+      invoiceData.orderId = order.id;
+      invoiceData.totalAmount = invoiceData.totalAmount || order.totalAmount;
+      invoiceData.invoiceNumber = invoiceData.invoiceNumber || `INV-${Date.now()}`;
+      invoiceData.invoiceDate = invoiceData.invoiceDate || new Date();
+    }
+
+    // compute balanceAmount
+    invoiceData.balanceAmount = (invoiceData.totalAmount || 0) - (invoiceData.paidAmount || 0);
 
     const invoice = await Invoice.create(invoiceData);
 
@@ -2771,122 +2776,77 @@ exports.markAsRead = async (req, res) => {
 
 <file path="src/controllers/orderController.js">
 // src/controllers/orderController.js
-// src/controllers/orderController.js
-const { Order, OrderItem, Material, Dealer, sequelize } = require('../models');
+const { Order, OrderItem, Material, Dealer, sequelize } = require("../models");
 
-
+// --------------------------------------
+// PLACE ORDER  (Dealer / Dealer Staff)
+// --------------------------------------
 exports.placeOrder = async (req, res) => {
-const t = await sequelize.transaction();
-try {
-const dealerId = req.user?.dealerId || req.body.dealerId;
-if (!dealerId) return res.status(400).json({ error: 'Missing dealerId' });
-const { items = [], notes } = req.body;
-if (!items.length) return res.status(400).json({ error: 'No items' });
+  const t = await sequelize.transaction();
+  try {
+    const dealerId = req.user?.dealerId || req.body.dealerId;
+    if (!dealerId)
+      return res.status(400).json({ error: "Missing dealerId" });
 
+    const { items = [], notes } = req.body;
+    if (!items.length)
+      return res.status(400).json({ error: "No items provided" });
 
-let total = 0;
-for (const it of items) {
-const mat = await Material.findByPk(it.materialId);
-if (!mat) {
-await t.rollback();
-return res.status(404).json({ error: `Material ${it.materialId} not found` });
-}
-total += Number(it.qty) * Number(it.unitPrice || 0);
-}
+    let total = 0;
 
+    for (const it of items) {
+      const mat = await Material.findByPk(it.materialId);
+      if (!mat) {
+        await t.rollback();
+        return res
+          .status(404)
+          .json({ error: `Material ${it.materialId} not found` });
+      }
+      total += Number(it.qty) * Number(it.unitPrice || 0);
+    }
 
-const order = await Order.create({
-dealerId,
-orderNumber: `ORD-${Date.now()}`,
-status: 'Pending',
-totalAmount: total,
-notes
-}, { transaction: t });
+    const order = await Order.create(
+      {
+        dealerId,
+        orderNumber: `ORD-${Date.now()}`,
+        status: "Pending",
+        totalAmount: total,
+        notes,
+      },
+      { transaction: t }
+    );
 
+    for (const it of items) {
+      const lineTotal = Number(it.qty) * Number(it.unitPrice || 0);
+      await OrderItem.create(
+        {
+          orderId: order.id,
+          materialId: it.materialId,
+          qty: it.qty,
+          unitPrice: it.unitPrice,
+          lineTotal,
+        },
+        { transaction: t }
+      );
+    }
 
-for (const it of items) {
-const lineTotal = Number(it.qty) * Number(it.unitPrice || 0);
-await OrderItem.create({ orderId: order.id, materialId: it.materialId, qty: it.qty, unitPrice: it.unitPrice, lineTotal }, { transaction: t });
-}
-
-
-// optional notifications: implement as you like (email, socket, notification table)
-
-
-await t.commit();
-res.status(201).json({ orderId: order.id, orderNumber: order.orderNumber });
-} catch (err) {
-await t.rollback();
-console.error('placeOrder:', err);
-res.status(500).json({ error: 'Failed to place order', details: err.message });
-}
+    await t.commit();
+    return res.status(201).json({
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+    });
+  } catch (err) {
+    await t.rollback();
+    console.error("placeOrder:", err);
+    res
+      .status(500)
+      .json({ error: "Failed to place order", details: err.message });
+  }
 };
 
-
-exports.getOrdersForDealer = async (req, res) => {
-try {
-const where = {};
-if (req.user?.role === 'dealer') where.dealerId = req.user.dealerId;
-const orders = await Order.findAll({ where, include: [{ model: OrderItem, as: 'items', include: [{ model: Material, as: 'material' }] }], order: [['createdAt','DESC']] });
-res.json({ orders });
-} catch (err) {
-console.error('getOrdersForDealer:', err);
-res.status(500).json({ error: 'Failed to fetch orders' });
-}
-};
-
-
-exports.updateOrderStatus = async (req, res) => {
-const t = await sequelize.transaction();
-try {
-const { id } = req.params;
-const { status } = req.body;
-const order = await Order.findByPk(id, { include: [{ model: OrderItem, as: 'items' }] });
-if (!order) return res.status(404).json({ error: 'Order not found' });
-order.status = status;
-await order.save({ transaction: t });
-
-
-// If moving to "Shipped" or "Processing" update material stock
-if (['Shipped','Processing'].includes(status)) {
-for (const item of order.items) {
-const mat = await Material.findByPk(item.materialId);
-if (mat) {
-mat.stock = Math.max(0, (mat.stock || 0) - item.qty);
-await mat.save({ transaction: t });
-}
-}
-}
-
-
-await t.commit();
-res.json({ order });
-} catch (err) {
-await t.rollback();
-console.error('updateOrderStatus:', err);
-res.status(500).json({ error: 'Failed to update status' });
-}
-};
-exports.approveOrder = async (req, res) => {
-  const order = await Order.findByPk(req.params.id);
-  if (!order) return res.status(404).json({ error: "Order not found" });
-
-  order.status = "Approved";
-  await order.save();
-
-  res.json({ message: "Order approved" });
-};
-exports.rejectOrder = async (req, res) => {
-  const { reason } = req.body;
-  const order = await Order.findByPk(req.params.id);
-  if (!order) return res.status(404).json({ error: "Order not found" });
-
-  order.status = "Rejected";
-  order.notes = reason;
-  await order.save();
-
-  res.json({ message: "Order rejected" });
-};
+// --------------------------------------
+// DEALER / DEALER STAFF → MY ORDERS
+// --------------------------------------
 exports.getMyOrders = async (req, res) => {
   try {
     const dealerId = req.user?.dealerId;
@@ -2896,8 +2856,14 @@ exports.getMyOrders = async (req, res) => {
       include: [
         {
           model: OrderItem,
-          include: [{ model: Material }]
-        }
+          as: "items", // 🔥 FIXED alias
+          include: [
+            {
+              model: Material,
+              as: "material", // 🔥 FIXED alias
+            },
+          ],
+        },
       ],
       order: [["createdAt", "DESC"]],
     });
@@ -2909,6 +2875,9 @@ exports.getMyOrders = async (req, res) => {
   }
 };
 
+// --------------------------------------
+// ADMIN / MANAGER → ALL ORDERS
+// --------------------------------------
 exports.getAllOrders = async (req, res) => {
   try {
     const orders = await Order.findAll({
@@ -2916,23 +2885,393 @@ exports.getAllOrders = async (req, res) => {
         {
           model: OrderItem,
           as: "items",
-          include: [
-            { model: Material, as: "material" }
-          ]
+          include: [{ model: Material, as: "material" }],
         },
         {
           model: Dealer,
-          as: "dealer"
-        }
+          as: "dealer",
+        },
       ],
-      order: [["createdAt", "DESC"]]
+      order: [["createdAt", "DESC"]],
     });
 
     res.json({ orders });
   } catch (err) {
-    console.error(err);
+    console.error("getAllOrders:", err);
     res.status(500).json({ error: "Failed to load orders" });
   }
+};
+
+// --------------------------------------
+// STATUS UPDATE (Admin / Manager)
+// --------------------------------------
+exports.updateOrderStatus = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    const order = await Order.findByPk(id, {
+      include: [{ model: OrderItem, as: "items" }],
+    });
+
+    if (!order) return res.status(404).json({ error: "Order not found" });
+
+    order.status = status;
+    await order.save({ transaction: t });
+
+    if (["Shipped", "Processing"].includes(status)) {
+      for (const item of order.items) {
+        const mat = await Material.findByPk(item.materialId);
+        if (mat) {
+          mat.stock = Math.max(0, (mat.stock || 0) - item.qty);
+          await mat.save({ transaction: t });
+        }
+      }
+    }
+
+    await t.commit();
+    res.json({ order });
+  } catch (err) {
+    await t.rollback();
+    console.error("updateOrderStatus:", err);
+    res.status(500).json({ error: "Failed to update status" });
+  }
+};
+
+// --------------------------------------
+// APPROVE ORDER
+// --------------------------------------
+exports.approveOrder = async (req, res) => {
+  const order = await Order.findByPk(req.params.id);
+  if (!order)
+    return res.status(404).json({ error: "Order not found" });
+
+  order.status = "Approved";
+  await order.save();
+  res.json({ message: "Order approved" });
+};
+
+// --------------------------------------
+// REJECT ORDER
+// --------------------------------------
+exports.rejectOrder = async (req, res) => {
+  const { reason } = req.body;
+
+  const order = await Order.findByPk(req.params.id);
+  if (!order)
+    return res.status(404).json({ error: "Order not found" });
+
+  order.status = "Rejected";
+  order.notes = reason;
+  await order.save();
+
+  res.json({ message: "Order rejected" });
+};
+</file>
+
+<file path="src/controllers/paymentController.js">
+// src/controllers/paymentController.js
+// Payment workflow:
+//  - Dealer Staff -> creates request -> status: dealer_pending
+//  - Dealer Admin -> reviews -> if approved -> status: finance_pending
+//  - Finance Admin -> reviews -> if approved -> status: approved (invoice marked paid)
+//  - Auto-reconcile runs against finance_pending requests with UTRs
+
+const { PaymentRequest, Invoice, Dealer, AuditLog, sequelize } = require("../models");
+const { Op } = require("sequelize");
+
+/**
+ * Dealer Staff creates a payment request.
+ * Request moves to "dealer_pending" and waits for Dealer Admin approval.
+ */
+const createPaymentRequest = async (req, res) => {
+  try {
+    const { invoiceId, amount, paymentMode, utrNumber } = req.body;
+
+    const invoice = await Invoice.findByPk(invoiceId);
+    if (!invoice) return res.status(404).json({ error: "Invoice not found" });
+
+    if (Number(amount) !== Number(invoice.balanceAmount)) {
+      return res.status(400).json({ error: "Amount mismatch with invoice" });
+    }
+
+    const proofPath = req.file ? req.file.path : null;
+
+    const payment = await PaymentRequest.create({
+      invoiceId,
+      dealerId: req.user.dealerId,
+      amount,
+      paymentMode,
+      utrNumber,
+      proofFile: proofPath,
+
+      // workflow fields
+      status: "dealer_pending",         // draft -> dealer_pending -> finance_pending -> approved/rejected
+      dealerApprovalStatus: "pending",  // dealer side approval state
+    });
+
+    // Audit log
+    await AuditLog.create({
+      userId: req.user.id,
+      action: "CREATE_PAYMENT_REQUEST",
+      entity: "PaymentRequest",
+      entityId: payment.id,
+      changes: { invoiceId, amount, paymentMode, utrNumber, proofFile: proofPath },
+      ipAddress: req.ip
+    });
+
+    res.status(201).json({ message: "Payment request sent to Dealer Admin", payment });
+  } catch (err) {
+    console.error("createPaymentRequest:", err);
+    res.status(500).json({ error: "Failed to submit payment request" });
+  }
+};
+
+/**
+ * Dealer: list their own payment requests
+ */
+const getDealerPayments = async (req, res) => {
+  try {
+    const data = await PaymentRequest.findAll({
+      where: { dealerId: req.user.dealerId },
+      include: ["Invoice"],
+      order: [["createdAt", "DESC"]]
+    });
+
+    res.json({ payments: data });
+  } catch (err) {
+    console.error("getDealerPayments:", err);
+    res.status(500).json({ error: "Failed to fetch payment requests" });
+  }
+};
+
+/**
+ * Dealer Admin: view pending requests for their dealer (status = dealer_pending)
+ */
+const getDealerAdminPending = async (req, res) => {
+  try {
+    const data = await PaymentRequest.findAll({
+      where: {
+        dealerId: req.user.dealerId,
+        status: "dealer_pending"
+      },
+      include: ["Invoice"],
+      order: [["createdAt", "DESC"]]
+    });
+
+    res.json({ pending: data });
+  } catch (err) {
+    console.error("getDealerAdminPending:", err);
+    res.status(500).json({ error: "Failed to fetch dealer admin pending" });
+  }
+};
+
+/**
+ * Dealer Admin: approve / reject a payment request.
+ * On approve -> moves to finance_pending
+ * On reject  -> final status = rejected
+ */
+const reviewPaymentByDealerAdmin = async (req, res) => {
+  try {
+    const { action, remarks } = req.body; // action: 'approve' | 'reject'
+    const request = await PaymentRequest.findByPk(req.params.id, { include: ["Invoice", "Dealer"] });
+
+    if (!request) return res.status(404).json({ error: "Payment request not found" });
+
+    // Ensure the dealer admin belongs to the same dealer (basic guard)
+    if (req.user.dealerId !== request.dealerId) {
+      return res.status(403).json({ error: "Unauthorized: not your dealer's request" });
+    }
+
+    if (request.status !== "dealer_pending") {
+      return res.status(400).json({ error: "Request not pending dealer approval" });
+    }
+
+    const approvalStatus = action === "approve" ? "approved" : "rejected";
+
+    await request.update({
+      dealerApprovalStatus: approvalStatus,
+      dealerApprovalRemarks: remarks || null,
+      dealerApprovedAt: new Date(),
+      dealerApprovedBy: req.user.username || req.user.id,
+
+      // forward to finance if approved
+      status: approvalStatus === "approved" ? "finance_pending" : "rejected"
+    });
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: approvalStatus === "approved" ? "DEALER_APPROVE_PAYMENT" : "DEALER_REJECT_PAYMENT",
+      entity: "PaymentRequest",
+      entityId: request.id,
+      changes: { dealerApprovalStatus: approvalStatus, dealerApprovalRemarks: remarks },
+      ipAddress: req.ip
+    });
+
+    res.json({ message: `Payment ${approvalStatus} by Dealer Admin`, request });
+  } catch (err) {
+    console.error("reviewPaymentByDealerAdmin:", err);
+    res.status(500).json({ error: "Dealer admin approval failed" });
+  }
+};
+
+/**
+ * Finance Admin: list requests that have been dealer-approved (status = finance_pending)
+ */
+const getPendingPayments = async (req, res) => {
+  try {
+    const data = await PaymentRequest.findAll({
+      where: { status: "finance_pending" },
+      include: ["Invoice", "Dealer"],
+      order: [["createdAt", "DESC"]]
+    });
+
+    res.json({ pending: data });
+  } catch (err) {
+    console.error("getPendingPayments:", err);
+    res.status(500).json({ error: "Failed to fetch pending payments" });
+  }
+};
+
+/**
+ * Finance Admin: final approve / reject.
+ * If approved -> mark invoice as paid and balanceAmount = 0
+ */
+const reviewPayment = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const { action, remarks } = req.body; // action: 'approve' | 'reject'
+    const request = await PaymentRequest.findByPk(req.params.id, { include: ["Invoice"], transaction: t });
+
+    if (!request) {
+      await t.rollback();
+      return res.status(404).json({ error: "Payment request not found" });
+    }
+
+    if (request.status !== "finance_pending") {
+      await t.rollback();
+      return res.status(400).json({ error: "Request not pending finance approval" });
+    }
+
+    const status = action === "approve" ? "approved" : "rejected";
+
+    // Update payment request
+    await request.update({
+      status,
+      remarks: remarks || null,
+      approvedBy: req.user.username || req.user.id,
+      approvedAt: new Date()
+    }, { transaction: t });
+
+    // If finance approves, update invoice
+    if (status === "approved") {
+      const invoice = await Invoice.findByPk(request.invoiceId, { transaction: t });
+      if (invoice) {
+        await invoice.update({
+          status: "paid",
+          balanceAmount: 0
+        }, { transaction: t });
+      }
+    }
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: status === "approved" ? "FINANCE_APPROVE_PAYMENT" : "FINANCE_REJECT_PAYMENT",
+      entity: "PaymentRequest",
+      entityId: request.id,
+      changes: { status, remarks },
+      ipAddress: req.ip
+    }, { transaction: t });
+
+    await t.commit();
+    res.json({ message: `Payment ${status}`, request });
+  } catch (err) {
+    await t.rollback();
+    console.error("reviewPayment:", err);
+    res.status(500).json({ error: "Failed to review payment" });
+  }
+};
+
+/**
+ * Auto-Reconciliation:
+ * - Runs over finance_pending requests which have UTRs.
+ * - If amount === invoice.balanceAmount, auto-approve.
+ * - Otherwise flag for manual review (returned in response).
+ */
+const autoReconcile = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const matches = await PaymentRequest.findAll({
+      where: {
+        status: "finance_pending",
+        utrNumber: { [Op.ne]: null }
+      },
+      include: ["Invoice"],
+      transaction: t,
+      lock: t.LOCK.UPDATE
+    });
+
+    let autoApproved = [];
+    let flagged = [];
+
+    for (let p of matches) {
+      const invoice = p.Invoice;
+      // strict numeric compare
+      if (invoice && Number(p.amount) === Number(invoice.balanceAmount)) {
+        await p.update({
+          status: "approved",
+          approvedAt: new Date(),
+          approvedBy: "AUTO-RECONCILE"
+        }, { transaction: t });
+
+        await invoice.update({
+          status: "paid",
+          balanceAmount: 0
+        }, { transaction: t });
+
+        await AuditLog.create({
+          userId: null,
+          action: "AUTO_RECONCILE_APPROVE",
+          entity: "PaymentRequest",
+          entityId: p.id,
+          changes: { approvedBy: "AUTO-RECONCILE" },
+          ipAddress: req.ip
+        }, { transaction: t });
+
+        autoApproved.push(p.id);
+      } else {
+        // add a little context to flagged list
+        flagged.push({
+          paymentRequestId: p.id,
+          invoiceId: invoice ? invoice.id : null,
+          paymentAmount: p.amount,
+          invoiceBalance: invoice ? invoice.balanceAmount : null
+        });
+      }
+    }
+
+    await t.commit();
+    res.json({
+      autoApprovedCount: autoApproved.length,
+      flaggedCount: flagged.length,
+      flagged
+    });
+  } catch (err) {
+    await t.rollback();
+    console.error("autoReconcile:", err);
+    res.status(500).json({ error: "Auto-reconciliation failed" });
+  }
+};
+
+module.exports = {
+  createPaymentRequest,
+  getDealerPayments,
+  getDealerAdminPending,
+  reviewPaymentByDealerAdmin,
+  getPendingPayments,
+  reviewPayment,
+  autoReconcile
 };
 </file>
 
@@ -4104,43 +4443,86 @@ module.exports = {
 </file>
 
 <file path="src/middleware/auth.js">
-const { verifyToken } = require('../utils/jwt');
-const { User } = require('../models');
+// src/middleware/auth.js
+
+const jwt = require("jsonwebtoken");
+const { promisify } = require("util");
+const verifyAsync = promisify(jwt.verify);
+
+// Load all models properly
+const { User, Role, Dealer } = require("../models");
 
 const authenticate = async (req, res, next) => {
   try {
-    const token = req.headers.authorization?.split(' ')[1];
-    
-    if (!token) {
-      return res.status(401).json({ error: 'No token provided' });
+    const header = req.headers.authorization || req.headers.Authorization;
+    if (!header)
+      return res.status(401).json({ error: "Authorization header missing" });
+
+    const parts = header.split(" ");
+    if (parts.length !== 2 || parts[0] !== "Bearer")
+      return res.status(401).json({ error: "Invalid authorization format" });
+
+    const token = parts[1];
+
+    let decoded;
+    try {
+      decoded = await verifyAsync(token, process.env.JWT_SECRET || "secret");
+    } catch (err) {
+      console.error("Token verify error:", err);
+      return res.status(401).json({ error: "Invalid or expired token" });
     }
 
-    const decoded = verifyToken(token);
-    if (!decoded) {
-      return res.status(401).json({ error: 'Invalid token' });
-    }
+    const userId = decoded.userId || decoded.id || decoded.sub;
+    if (!userId)
+      return res
+        .status(401)
+        .json({ error: "Invalid token payload (no userId)" });
 
-    const user = await User.findByPk(decoded.userId);
-    if (!user || !user.isActive || user.isBlocked) {
-      return res.status(401).json({ error: 'User not authorized' });
-    }
+    // ❌ OLD (WRONG): created circular import
+    // { model: require('../models').Dealer }
 
-    req.user = user;
-    next();
-  } catch (error) {
-    console.error('Authentication error:', error);
-    res.status(401).json({ error: 'Authentication failed' });
+    // ✅ NEW (CORRECT)
+    const user = await User.findByPk(userId, {
+      include: [
+        { model: Role, as: "roleDetails" },
+        { model: Dealer, as: "dealer" },
+      ],
+    });
+
+    if (!user) return res.status(401).json({ error: "User not found" });
+
+    req.user = {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      roleId: user.roleId,
+      role: user.roleDetails?.name || null,
+      dealerId: user.dealerId || user.dealer?.id || null,
+      isActive: user.isActive,
+      isBlocked: user.isBlocked,
+    };
+
+    return next();
+  } catch (err) {
+    console.error("Authentication error:", err);
+    return res.status(500).json({ error: "Authentication failed" });
   }
 };
 
-const authorize = (...roles) => {
+const authorize = (...allowedRoles) => {
   return (req, res, next) => {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Not authenticated' });
-    }
+    if (!req.user)
+      return res.status(401).json({ error: "Not authenticated" });
 
-    if (!roles.includes(req.user.role)) {
-      return res.status(403).json({ error: 'Not authorized for this action' });
+    if (allowedRoles.length === 0) return next();
+
+    const userRole = req.user.role?.toLowerCase();
+    const allowed = allowedRoles.map((r) => r.toLowerCase());
+
+    if (!allowed.includes(userRole)) {
+      return res
+        .status(403)
+        .json({ error: "Forbidden: insufficient permissions" });
     }
 
     next();
@@ -4188,6 +4570,48 @@ module.exports = (requiredRoles) => {
     next();
   };
 };
+</file>
+
+<file path="src/middleware/upload.js">
+// backend/src/middleware/upload.js
+
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
+
+// Folder where files will be uploaded
+const uploadDir = path.join(__dirname, "..", "uploads");
+
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir);
+}
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueName =
+      Date.now() + "-" + Math.round(Math.random() * 1e9) + path.extname(file.originalname);
+    cb(null, uniqueName);
+  },
+});
+
+const fileFilter = (req, file, cb) => {
+  // Allowed types: images, pdfs
+  const allowed = ["image/jpeg", "image/png", "image/jpg", "application/pdf"];
+
+  if (allowed.includes(file.mimetype)) cb(null, true);
+  else cb(new Error("Invalid file type"), false);
+};
+
+const upload = multer({
+  storage,
+  fileFilter,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+});
+
+module.exports = upload;
 </file>
 
 <file path="src/models/AccountStatement.js">
@@ -5005,6 +5429,58 @@ module.exports = (sequelize, DataTypes) => {
 };
 </file>
 
+<file path="src/models/PaymenRequest.js">
+module.exports = (sequelize, DataTypes) => {
+  const PaymentRequest = sequelize.define("PaymentRequest", {
+    id: {
+      type: DataTypes.UUID,
+      primaryKey: true,
+      defaultValue: DataTypes.UUIDV4
+    },
+
+    invoiceId: {
+      type: DataTypes.UUID,
+      allowNull: false
+    },
+
+    dealerId: {
+      type: DataTypes.UUID,
+      allowNull: false
+    },
+
+    amount: { type: DataTypes.FLOAT, allowNull: false },
+    paymentMode: { type: DataTypes.STRING, allowNull: false },
+    utrNumber: { type: DataTypes.STRING },
+    proofFile: { type: DataTypes.STRING },
+
+    status: {
+      type: DataTypes.STRING,
+      defaultValue: "dealer_pending"
+    },
+
+    dealerApprovalStatus: {
+      type: DataTypes.STRING,
+      defaultValue: "pending"
+    },
+
+    dealerApprovalRemarks: { type: DataTypes.TEXT },
+    dealerApprovedAt: { type: DataTypes.DATE },
+    dealerApprovedBy: { type: DataTypes.STRING },
+
+    remarks: { type: DataTypes.TEXT },
+    approvedAt: { type: DataTypes.DATE },
+    approvedBy: { type: DataTypes.STRING }
+  });
+
+  PaymentRequest.associate = (models) => {
+    PaymentRequest.belongsTo(models.Invoice, { foreignKey: "invoiceId" });
+    PaymentRequest.belongsTo(models.Dealer, { foreignKey: "dealerId" });
+  };
+
+  return PaymentRequest;
+};
+</file>
+
 <file path="src/models/Permission.js">
 module.exports = (sequelize, DataTypes) => {
   const Permission = sequelize.define(
@@ -5406,7 +5882,7 @@ const accountsController = require("../controllers/accountsController");
 router.get(
   "/summary",
   authenticate,
-  authorize("accounts", "admin"),
+  authorize("accounts", "super_admin"),
   accountsController.getSummary
 );
 
@@ -5414,25 +5890,25 @@ router.get(
 router.get(
   "/invoices",
   authenticate,
-  authorize("accounts", "admin"),
+  authorize("accounts", "super_admin"),
   accountsController.getInvoices
 );
 router.post(
   "/invoices",
   authenticate,
-  authorize("accounts", "admin"),
+  authorize("accounts", "super_admin"),
   accountsController.createInvoice
 );
 router.put(
   "/invoices/:id",
   authenticate,
-  authorize("accounts", "admin"),
+  authorize("accounts", "super_admin"),
   accountsController.updateInvoice
 );
 router.delete(
   "/invoices/:id",
   authenticate,
-  authorize("accounts", "admin"),
+  authorize("accounts", "super_admin"),
   accountsController.deleteInvoice
 );
 
@@ -5440,25 +5916,25 @@ router.delete(
 router.get(
   "/notes",
   authenticate,
-  authorize("accounts", "admin"),
+  authorize("accounts", "super_admin"),
   accountsController.getNotes
 );
 router.post(
   "/notes",
   authenticate,
-  authorize("accounts", "admin"),
+  authorize("accounts", "super_admin"),
   accountsController.createNote
 );
 router.put(
   "/notes/:id",
   authenticate,
-  authorize("accounts", "admin"),
+  authorize("accounts", "super_admin"),
   accountsController.updateNote
 );
 router.delete(
   "/notes/:id",
   authenticate,
-  authorize("accounts", "admin"),
+  authorize("accounts", "super_admin"),
   accountsController.deleteNote
 );
 
@@ -5466,19 +5942,19 @@ router.delete(
 router.get(
   "/statements",
   authenticate,
-  authorize("accounts", "admin"),
+  authorize("accounts", "super_admin"),
   accountsController.getStatements
 );
 router.post(
   "/statements",
   authenticate,
-  authorize("accounts", "admin"),
+  authorize("accounts", "super_admin"),
   accountsController.createStatement
 );
 router.put(
   "/statements/:id",
   authenticate,
-  authorize("accounts", "admin"),
+  authorize("accounts", "super_admin"),
   accountsController.updateStatement
 );
 
@@ -5486,7 +5962,7 @@ router.put(
 router.get(
   "/reconciliation",
   authenticate,
-  authorize("accounts", "admin"),
+  authorize("accounts", "super_admin"),
   accountsController.getReconciliation
 );
 
@@ -5504,8 +5980,8 @@ const adminController = require('../controllers/adminController');
 const { authenticate, authorize } = require('../middleware/auth');
 const pricingController = require('../controllers/pricingController');
 
-router.get('/pricing-updates', authenticate, authorize('admin'), pricingController.getPricingUpdates);
-router.patch('/pricing-updates/:id/review', authenticate, authorize('admin'), adminController.reviewPricingUpdate);
+router.get('/pricing-updates', authenticate, authorize('super_admin'), pricingController.getPricingUpdates);
+router.patch('/pricing-updates/:id/review', authenticate, authorize('super_admin'), adminController.reviewPricingUpdate);
 
 
 
@@ -5513,32 +5989,32 @@ router.patch('/pricing-updates/:id/review', authenticate, authorize('admin'), ad
 router.use(authenticate);
 
 // ---------------- Dealer Management ----------------
-router.put('/dealers/:id/block', authorize('admin'), adminController.blockDealer);
-router.put('/dealers/:id/verify', authorize('admin'), adminController.verifyDealer);
+router.put('/dealers/:id/block', authorize('super_admin'), adminController.blockDealer);
+router.put('/dealers/:id/verify', authorize('super_admin'), adminController.verifyDealer);
 
 // ---------------- Sales Groups ----------------
-router.post('/sales-groups/merge', authorize('admin'), adminController.mergeSalesGroups);
+router.post('/sales-groups/merge', authorize('super_admin'), adminController.mergeSalesGroups);
 
 // ---------------- Documents ----------------
-router.put('/documents/:id/review', authorize('admin'), adminController.reviewDocument);
+router.put('/documents/:id/review', authorize('super_admin'), adminController.reviewDocument);
 
 // ---------------- Pricing ----------------
-router.put('/pricing/:id/review', authorize('admin'), adminController.reviewPricingUpdate);
+router.put('/pricing/:id/review', authorize('super_admin'), adminController.reviewPricingUpdate);
 
 // ---------------- User Management ----------------
-router.get('/users', authorize('admin'), adminController.getAllUsers);
-router.post('/users', authorize('admin'), adminController.createUser);   // ✅ ADD
-router.put('/users/:id', authorize('admin'), adminController.updateUser);  // ✅ ADD
-router.put('/users/:id/role', authorize('admin'), adminController.updateUserRole);
-router.delete('/users/:id', authorize('admin'), adminController.deleteUser);
-router.put('/dealers/:id/assign-region', authorize('admin'), adminController.assignRegion);
-router.put('/users/:id', authorize('admin'), adminController.updateUser);
+router.get('/users', authorize('super_admin'), adminController.getAllUsers);
+router.post('/users', authorize('super_admin'), adminController.createUser);   // ✅ ADD
+router.put('/users/:id', authorize('super_admin'), adminController.updateUser);  // ✅ ADD
+router.put('/users/:id/role', authorize('super_admin'), adminController.updateUserRole);
+router.delete('/users/:id', authorize('super_admin'), adminController.deleteUser);
+router.put('/dealers/:id/assign-region', authorize('super_admin'), adminController.assignRegion);
+router.put('/users/:id', authorize('super_admin'), adminController.updateUser);
 
 
 
 
 // ---------------- Reports ----------------
-router.get('/reports', authorize('admin'), adminController.getAdminReport);
+router.get('/reports', authorize('super_admin'), adminController.getAdminReport);
 
 module.exports = router;
 </file>
@@ -5566,19 +6042,19 @@ router.get('/', authenticate, campaignController.getAllCampaigns);
 router.get(
   "/active",
   authenticate,
-  authorize("dealer", "tm", "am", "admin"),
+  authorize("dealer", "tm", "am", "super_admin"),
   campaignController.getActiveCampaigns
 );
 //router.get('/:id', authenticate, campaignController.getCampaignById);
 router.get(
   "/:id",
   authenticate,
-  authorize("dealer", "tm", "am", "admin"),
+  authorize("dealer", "tm", "am", "super_admin"),
   campaignController.getCampaignById
 );
-router.post('/', authenticate, authorize('admin', 'key_user'), campaignController.createCampaign);
-router.put('/:id', authenticate, authorize('admin', 'key_user'), campaignController.updateCampaign);
-router.delete('/:id', authenticate, authorize('admin', 'key_user'), campaignController.deleteCampaign);
+router.post('/', authenticate, authorize('super_admin', 'key_user'), campaignController.createCampaign);
+router.put('/:id', authenticate, authorize('super_admin', 'key_user'), campaignController.updateCampaign);
+router.delete('/:id', authenticate, authorize('super_admin', 'key_user'), campaignController.deleteCampaign);
 
 module.exports = router;
 </file>
@@ -5634,10 +6110,10 @@ router.get(
 
 // 🧩 Dealer by ID (keep this at the bottom)
 router.get('/:id', authenticate, dealerController.getDealerById);
-router.post('/', authenticate, authorize('admin', 'key_user'), dealerController.createDealer);
-router.put('/:id', authenticate, authorize('admin', 'key_user'), dealerController.updateDealer);
-router.put('/:id/block', authenticate, authorize('admin'), dealerController.blockDealer);
-router.put('/:id/verify', authenticate, authorize('admin', 'key_user'), dealerController.verifyDealer);
+router.post('/', authenticate, authorize('super_admin', 'key_user'), dealerController.createDealer);
+router.put('/:id', authenticate, authorize('super_admin', 'key_user'), dealerController.updateDealer);
+router.put('/:id/block', authenticate, authorize('super_admin'), dealerController.blockDealer);
+router.put('/:id/verify', authenticate, authorize('super_admin', 'key_user'), dealerController.verifyDealer);
 
 module.exports = router;
 </file>
@@ -5652,7 +6128,7 @@ router.get('/', authenticate, documentController.getAllDocuments);
 router.post('/', authenticate, documentController.upload.single('file'), documentController.uploadDocument);
 router.get('/:id/download', authenticate, documentController.downloadDocument);
 router.delete('/:id', authenticate, documentController.deleteDocument);
-router.patch('/:id/status', authenticate, authorize('admin','tm','am'), documentController.approveDocument);
+router.patch('/:id/status', authenticate, authorize('super_admin','tm','am'), documentController.approveDocument);
 router.get("/manager",authenticate,authorize("tm", "am", "sm"),documentController.getManagerDocuments);
 
 
@@ -5670,7 +6146,7 @@ const inventoryController = require("../controllers/inventoryController");
 router.get(
   "/summary",
   authenticate,
-  authorize("inventory", "admin", "key_user","dealer", "tm"),
+  authorize("inventory", "super_admin", "key_user","dealer", "tm"),
   inventoryController.getInventorySummary
 );
 
@@ -5678,7 +6154,7 @@ router.get(
 router.get(
   "/details",
   authenticate,
-  authorize("inventory", "admin"),
+  authorize("inventory", "super_admin"),
   inventoryController.getInventoryDetails
 );
 
@@ -5686,7 +6162,7 @@ router.get(
 router.post(
   "/",
   authenticate,
-  authorize("inventory", "admin"),
+  authorize("inventory", "super_admin"),
   inventoryController.addItem
 );
 
@@ -5694,7 +6170,7 @@ router.post(
 router.put(
   "/:id",
   authenticate,
-  authorize("inventory", "admin"),
+  authorize("inventory", "super_admin"),
   inventoryController.updateItem
 );
 
@@ -5702,7 +6178,7 @@ router.put(
 router.delete(
   "/:id",
   authenticate,
-  authorize("inventory", "admin"),
+  authorize("inventory", "super_admin"),
   inventoryController.deleteItem
 );
 
@@ -5710,7 +6186,7 @@ router.delete(
 router.get(
   "/export",
   authenticate,
-  authorize("inventory", "admin", "key_user"),
+  authorize("inventory", "super_admin", "key_user"),
   inventoryController.exportInventory
 );
 
@@ -5726,8 +6202,10 @@ const { authenticate, authorize } = require('../middleware/auth');
 router.get('/', authenticate, invoiceController.getAllInvoices);
 router.get('/:id', authenticate, invoiceController.getInvoiceById);
 router.get('/:id/pdf', authenticate, invoiceController.generateInvoicePDF);
-router.post('/', authenticate, authorize('admin', 'key_user'), invoiceController.createInvoice);
-router.put('/:id', authenticate, authorize('admin', 'key_user'), invoiceController.updateInvoice);
+// Allow dealer_staff to request/create invoices for approved orders;
+// controller will enforce order ownership and approved status checks.
+router.post('/', authenticate, authorize('super_admin', 'key_user', 'dealer_staff'), invoiceController.createInvoice);
+router.put('/:id', authenticate, authorize('super_admin', 'key_user'), invoiceController.updateInvoice);
 
 module.exports = router;
 </file>
@@ -5748,7 +6226,7 @@ router.get('/pricing', authenticate, authorize('tm','am','sm'), managerCtrl.getP
 router.patch('/pricing/:id/forward', authenticate, authorize('tm','am','sm'), managerCtrl.forwardPricingToAdmin);
 
 // Assign (admin or key_user)
-router.post('/assign-dealer', authenticate, authorize('admin','key_user'), managerCtrl.assignDealerToManager);
+router.post('/assign-dealer', authenticate, authorize('super_admin','key_user'), managerCtrl.assignDealerToManager);
 
 module.exports = router;
 </file>
@@ -5767,17 +6245,17 @@ router.get("/groups", authenticate, materialGroupController.getGroups);
 router.post(
   "/groups/:id/assign-material",
   authenticate,
-  authorize("admin"),
+  authorize("super_admin"),
   materialGroupController.assignMaterial
 );
 
 // Material Master
 router.get("/", authenticate, materialController.getMaterials);
 router.get("/:id", authenticate, materialController.getMaterialById);
-router.post("/", authenticate, authorize("admin", "inventory"), materialController.createMaterial);
-router.put("/:id", authenticate, authorize("admin", "inventory"), materialController.updateMaterial);
-router.delete("/:id", authenticate, authorize("admin", "inventory"), materialController.deleteMaterial);
-router.post("/groups", authenticate, authorize("admin", "dealer", "inventory"), materialGroupController.createGroup);
+router.post("/", authenticate, authorize("super_admin", "technical_admin","inventory"), materialController.createMaterial);
+router.put("/:id", authenticate, authorize("super_admin","technical_admin", "inventory"), materialController.updateMaterial);
+router.delete("/:id", authenticate, authorize("super_admin","technical_admin", "inventory"), materialController.deleteMaterial);
+router.post("/groups", authenticate, authorize("super_admin", "technical_admin","dealer", "inventory"), materialGroupController.createGroup);
 
 module.exports = router;
 </file>
@@ -5793,7 +6271,7 @@ const { authenticate, authorize } = require("../middleware/auth");
 router.get(
   "/",
   authenticate,
-  authorize("tm", "am", "admin", "dealer"),
+  authorize("tm", "am", "super_admin", "dealer"),
   messageController.getMessages
 );
 
@@ -5801,7 +6279,7 @@ router.get(
 router.get(
   "/conversation/:partnerId",
   authenticate,
-  authorize("tm", "am", "admin", "dealer"), // both sides can access
+  authorize("tm", "am", "super_admin", "dealer"), // both sides can access
   messageController.getConversation // ✅ fixed name (was messageCtrl)
 );
 
@@ -5809,7 +6287,7 @@ router.get(
 router.post(
   "/",
   authenticate,
-  authorize("tm", "am", "admin", "dealer"),
+  authorize("tm", "am", "super_admin", "dealer"),
   messageController.sendMessage
 );
 
@@ -5817,7 +6295,7 @@ router.post(
 router.patch(
   "/:id/read",
   authenticate,
-  authorize("tm", "am", "admin", "dealer"),
+  authorize("tm", "am", "super_admin", "dealer"),
   messageController.markAsRead
 );
 
@@ -5843,25 +6321,84 @@ module.exports = router;
 </file>
 
 <file path="src/routes/orderRoutes.js">
-// src/routes/orderRoutes.js
 const express = require("express");
 const router = express.Router();
 const orderController = require("../controllers/orderController");
 const { authenticate, authorize } = require("../middleware/auth");
 
-// Dealer placing order
-router.post("/", authenticate, authorize("dealer"), orderController.placeOrder);
 
-// Dealer/admin getting orders
-router.get("/", authenticate, orderController.getOrdersForDealer);
+router.post(
+  "/",
+  authenticate,
+  authorize("dealer", "dealer_admin", "dealer_staff"),
+  orderController.placeOrder
+);
 
-// Admin/manager updating order status
-router.patch("/:id/status", authenticate, authorize("admin", "manager"), orderController.updateOrderStatus);
-router.patch("/:id/approve", authenticate, authorize("admin","manager"), orderController.approveOrder);
-router.patch("/:id/reject", authenticate, authorize("admin","manager"), orderController.rejectOrder);
-router.get("/my", authenticate, authorize("dealer"), orderController.getMyOrders);
-router.get("/", authenticate, authorize("dealer"), orderController.getAllOrders);
+router.get(
+  "/my",
+  authenticate,
+  authorize("dealer", "dealer_admin", "dealer_staff"),
+  orderController.getMyOrders
+);
 
+// Admin / Manager view ALL orders
+router.get("/", authenticate, authorize("dealer_admin","admin", "manager"), orderController.getAllOrders);
+
+// Admin / Manager update status
+router.patch("/:id/status", authenticate, authorize("dealer_admin","admin", "manager"), orderController.updateOrderStatus);
+
+// Admin / Manager approve
+router.patch("/:id/approve", authenticate, authorize("dealer_admin","admin", "manager"), orderController.approveOrder);
+
+// Admin / Manager reject
+router.patch("/:id/reject", authenticate, authorize("dealer_admin","admin", "manager"), orderController.rejectOrder);
+
+module.exports = router;
+</file>
+
+<file path="src/routes/paymentRoutes.js">
+const router = require("express").Router();
+const upload = require("../middleware/upload");
+
+const {
+  createPaymentRequest,
+  getDealerPayments,
+  getDealerAdminPending,
+  reviewPaymentByDealerAdmin,
+  getPendingPayments,
+  reviewPayment,
+  autoReconcile
+} = require("../controllers/paymentController");
+
+// -----------------------
+// DEALER STAFF ROUTES
+// -----------------------
+router.post(
+  "/request",
+  upload.single("proofFile"),
+  createPaymentRequest
+);
+
+router.get("/mine", getDealerPayments);
+
+// -----------------------
+// DEALER ADMIN ROUTES
+// -----------------------
+router.get("/dealer/pending", getDealerAdminPending);
+
+router.post("/dealer/:id/review", reviewPaymentByDealerAdmin);
+
+// -----------------------
+// FINANCE ADMIN ROUTES
+// -----------------------
+router.get("/pending", getPendingPayments);
+
+router.post("/:id/review", reviewPayment);
+
+// -----------------------
+// AUTO-RECONCILIATION
+// -----------------------
+router.get("/reconcile", autoReconcile);
 
 module.exports = router;
 </file>
@@ -5898,7 +6435,7 @@ router.post(
 router.get(
   "/",
   authenticate,
-  authorize("admin", "am", "tm", "dealer"),
+  authorize("admin", "am", "tm", "dealer_admin"),
   pricingController.getPricingUpdates
 );
 
@@ -5963,13 +6500,13 @@ router.get("/admin-summary",
 router.get(
   "/pending-approvals",
   authenticate,
-  authorize("tm", "am", "admin"),
+  authorize("tm", "am", "super_admin"),
   reportController.getPendingApprovals
 );
 router.get(
   "/regional-sales-summary",
   authenticate,
-  authorize("admin", "am", "tm"),
+  authorize("super_admin", "am", "tm"),
   reportController.getRegionalSalesSummary
 );
 
@@ -6086,6 +6623,8 @@ app.use("/api/permissions", require("./routes/permissions"));
 app.use("/api", regionRoutes);
 app.use('/api/materials', require('./routes/materialRoutes'));
 app.use('/api/orders', require('./routes/orderRoutes'));
+app.use("/api/payments", require("./routes/paymentRoutes"));
+
 
 
 

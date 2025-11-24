@@ -74,6 +74,8 @@ app.use("/api/permissions", require("./routes/permissions"));
 app.use("/api", regionRoutes);
 app.use('/api/materials', require('./routes/materialRoutes'));
 app.use('/api/orders', require('./routes/orderRoutes'));
+app.use("/api/payments", require("./routes/paymentRoutes"));
+
 
 
 
