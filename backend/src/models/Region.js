@@ -8,9 +8,13 @@ module.exports = (sequelize, DataTypes) => {
         primaryKey: true,
       },
       name: { type: DataTypes.STRING, allowNull: false, unique: true },
+      geojson: DataTypes.JSON,
+centroidLat: DataTypes.FLOAT,
+centroidLng: DataTypes.FLOAT,
+
     },
     {
-      tableName: "Regions",
+      tableName: "regions",
       timestamps: true,
     }
   );

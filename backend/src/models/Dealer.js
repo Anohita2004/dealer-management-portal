@@ -60,6 +60,9 @@ module.exports = (sequelize, DataTypes) => {
       verifiedBy: DataTypes.STRING,
       verifiedAt: DataTypes.DATE,
       licenses: DataTypes.JSON,
+      lat: DataTypes.FLOAT,
+lng: DataTypes.FLOAT,
+territoryId: DataTypes.UUID,
 
       // ✅ REAL REGION RELATION
       regionId: {
@@ -81,6 +84,7 @@ module.exports = (sequelize, DataTypes) => {
       onDelete: "SET NULL",
       onUpdate: "CASCADE",
     });
+Dealer.belongsTo(models.Territory, { foreignKey: 'territoryId' });
 
     Dealer.belongsTo(models.User, {
       foreignKey: { name: "managerId", allowNull: true },

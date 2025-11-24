@@ -62,6 +62,9 @@ app.use(morgan('combined'));
 app.get('/health', (req, res) =>
   res.json({ status: 'OK', timestamp: new Date().toISOString() })
 );
+const mapsRouter = require('./routes/maps');
+app.use('/api/maps', mapsRouter);
+
 
 // --- Register routes (order preserved) ---
 app.use('/api/auth', authRoutes);

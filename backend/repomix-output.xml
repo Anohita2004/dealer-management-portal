@@ -220,7 +220,8 @@ CORS_ORIGIN=http://localhost:8080
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
     "sqlite3": "^5.1.7",
-    "winston": "^3.18.3"
+    "winston": "^3.18.3",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"
@@ -1227,8 +1228,10 @@ module.exports = {
 </file>
 
 <file path="src/controllers/chatController.js">
-const { User, Message, Role } = require("../models");
-const { Op } = require("sequelize");
+const { User, Message, Role, Dealer, sequelize} = require('../models');
+const { Op } = require('sequelize');
+
+
 
 // ------------------------------------------------------------
 // ROLE CHAT RULES BASED ON YOUR REAL ROLES TABLE
@@ -1305,37 +1308,305 @@ async function findTargets(me, targetRoleSlug) {
 // ------------------------------------------------------------
 // GET ALLOWED USERS
 // ------------------------------------------------------------
+// src/controllers/chatController.js  (only the getAllowedUsers part / helper functions)
+
+
+
+
+
+/**
+ * Helper: load current user fresh including role slug
+ */
+async function loadCurrentUser(userId) {
+  return User.findByPk(userId, {
+    attributes: ['id', 'username', 'dealerId', 'regionId', 'roleId'],
+    include: [{ model: Role, as: 'roleDetails', attributes: ['id', 'name'] }]
+  });
+}
+
+/**
+ * Helper: fetch users by role slug with optional filters
+ */
+async function fetchUsersByRoleSlug(roleSlug, filters = {}) {
+  const where = {};
+  if (filters.regionId) where.regionId = filters.regionId;
+  if (filters.dealerId) where.dealerId = filters.dealerId;
+
+  // Find roleId for the slug if exists
+  const role = await Role.findOne({ where: { name: roleSlug }, attributes: ['id', 'name'] });
+  if (role) {
+    where.roleId = role.id;
+  } else {
+    // fallback: try to match Users.role text column (legacy)
+    where.role = roleSlug;
+  }
+
+  // Don't return system users that are disabled etc (optional)
+  // where.isActive = true;
+
+  return User.findAll({
+    where,
+    attributes: ['id', 'username', 'roleId', 'dealerId', 'regionId'],
+    order: [['username', 'ASC']],
+  });
+}
+
+/**
+ * Main: GET /api/chat/allowed-users
+ */
 exports.getAllowedUsers = async (req, res) => {
   try {
-    const me = req.user;
-    const myRoleSlug = me.roleDetails?.name;
+    const meId = req.user.id;
+    const me = await loadCurrentUser(meId);
+    if (!me) return res.status(404).json({ error: 'User not found' });
 
+    const myRoleSlug = me.roleDetails?.name || null;
     if (!myRoleSlug) return res.json({ users: [] });
 
-    const allowedSlugs = CHAT_FLOW[myRoleSlug] || [];
-    let finalList = [];
-
-    for (const slug of allowedSlugs) {
-      const users = await findTargets(me, slug);
-      finalList = finalList.concat(users);
-    }
-
-    // remove duplicates
-    const seen = new Set();
-    const unique = [];
-    for (const u of finalList) {
-      if (!seen.has(u.id)) {
-        seen.add(u.id);
-        unique.push(u);
+    // We'll accumulate candidates in this array
+    const results = [];
+    const pushUnique = (list) => {
+      for (const u of list) {
+        if (!results.some(x => String(x.id) === String(u.id)) && String(u.id) !== String(meId)) {
+          results.push(u);
+        }
       }
+    };
+
+    // Admin roles (global contacts)
+    const adminRoles = ['super_admin', 'technical_admin', 'regional_admin', 'finance_admin'];
+
+    // RULES mapping (based on your Option B)
+    switch (myRoleSlug) {
+      case 'super_admin':
+      case 'technical_admin':
+        // Both can talk to all admins (global) and to everyone else if desired — we'll return all admins + managers + dealers
+        {
+          // all admins (global)
+          const admins = await User.findAll({
+            include: [{ model: Role, as: 'roleDetails', attributes: ['name'] }],
+            where: {
+              [Op.or]: [
+                { roleId: { [Op.in]: sequelize.literal(`(SELECT id FROM roles WHERE name IN ('super_admin','technical_admin','regional_admin','finance_admin'))`) } },
+                { role: 'admin' } // fallback
+              ]
+            },
+            attributes: ['id', 'username', 'roleId', 'dealerId', 'regionId'],
+            order: [['username', 'ASC']],
+            limit: 500
+          });
+          pushUnique(admins);
+          // Also include managers and dealer admins (global)
+          const managerRoles = ['regional_manager', 'territory_manager', 'area_manager'];
+          for (const m of managerRoles) {
+            const list = await fetchUsersByRoleSlug(m);
+            pushUnique(list);
+          }
+          const dealers = await fetchUsersByRoleSlug('dealer_admin');
+          const dealerStaff = await fetchUsersByRoleSlug('dealer_staff');
+          pushUnique(dealers);
+          pushUnique(dealerStaff);
+        }
+        break;
+
+      case 'regional_admin':
+        // regional_admin: admins (global) + regional_manager in same region
+        {
+          // admins global
+          const admins = await fetchUsersByRoleSlug('technical_admin');
+          pushUnique(admins);
+          pushUnique(await fetchUsersByRoleSlug('super_admin'));
+          pushUnique(await fetchUsersByRoleSlug('finance_admin'));
+          // regional managers in same region
+          if (me.regionId) {
+            pushUnique(await fetchUsersByRoleSlug('regional_manager', { regionId: me.regionId }));
+          }
+        }
+        break;
+
+      case 'finance_admin':
+        // finance_admin -> accounts_user (same region) + admins
+        {
+          pushUnique(await fetchUsersByRoleSlug('super_admin'));
+          pushUnique(await fetchUsersByRoleSlug('technical_admin'));
+          if (me.regionId) {
+            pushUnique(await fetchUsersByRoleSlug('accounts_user', { regionId: me.regionId }));
+          }
+        }
+        break;
+
+      case 'regional_manager':
+        // regional_manager -> territory_manager (same region) + regional_admin (same region) + dealers in region
+        {
+          if (me.regionId) {
+            pushUnique(await fetchUsersByRoleSlug('territory_manager', { regionId: me.regionId }));
+            pushUnique(await fetchUsersByRoleSlug('regional_admin', { regionId: me.regionId })); // regional_admin may be global; filtering by region is safe
+            // dealer admins & staff in same region
+            // join via dealer -> users with dealerId that has regionId = me.regionId
+            const dealersInRegion = await Dealer.findAll({ where: { regionId: me.regionId }, attributes: ['id'] });
+            const dealerIds = dealersInRegion.map(d => d.id);
+            if (dealerIds.length) {
+              const dealerAdmins = await User.findAll({
+                where: { roleId: { [Op.in]: sequelize.literal(`(SELECT id FROM roles WHERE name = 'dealer_admin')`) }, dealerId: { [Op.in]: dealerIds } },
+                attributes: ['id','username','roleId','dealerId','regionId']
+              }).catch(()=>[]);
+              pushUnique(dealerAdmins);
+              const dealerStaff = await User.findAll({
+                where: { roleId: { [Op.in]: sequelize.literal(`(SELECT id FROM roles WHERE name = 'dealer_staff')`) }, dealerId: { [Op.in]: dealerIds } },
+                attributes: ['id','username','roleId','dealerId','regionId']
+              }).catch(()=>[]);
+              pushUnique(dealerStaff);
+            }
+          }
+          // also include regional_admin as admin contact (global)
+          pushUnique(await fetchUsersByRoleSlug('regional_admin'));
+        }
+        break;
+
+      case 'territory_manager':
+        // territory_manager -> area_manager (same region) + dealer_admins in same territory (best-effort)
+        {
+          // area managers in same region
+          if (me.regionId) {
+            pushUnique(await fetchUsersByRoleSlug('area_manager', { regionId: me.regionId }));
+          }
+          // dealer admins by territory: since territory is stored on dealer row, get dealers in same territory (best-effort)
+          // We'll try to get the territory of a dealer this TM manages (if any), otherwise fallback to same region
+          const myDealer = me.dealerId ? await Dealer.findByPk(me.dealerId) : null;
+          if (myDealer && myDealer.territory) {
+            const dealersSameTerritory = await Dealer.findAll({ where: { territory: myDealer.territory }, attributes: ['id'] });
+            const dids = dealersSameTerritory.map(d => d.id);
+            if (dids.length) {
+              const dd = await User.findAll({ where: { roleId: (await Role.findOne({where:{name:'dealer_admin'}})).id, dealerId: { [Op.in]: dids } }, attributes:['id','username','dealerId','regionId'] });
+              pushUnique(dd);
+            }
+          } else if (me.regionId) {
+            // fallback: dealers in same region
+            const dealersInRegion = await Dealer.findAll({ where: { regionId: me.regionId }, attributes: ['id'] });
+            const dids2 = dealersInRegion.map(d => d.id);
+            if (dids2.length) {
+              const dd2 = await User.findAll({ where: { roleId: (await Role.findOne({where:{name:'dealer_admin'}})).id, dealerId: { [Op.in]: dids2 } }, attributes:['id','username','dealerId','regionId'] });
+              pushUnique(dd2);
+            }
+          }
+        }
+        break;
+
+      case 'area_manager':
+        // area_manager -> dealer_admins in same region (since no areaId)
+        {
+          if (me.regionId) {
+            const dealers = await Dealer.findAll({ where: { regionId: me.regionId }, attributes: ['id'] });
+            const dids = dealers.map(d => d.id);
+            if (dids.length) {
+              const da = await User.findAll({ where: { roleId: (await Role.findOne({where:{name:'dealer_admin'}})).id, dealerId: { [Op.in]: dids } }, attributes:['id','username','dealerId','regionId']});
+              pushUnique(da);
+            }
+          }
+          // include regional_manager as contact
+          pushUnique(await fetchUsersByRoleSlug('regional_manager'));
+        }
+        break;
+
+      case 'dealer_admin':
+        // dealer_admin -> dealer_staff (same dealer) + area_manager + regional manager + admins
+        {
+          if (me.dealerId) {
+            const ds = await User.findAll({ where: { roleId: (await Role.findOne({where:{name:'dealer_staff'}})).id, dealerId: me.dealerId }, attributes:['id','username','dealerId','regionId'] });
+            pushUnique(ds);
+          }
+          // area manager for this dealer (via dealer.managerId)
+          const dealer = me.dealerId ? await Dealer.findByPk(me.dealerId) : null;
+          if (dealer && dealer.managerId) {
+            const am = await User.findByPk(dealer.managerId, { attributes:['id','username','roleId','regionId'] });
+            if (am) pushUnique([am]);
+          }
+          // regional manager for dealer.regionId
+          if (dealer && dealer.regionId) {
+            pushUnique(await fetchUsersByRoleSlug('regional_manager', { regionId: dealer.regionId }));
+          }
+          // admins
+          pushUnique(await fetchUsersByRoleSlug('technical_admin'));
+          pushUnique(await fetchUsersByRoleSlug('super_admin'));
+        }
+        break;
+
+      case 'dealer_staff':
+        // dealer_staff -> dealer_admin (same dealer) + admins + regional manager of dealer region
+        {
+          if (me.dealerId) {
+            const dad = await User.findAll({ where: { roleId: (await Role.findOne({where:{name:'dealer_admin'}})).id, dealerId: me.dealerId }, attributes:['id','username','dealerId','regionId'] });
+            pushUnique(dad);
+          }
+          // regional manager of dealer's region
+          if (me.dealerId) {
+            const dealer = await Dealer.findByPk(me.dealerId);
+            if (dealer && dealer.regionId) {
+              pushUnique(await fetchUsersByRoleSlug('regional_manager', { regionId: dealer.regionId }));
+            }
+          }
+          // admins
+          pushUnique(await fetchUsersByRoleSlug('technical_admin'));
+          pushUnique(await fetchUsersByRoleSlug('super_admin'));
+        }
+        break;
+
+      case 'accounts_user':
+        // accounts_user -> finance_admin + admins + dealer_admin in same region
+        {
+          pushUnique(await fetchUsersByRoleSlug('finance_admin'));
+          pushUnique(await fetchUsersByRoleSlug('super_admin'));
+          if (me.regionId) {
+            const dealers = await Dealer.findAll({ where: { regionId: me.regionId }, attributes: ['id'] });
+            const dids = dealers.map(d => d.id);
+            if (dids.length) {
+              const dd = await User.findAll({ where: { roleId: (await Role.findOne({where:{name:'dealer_admin'}})).id, dealerId: { [Op.in]: dids } }, attributes:['id','username','dealerId','regionId'] });
+              pushUnique(dd);
+            }
+          }
+        }
+        break;
+
+      case 'inventory_user':
+        // inventory_user -> admins + dealer_admin in same region
+        {
+          pushUnique(await fetchUsersByRoleSlug('technical_admin'));
+          if (me.regionId) {
+            const dealers = await Dealer.findAll({ where: { regionId: me.regionId }, attributes: ['id'] });
+            const dids = dealers.map(d => d.id);
+            if (dids.length) {
+              pushUnique(await User.findAll({ where: { roleId: (await Role.findOne({where:{name:'dealer_admin'}})).id, dealerId: { [Op.in]: dids } }, attributes:['id','username','dealerId','regionId']}));
+            }
+          }
+        }
+        break;
+
+      default:
+        // fallback: return admins + direct dealer contacts if any
+        pushUnique(await fetchUsersByRoleSlug('super_admin'));
+        if (me.dealerId) {
+          pushUnique(await User.findAll({ where: { roleId: (await Role.findOne({where:{name:'dealer_admin'}})).id, dealerId: me.dealerId }, attributes:['id','username','dealerId','regionId'] }));
+          pushUnique(await User.findAll({ where: { roleId: (await Role.findOne({where:{name:'dealer_staff'}})).id, dealerId: me.dealerId }, attributes:['id','username','dealerId','regionId'] }));
+        }
+        break;
     }
 
-    return res.json({ users: unique });
+    // format & return
+    const payload = results.map(u => ({
+      id: u.id,
+      username: u.username,
+      roleId: u.roleId,
+      dealerId: u.dealerId,
+      regionId: u.regionId
+    }));
+
+    return res.json({ users: payload });
   } catch (err) {
-    console.error("getAllowedUsers error:", err);
-    return res.status(500).json({ error: "Failed to fetch allowed users" });
+    console.error('getAllowedUsers error:', err);
+    return res.status(500).json({ error: 'Failed to fetch allowed users' });
   }
 };
+
 
 // ------------------------------------------------------------
 // GET CONVERSATION
@@ -1345,6 +1616,12 @@ exports.getConversation = async (req, res) => {
     const meId = req.user.id;
     const { partnerId } = req.params;
 
+    if (!partnerId) {
+      return res.status(400).json({ error: "partnerId is required" });
+    }
+
+    console.log("Fetching conversation:", { meId, partnerId });
+
     const messages = await Message.findAll({
       where: {
         [Op.or]: [
@@ -1352,6 +1629,10 @@ exports.getConversation = async (req, res) => {
           { senderId: partnerId, recipientId: meId },
         ],
       },
+      include: [
+        { model: User, as: "sender", attributes: ["id", "username", "role"] },
+        { model: User, as: "recipient", attributes: ["id", "username", "role"] },
+      ],
       order: [["createdAt", "ASC"]],
     });
 
@@ -1410,25 +1691,58 @@ exports.getAllowedUsersInternal = async (me) => {
 // ------------------------------------------------------------
 // MARK MESSAGE AS READ
 // ------------------------------------------------------------
+// controllers/chatController.js
+// PATCH /api/chat/:partnerId/read
 exports.markAsRead = async (req, res) => {
   try {
-    const { id } = req.params;
+    const userId = req.user.id;
+    // support both partnerId (user-to-user) and conversationId (conversation-based read)
+    const { partnerId } = req.params;
+    const conversationId = req.params.id || req.params.conversationId || null;
 
-    const msg = await Message.findByPk(id);
-    if (!msg) return res.status(404).json({ error: "Message not found" });
+    if (!partnerId && !conversationId) {
+      return res.status(400).json({ error: 'partnerId or conversationId is required' });
+    }
 
-    if (String(msg.recipientId) !== String(req.user.id))
-      return res.status(403).json({ error: "Not allowed" });
+    let updated;
+    if (conversationId) {
+      // mark all unread messages in the conversation where recipient is current user
+      updated = await Message.update(
+        { status: 'read' },
+        {
+          where: {
+            status: 'unread',
+            conversationId,
+            recipientId: userId,
+          },
+        }
+      );
+    } else {
+      // partnerId flow: mark messages between partner and user as read
+      updated = await Message.update(
+        { status: 'read' },
+        {
+          where: {
+            status: 'unread',
+            [Op.or]: [
+              { senderId: partnerId, recipientId: userId },
+              { senderId: userId, recipientId: partnerId },
+            ],
+          },
+        }
+      );
+    }
 
-    msg.status = "read";
-    await msg.save();
-
-    return res.json({ message: msg });
+    res.json({ success: true, updated: updated[0] });
   } catch (err) {
-    console.error("Mark read error:", err);
-    return res.status(500).json({ error: "Failed to mark as read" });
+    console.error("Error marking messages as read:", err);
+    res.status(500).json({ error: err.message });
   }
 };
+
+
+
+
 
 // ------------------------------------------------------------
 // UNREAD COUNT
@@ -2641,7 +2955,8 @@ getPricingRequests: async (req, res) => {
 
 <file path="src/controllers/materialController.js">
 // src/controllers/materialController.js
-const { Material, MaterialGroup } = require('../models');
+const { Material, MaterialGroup, OrderItem, sequelize } = require('../models');
+const { Op } = require('sequelize');
 
 
 exports.createMaterial = async (req, res) => {
@@ -2708,6 +3023,143 @@ console.error('deleteMaterial:', err);
 res.status(500).json({ error: 'Failed to delete' });
 }
 };
+
+
+// Import materials from XLSX/CSV
+exports.importMaterials = async (req, res) => {
+	try {
+		if (!req.file) return res.status(400).json({ error: 'No file uploaded. Use field name "file".' });
+
+		let xlsx;
+		try {
+			xlsx = require('xlsx');
+		} catch (e) {
+			return res.status(500).json({ error: 'Missing dependency: please run `npm install xlsx`' });
+		}
+
+		const workbook = xlsx.readFile(req.file.path);
+		const sheetName = workbook.SheetNames[0];
+		const rows = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: null });
+
+		const results = { created: 0, updated: 0, errors: [] };
+
+		for (let i = 0; i < rows.length; i++) {
+			const row = rows[i];
+
+			// flexible mapping for common column names
+			const materialNumber = row.materialNumber || row['Material Number'] || row['material_number'] || row['material number'] || row.MAT_NO || row.mat_no;
+			const name = row.name || row.Name || row.materialName || row['Material Name'];
+			const description = row.description || row.Description || row.desc;
+			const uom = row.uom || row.UOM || row.unit;
+			const plant = row.plant || row.Plant || row.site;
+			const stock = row.stock != null ? parseInt(row.stock, 10) : (row.Stock != null ? parseInt(row.Stock, 10) : 0);
+			const reorderLevel = row.reorderLevel != null ? parseInt(row.reorderLevel, 10) : (row.reorder_level != null ? parseInt(row.reorder_level, 10) : 0);
+			const expiryDate = row.expiryDate || row['expiry_date'] || row['Expiry Date'] || row.EXPIRY_DATE || null;
+
+			if (!materialNumber || !name) {
+				results.errors.push({ row: i + 1, error: 'Missing materialNumber or name' });
+				continue;
+			}
+
+			try {
+				const existing = await Material.findOne({ where: { materialNumber } });
+				if (existing) {
+					await existing.update({ name, description, uom, plant, stock, reorderLevel, expiryDate });
+					results.updated++;
+				} else {
+					await Material.create({ materialNumber, name, description, uom, plant, stock, reorderLevel, expiryDate });
+					results.created++;
+				}
+			} catch (err) {
+				results.errors.push({ row: i + 1, error: err.message });
+			}
+		}
+
+		res.json({ message: 'Import completed', results });
+	} catch (err) {
+		console.error('importMaterials:', err);
+		res.status(500).json({ error: 'Failed to import materials', details: err.message });
+	}
+};
+
+
+// Analytics: fast-moving and slow-moving materials
+exports.analytics = async (req, res) => {
+	try {
+		const { start, end, limit = 10 } = req.query;
+		const where = {};
+		if (start && end) {
+			where.createdAt = { [Op.between]: [new Date(start), new Date(end)] };
+		} else if (start) {
+			where.createdAt = { [Op.gte]: new Date(start) };
+		} else if (end) {
+			where.createdAt = { [Op.lte]: new Date(end) };
+		}
+
+		// aggregate quantities by material
+		const aggregates = await OrderItem.findAll({
+			attributes: [
+				'materialId',
+				[sequelize.fn('SUM', sequelize.col('qty')), 'totalQty']
+			],
+			where,
+			group: ['materialId'],
+			order: [[sequelize.literal('totalQty'), 'DESC']]
+		});
+
+		const map = aggregates.map(a => ({ materialId: a.materialId, totalQty: parseInt(a.get('totalQty'), 10) }));
+
+		// get top N
+		const top = map.slice(0, limit);
+
+		// prepare bottom N: include materials with zero sales
+		const materialIdsWithSales = map.map(m => m.materialId);
+		const materialsNoSales = await Material.findAll({
+			where: { id: { [Op.notIn]: materialIdsWithSales } },
+			limit: parseInt(limit, 10)
+		});
+
+		// build responses with material details
+		const enrich = async (arr) => {
+			const ids = arr.map(x => x.materialId);
+			const mats = await Material.findAll({ where: { id: ids } });
+			return arr.map(x => ({ materialId: x.materialId, totalQty: x.totalQty, material: mats.find(m => m.id === x.materialId) || null }));
+		};
+
+		const fastMoving = await enrich(top);
+
+		// slow-moving: take lowest aggregated, then append materials with no sales
+		const bottomAgg = map.slice(-limit).reverse();
+		const slowFromAgg = await enrich(bottomAgg);
+		const slowFromNoSales = materialsNoSales.map(m => ({ materialId: m.id, totalQty: 0, material: m }));
+
+		const slowMoving = [...slowFromAgg, ...slowFromNoSales].slice(0, limit);
+
+		res.json({ fastMoving, slowMoving });
+	} catch (err) {
+		console.error('analytics:', err);
+		res.status(500).json({ error: 'Failed to compute analytics', details: err.message });
+	}
+};
+
+
+// Alerts: expiry and reorder level
+exports.alerts = async (req, res) => {
+	try {
+		const days = parseInt(req.query.days || '30', 10);
+		const soon = new Date();
+		soon.setDate(soon.getDate() + days);
+
+		const reorderAlerts = await Material.findAll({ where: { reorderLevel: { [Op.gt]: 0 }, stock: { [Op.lte]: sequelize.col('reorderLevel') } } });
+
+		const expiryAlerts = await Material.findAll({ where: { expiryDate: { [Op.not]: null, [Op.lte]: soon } } });
+
+		res.json({ reorderAlerts, expiryAlerts });
+	} catch (err) {
+		console.error('alerts:', err);
+		res.status(500).json({ error: 'Failed to fetch alerts', details: err.message });
+	}
+};
 </file>
 
 <file path="src/controllers/materialGroupController.js">
@@ -2768,16 +3220,8 @@ exports.getMessages = async (req, res) => {
         [Op.or]: [{ senderId: userId }, { recipientId: userId }],
       },
       include: [
-        {
-          model: User,
-          as: "sender",
-          attributes: ["id", "username", "email", "role"],
-        },
-        {
-          model: User,
-          as: "recipient",
-          attributes: ["id", "username", "email", "role"],
-        },
+        { model: User, as: "sender", attributes: ["id", "username", "role"] },
+        { model: User, as: "recipient", attributes: ["id", "username", "role"] },
       ],
       order: [["createdAt", "DESC"]],
     });
@@ -2785,17 +3229,20 @@ exports.getMessages = async (req, res) => {
     res.json({ messages });
   } catch (error) {
     console.error("Error fetching messages:", error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: "Failed to fetch messages" });
   }
 };
 
 // 📨 Send a new message
 exports.sendMessage = async (req, res) => {
   try {
-    const { recipientId, subject, body } = req.body;
+    const { recipientId, body, subject } = req.body;
     const senderId = req.user.id;
 
-    // Create the message
+    if (!recipientId || !body) {
+      return res.status(400).json({ error: "recipientId and body are required" });
+    }
+
     const message = await Message.create({
       senderId,
       recipientId,
@@ -2805,11 +3252,9 @@ exports.sendMessage = async (req, res) => {
     });
 
     const io = req.app.get("io");
-
-    // 1️⃣ Real-time message push to recipient
     if (io) io.to(`user:${recipientId}`).emit("message:new", message);
 
-    // 2️⃣ Save persistent notification
+    // Save notification
     await Notification.create({
       senderId,
       recipientId,
@@ -2819,7 +3264,6 @@ exports.sendMessage = async (req, res) => {
       relatedId: message.id,
     });
 
-    // 3️⃣ Emit a "notification" event to recipient
     if (io) {
       io.to(`user:${recipientId}`).emit("notification", {
         title: "New Message Received",
@@ -2831,29 +3275,38 @@ exports.sendMessage = async (req, res) => {
     res.status(201).json({ message });
   } catch (error) {
     console.error("Error sending message:", error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: "Failed to send message" });
   }
 };
 
-// ✅ Mark message as read
+// ✅ Mark one or multiple messages as read
 exports.markAsRead = async (req, res) => {
   try {
-    const { id } = req.params;
-    const message = await Message.findByPk(id);
+    const { id } = req.params; // can be a single message ID or comma-separated IDs
+    const userId = req.user.id;
 
-    if (!message) return res.status(404).json({ error: "Message not found" });
+    const ids = id.split(","); // allow multiple IDs
+    const messages = await Message.findAll({
+      where: {
+        id: { [Op.in]: ids },
+        recipientId: userId,
+        status: "unread",
+      },
+    });
 
-    message.status = "read";
-    await message.save();
+    if (!messages.length) {
+      return res.status(404).json({ error: "No unread messages found" });
+    }
 
-    res.json({ message });
+    await Promise.all(messages.map((msg) => (msg.status = "read", msg.save())));
+    res.json({ messages });
   } catch (error) {
-    console.error("Error marking message as read:", error);
-    res.status(500).json({ error: error.message });
+    console.error("Error marking messages as read:", error);
+    res.status(500).json({ error: "Failed to mark messages as read" });
   }
 };
 
-// 💬 Get conversation between two users (Dealer ↔ Manager)
+// 💬 Get conversation between current user and partner
 exports.getConversation = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -2876,7 +3329,7 @@ exports.getConversation = async (req, res) => {
     res.json({ messages });
   } catch (error) {
     console.error("Error fetching conversation:", error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: "Failed to fetch conversation" });
   }
 };
 </file>
@@ -4821,8 +5274,15 @@ const storage = multer.diskStorage({
 });
 
 const fileFilter = (req, file, cb) => {
-  // Allowed types: images, pdfs
-  const allowed = ["image/jpeg", "image/png", "image/jpg", "application/pdf"];
+  // Allowed types: images, pdfs, excel
+  const allowed = [
+    "image/jpeg",
+    "image/png",
+    "image/jpg",
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel"
+  ];
 
   if (allowed.includes(file.mimetype)) cb(null, true);
   else cb(new Error("Invalid file type"), false);
@@ -5408,6 +5868,15 @@ module.exports = (sequelize, DataTypes) => {
     stock: {
       type: DataTypes.INTEGER,
       defaultValue: 0
+    },
+    reorderLevel: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: 0
+    },
+    expiryDate: {
+      type: DataTypes.DATE,
+      allowNull: true
     },
     materialGroupId: {
       type: DataTypes.UUID,
@@ -6265,14 +6734,14 @@ router.get('/', authenticate, campaignController.getAllCampaigns);
 router.get(
   "/active",
   authenticate,
-  authorize("dealer", "tm", "am", "super_admin"),
+  authorize("dealer_admin", "tm", "am", "super_admin"),
   campaignController.getActiveCampaigns
 );
 //router.get('/:id', authenticate, campaignController.getCampaignById);
 router.get(
   "/:id",
   authenticate,
-  authorize("dealer", "tm", "am", "super_admin"),
+  authorize("dealer_admin", "tm", "am", "super_admin"),
   campaignController.getCampaignById
 );
 router.post('/', authenticate, authorize('super_admin', 'key_user'), campaignController.createCampaign);
@@ -6298,8 +6767,8 @@ router.get('/conversation/:partnerId', authenticate, chatCtrl.getConversation);
 // Send a message
 router.post('/send', authenticate, chatCtrl.sendMessage);
 
-// Mark a message as read
-router.patch('/:id/read', authenticate, chatCtrl.markAsRead);
+// Mark a message as read (partnerId expected by controller)
+router.patch('/:partnerId/read', authenticate, chatCtrl.markAsRead);
 
 // 🔥 FIXED unread-count endpoint
 router.get("/unread-count", authenticate, chatCtrl.getUnreadCount);
@@ -6398,7 +6867,7 @@ const inventoryController = require("../controllers/inventoryController");
 router.get(
   "/summary",
   authenticate,
-  authorize("inventory", "super_admin", "key_user","dealer", "tm"),
+  authorize("inventory", "super_admin", "key_user","dealer_admin", "tm"),
   inventoryController.getInventorySummary
 );
 
@@ -6490,6 +6959,7 @@ const router = express.Router();
 const materialController = require("../controllers/materialController");
 const materialGroupController = require("../controllers/materialGroupController");
 const { authenticate, authorize } = require("../middleware/auth");
+const upload = require("../middleware/upload");
 
 // Material Groups
 router.get("/groups", authenticate, materialGroupController.getGroups);
@@ -6505,6 +6975,10 @@ router.post(
 router.get("/", authenticate, materialController.getMaterials);
 router.get("/:id", authenticate, materialController.getMaterialById);
 router.post("/", authenticate, authorize("super_admin", "technical_admin","inventory"), materialController.createMaterial);
+// Bulk import materials via Excel/XLSX
+router.post("/import", authenticate, authorize("super_admin", "inventory"), upload.single('file'), materialController.importMaterials);
+router.get("/analytics", authenticate, materialController.analytics);
+router.get("/alerts", authenticate, materialController.alerts);
 router.put("/:id", authenticate, authorize("super_admin","technical_admin", "inventory"), materialController.updateMaterial);
 router.delete("/:id", authenticate, authorize("super_admin","technical_admin", "inventory"), materialController.deleteMaterial);
 router.post("/groups", authenticate, authorize("super_admin", "technical_admin","dealer", "inventory"), materialGroupController.createGroup);
