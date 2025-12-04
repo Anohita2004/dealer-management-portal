@@ -6,9 +6,22 @@ const materialGroupController = require("../controllers/materialGroupController"
 const { authenticate, authorize } = require("../middleware/auth");
 const upload = require("../middleware/upload");
 
+// -------------------------
 // Material Groups
+// -------------------------
+
+// Get all groups
 router.get("/groups", authenticate, materialGroupController.getGroups);
 
+// Create a new group
+router.post(
+  "/groups",
+  authenticate,
+  authorize("super_admin", "technical_admin", "dealer", "inventory"),
+  materialGroupController.createGroup
+);
+
+// Assign material to a group
 router.post(
   "/groups/:id/assign-material",
   authenticate,
@@ -16,16 +29,52 @@ router.post(
   materialGroupController.assignMaterial
 );
 
+// -------------------------
 // Material Master
-router.get("/", authenticate, materialController.getMaterials);
-router.get("/:id", authenticate, materialController.getMaterialById);
-router.post("/", authenticate, authorize("super_admin", "technical_admin","inventory"), materialController.createMaterial);
-// Bulk import materials via Excel/XLSX
-router.post("/import", authenticate, authorize("super_admin", "inventory"), upload.single('file'), materialController.importMaterials);
+// -------------------------
+
+// Analytics & alerts must come first to avoid being captured by /:id
 router.get("/analytics", authenticate, materialController.analytics);
 router.get("/alerts", authenticate, materialController.alerts);
-router.put("/:id", authenticate, authorize("super_admin","technical_admin", "inventory"), materialController.updateMaterial);
-router.delete("/:id", authenticate, authorize("super_admin","technical_admin", "inventory"), materialController.deleteMaterial);
-router.post("/groups", authenticate, authorize("super_admin", "technical_admin","dealer", "inventory"), materialGroupController.createGroup);
+
+// List all materials
+router.get("/", authenticate, materialController.getMaterials);
+
+// Get material by ID (UUID)
+router.get("/:id", authenticate, materialController.getMaterialById);
+
+// Create new material
+router.post(
+  "/",
+  authenticate,
+  authorize("super_admin", "technical_admin", "inventory"),
+  materialController.createMaterial
+);
+
+// Bulk import via Excel/XLSX
+router.post(
+  "/import",
+  authenticate,
+  authorize("super_admin", "inventory"),
+  upload.single("file"),
+  materialController.importMaterials
+);
+
+// Update a material
+router.put(
+  "/:id",
+  authenticate,
+  authorize("super_admin", "technical_admin", "inventory"),
+  materialController.updateMaterial
+);
+
+// Delete a material
+router.delete(
+  "/:id",
+  authenticate,
+  authorize("super_admin", "technical_admin", "inventory"),
+  materialController.deleteMaterial
+);
 
 module.exports = router;
+

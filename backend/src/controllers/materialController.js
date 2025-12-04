@@ -1,6 +1,6 @@
 // src/controllers/materialController.js
 const { Material, MaterialGroup, OrderItem, sequelize } = require('../models');
-const { Op } = require('sequelize');
+const { Op,fn, col, literal } = require('sequelize');
 
 
 exports.createMaterial = async (req, res) => {
@@ -129,61 +129,69 @@ exports.importMaterials = async (req, res) => {
 
 // Analytics: fast-moving and slow-moving materials
 exports.analytics = async (req, res) => {
-	try {
-		const { start, end, limit = 10 } = req.query;
-		const where = {};
-		if (start && end) {
-			where.createdAt = { [Op.between]: [new Date(start), new Date(end)] };
-		} else if (start) {
-			where.createdAt = { [Op.gte]: new Date(start) };
-		} else if (end) {
-			where.createdAt = { [Op.lte]: new Date(end) };
-		}
+  try {
+    const { start, end, limit = 10 } = req.query;
+    const where = {};
 
-		// aggregate quantities by material
-		const aggregates = await OrderItem.findAll({
-			attributes: [
-				'materialId',
-				[sequelize.fn('SUM', sequelize.col('qty')), 'totalQty']
-			],
-			where,
-			group: ['materialId'],
-			order: [[sequelize.literal('totalQty'), 'DESC']]
-		});
+    // filter by date if provided
+    if (start && end) {
+      where.createdAt = { [Op.between]: [new Date(start), new Date(end)] };
+    } else if (start) {
+      where.createdAt = { [Op.gte]: new Date(start) };
+    } else if (end) {
+      where.createdAt = { [Op.lte]: new Date(end) };
+    }
 
-		const map = aggregates.map(a => ({ materialId: a.materialId, totalQty: parseInt(a.get('totalQty'), 10) }));
+    // aggregate quantities by material
+    const aggregates = await OrderItem.findAll({
+      attributes: [
+        'materialId',
+        [fn('SUM', col('qty')), 'totalqty'] // lowercase alias
+      ],
+      where,
+      group: ['materialId'],
+      order: [[literal('totalqty'), 'DESC']] // match alias
+    });
 
-		// get top N
-		const top = map.slice(0, limit);
+    const map = aggregates.map(a => ({
+      materialId: a.materialId,
+      totalQty: parseInt(a.get('totalqty'), 10)
+    }));
 
-		// prepare bottom N: include materials with zero sales
-		const materialIdsWithSales = map.map(m => m.materialId);
-		const materialsNoSales = await Material.findAll({
-			where: { id: { [Op.notIn]: materialIdsWithSales } },
-			limit: parseInt(limit, 10)
-		});
+    // Get material IDs with sales
+    const materialIdsWithSales = map.map(m => m.materialId);
 
-		// build responses with material details
-		const enrich = async (arr) => {
-			const ids = arr.map(x => x.materialId);
-			const mats = await Material.findAll({ where: { id: ids } });
-			return arr.map(x => ({ materialId: x.materialId, totalQty: x.totalQty, material: mats.find(m => m.id === x.materialId) || null }));
-		};
+    // Fetch all materials once
+    const allMaterials = await Material.findAll();
+    const materialMap = Object.fromEntries(allMaterials.map(m => [m.id, m]));
 
-		const fastMoving = await enrich(top);
+    // Top N fast-moving
+    const top = map.slice(0, limit).map(x => ({
+      materialId: x.materialId,
+      totalQty: x.totalQty,
+      material: materialMap[x.materialId] || null
+    }));
 
-		// slow-moving: take lowest aggregated, then append materials with no sales
-		const bottomAgg = map.slice(-limit).reverse();
-		const slowFromAgg = await enrich(bottomAgg);
-		const slowFromNoSales = materialsNoSales.map(m => ({ materialId: m.id, totalQty: 0, material: m }));
+    // Bottom N slow-moving: lowest sales + zero sales
+    const bottomAgg = map.slice(-limit).reverse();
+    const slowFromAgg = bottomAgg.map(x => ({
+      materialId: x.materialId,
+      totalQty: x.totalQty,
+      material: materialMap[x.materialId] || null
+    }));
 
-		const slowMoving = [...slowFromAgg, ...slowFromNoSales].slice(0, limit);
+    const materialsNoSales = allMaterials
+      .filter(m => !materialIdsWithSales.includes(m.id))
+      .slice(0, limit)
+      .map(m => ({ materialId: m.id, totalQty: 0, material: m }));
 
-		res.json({ fastMoving, slowMoving });
-	} catch (err) {
-		console.error('analytics:', err);
-		res.status(500).json({ error: 'Failed to compute analytics', details: err.message });
-	}
+    const slowMoving = [...slowFromAgg, ...materialsNoSales].slice(0, limit);
+
+    res.json({ fastMoving: top, slowMoving });
+  } catch (err) {
+    console.error('analytics:', err);
+    res.status(500).json({ error: 'Failed to compute analytics', details: err.message });
+  }
 };
 
 
