@@ -5,10 +5,10 @@ const {
   createPaymentRequest,
   getDealerPayments,
   getDealerAdminPending,
-  reviewPaymentByDealerAdmin,
   getPendingPayments,
-  reviewPayment,
-  autoReconcile
+  approvePayment,
+  rejectPayment,
+  autoReconcile,
 } = require("../controllers/paymentController");
 
 // -----------------------
@@ -27,14 +27,16 @@ router.get("/mine", getDealerPayments);
 // -----------------------
 router.get("/dealer/pending", getDealerAdminPending);
 
-router.post("/dealer/:id/review", reviewPaymentByDealerAdmin);
+router.post("/dealer/:id/approve", approvePayment);
+router.post("/dealer/:id/reject", rejectPayment);
 
 // -----------------------
 // FINANCE ADMIN ROUTES
 // -----------------------
 router.get("/pending", getPendingPayments);
 
-router.post("/:id/review", reviewPayment);
+router.post("/:id/approve", approvePayment);
+router.post("/:id/reject", rejectPayment);
 
 // -----------------------
 // AUTO-RECONCILIATION

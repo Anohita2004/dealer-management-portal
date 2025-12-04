@@ -1,17 +1,15 @@
-// src/controllers/paymentController.js
-// Payment workflow:
-//  - Dealer Staff -> creates request -> status: dealer_pending
-//  - Dealer Admin -> reviews -> if approved -> status: finance_pending
-//  - Finance Admin -> reviews -> if approved -> status: approved (invoice marked paid)
-//  - Auto-reconcile runs against finance_pending requests with UTRs
+// ========================================================================
+// PAYMENT CONTROLLER – Multi-Stage Approval Workflow
+// dealer_staff → dealer_admin → finance_admin → approved
+// ========================================================================
 
 const { PaymentRequest, Invoice, Dealer, AuditLog, sequelize } = require("../models");
 const { Op } = require("sequelize");
+const { nextStage, isApproverForStage } = require("../utils/approvalEngine");
 
-/**
- * Dealer Staff creates a payment request.
- * Request moves to "dealer_pending" and waits for Dealer Admin approval.
- */
+// ========================================================================
+// CREATE PAYMENT REQUEST (Dealer Staff)
+// ========================================================================
 const createPaymentRequest = async (req, res) => {
   try {
     const { invoiceId, amount, paymentMode, utrNumber } = req.body;
@@ -33,37 +31,40 @@ const createPaymentRequest = async (req, res) => {
       utrNumber,
       proofFile: proofPath,
 
-      // workflow fields
-      status: "dealer_pending",         // draft -> dealer_pending -> finance_pending -> approved/rejected
-      dealerApprovalStatus: "pending",  // dealer side approval state
+      // Multi-stage workflow defaults
+      approvalStatus: "pending",
+      approvalStage: "dealer_admin",
+      status: "dealer_admin_pending",
     });
 
-    // Audit log
     await AuditLog.create({
       userId: req.user.id,
       action: "CREATE_PAYMENT_REQUEST",
       entity: "PaymentRequest",
       entityId: payment.id,
       changes: { invoiceId, amount, paymentMode, utrNumber, proofFile: proofPath },
-      ipAddress: req.ip
+      ipAddress: req.ip,
     });
 
-    res.status(201).json({ message: "Payment request sent to Dealer Admin", payment });
+    res.status(201).json({
+      message: "Payment request created",
+      payment,
+    });
   } catch (err) {
     console.error("createPaymentRequest:", err);
     res.status(500).json({ error: "Failed to submit payment request" });
   }
 };
 
-/**
- * Dealer: list their own payment requests
- */
+// ========================================================================
+// DEALER → MY PAYMENTS
+// ========================================================================
 const getDealerPayments = async (req, res) => {
   try {
     const data = await PaymentRequest.findAll({
       where: { dealerId: req.user.dealerId },
       include: ["Invoice"],
-      order: [["createdAt", "DESC"]]
+      order: [["createdAt", "DESC"]],
     });
 
     res.json({ payments: data });
@@ -73,18 +74,19 @@ const getDealerPayments = async (req, res) => {
   }
 };
 
-/**
- * Dealer Admin: view pending requests for their dealer (status = dealer_pending)
- */
+// ========================================================================
+// DEALER ADMIN → Pending Requests
+// ========================================================================
 const getDealerAdminPending = async (req, res) => {
   try {
     const data = await PaymentRequest.findAll({
       where: {
         dealerId: req.user.dealerId,
-        status: "dealer_pending"
+        approvalStage: "dealer_admin",
+        approvalStatus: "pending",
       },
       include: ["Invoice"],
-      order: [["createdAt", "DESC"]]
+      order: [["createdAt", "DESC"]],
     });
 
     res.json({ pending: data });
@@ -94,64 +96,161 @@ const getDealerAdminPending = async (req, res) => {
   }
 };
 
-/**
- * Dealer Admin: approve / reject a payment request.
- * On approve -> moves to finance_pending
- * On reject  -> final status = rejected
- */
-const reviewPaymentByDealerAdmin = async (req, res) => {
+// ========================================================================
+// APPROVE PAYMENT (Multi-Stage)
+// ========================================================================
+const approvePayment = async (req, res) => {
+  const t = await sequelize.transaction();
   try {
-    const { action, remarks } = req.body; // action: 'approve' | 'reject'
-    const request = await PaymentRequest.findByPk(req.params.id, { include: ["Invoice", "Dealer"] });
-
-    if (!request) return res.status(404).json({ error: "Payment request not found" });
-
-    // Ensure the dealer admin belongs to the same dealer (basic guard)
-    if (req.user.dealerId !== request.dealerId) {
-      return res.status(403).json({ error: "Unauthorized: not your dealer's request" });
-    }
-
-    if (request.status !== "dealer_pending") {
-      return res.status(400).json({ error: "Request not pending dealer approval" });
-    }
-
-    const approvalStatus = action === "approve" ? "approved" : "rejected";
-
-    await request.update({
-      dealerApprovalStatus: approvalStatus,
-      dealerApprovalRemarks: remarks || null,
-      dealerApprovedAt: new Date(),
-      dealerApprovedBy: req.user.username || req.user.id,
-
-      // forward to finance if approved
-      status: approvalStatus === "approved" ? "finance_pending" : "rejected"
+    const request = await PaymentRequest.findByPk(req.params.id, {
+      include: ["Invoice", "Dealer"],
+      transaction: t,
     });
 
-    await AuditLog.create({
-      userId: req.user.id,
-      action: approvalStatus === "approved" ? "DEALER_APPROVE_PAYMENT" : "DEALER_REJECT_PAYMENT",
-      entity: "PaymentRequest",
-      entityId: request.id,
-      changes: { dealerApprovalStatus: approvalStatus, dealerApprovalRemarks: remarks },
-      ipAddress: req.ip
-    });
+    if (!request) {
+      await t.rollback();
+      return res.status(404).json({ error: "Payment request not found" });
+    }
 
-    res.json({ message: `Payment ${approvalStatus} by Dealer Admin`, request });
+    const role = req.user.roleDetails?.name || req.user.role;
+    const currentStage = request.approvalStage || "dealer_admin";
+
+    // Role validation
+    if (!isApproverForStage(role, currentStage)) {
+      await t.rollback();
+      return res.status(403).json({
+        error: `Not authorized to approve at stage: ${currentStage}`,
+      });
+    }
+
+    const next = nextStage(currentStage, "payment");
+
+    // Final approval
+    if (!next) {
+      request.approvalStage = null;
+      request.approvalStatus = "approved";
+      request.status = "approved";
+
+      // Mark invoice paid
+      const invoice = await Invoice.findByPk(request.invoiceId, { transaction: t });
+      if (invoice) {
+        await invoice.update(
+          {
+            status: "paid",
+            balanceAmount: 0,
+          },
+          { transaction: t }
+        );
+      }
+    } else {
+      // Move to next stage
+      request.approvalStage = next;
+      request.approvalStatus = "pending";
+      request.status = `${next}_pending`;
+    }
+
+    request.approvedBy = req.user.username || req.user.id;
+    request.approvedAt = new Date();
+
+    await request.save({ transaction: t });
+
+    await AuditLog.create(
+      {
+        userId: req.user.id,
+        action: "PAYMENT_APPROVED",
+        entity: "PaymentRequest",
+        entityId: request.id,
+        changes: { from: currentStage, to: next || "approved" },
+        ipAddress: req.ip,
+      },
+      { transaction: t }
+    );
+
+    await t.commit();
+
+    res.json({
+      message: next ? `Payment moved to next stage: ${next}` : "Payment fully approved",
+      request,
+    });
   } catch (err) {
-    console.error("reviewPaymentByDealerAdmin:", err);
-    res.status(500).json({ error: "Dealer admin approval failed" });
+    await t.rollback();
+    console.error("approvePayment:", err);
+    res.status(500).json({ error: "Failed to approve payment" });
   }
 };
 
-/**
- * Finance Admin: list requests that have been dealer-approved (status = finance_pending)
- */
+// ========================================================================
+// REJECT PAYMENT (Multi-Stage)
+// ========================================================================
+const rejectPayment = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const { reason } = req.body;
+
+    const request = await PaymentRequest.findByPk(req.params.id, {
+      include: ["Invoice", "Dealer"],
+      transaction: t,
+    });
+
+    if (!request) {
+      await t.rollback();
+      return res.status(404).json({ error: "Payment request not found" });
+    }
+
+    const role = req.user.roleDetails?.name || req.user.role;
+    const currentStage = request.approvalStage || "dealer_admin";
+
+    // Role validation
+    if (!isApproverForStage(role, currentStage)) {
+      await t.rollback();
+      return res.status(403).json({
+        error: `Not authorized to reject at stage: ${currentStage}`,
+      });
+    }
+
+    request.approvalStatus = "rejected";
+    request.status = "rejected";
+    request.rejectionReason = reason || "Rejected by approver";
+    request.approvalStage = null;
+    request.approvedBy = req.user.username || req.user.id;
+    request.approvedAt = new Date();
+
+    await request.save({ transaction: t });
+
+    await AuditLog.create(
+      {
+        userId: req.user.id,
+        action: "PAYMENT_REJECTED",
+        entity: "PaymentRequest",
+        entityId: request.id,
+        changes: { reason },
+        ipAddress: req.ip,
+      },
+      { transaction: t }
+    );
+
+    await t.commit();
+
+    res.json({ message: "Payment rejected", request });
+  } catch (err) {
+    await t.rollback();
+    console.error("rejectPayment:", err);
+    res.status(500).json({ error: "Failed to reject payment" });
+  }
+};
+
+// ========================================================================
+// FINANCE ADMIN → Pending Stage
+// ========================================================================
 const getPendingPayments = async (req, res) => {
   try {
     const data = await PaymentRequest.findAll({
-      where: { status: "finance_pending" },
+      where: {
+        approvalStage: "finance_admin",
+        approvalStatus: "pending",
+      },
       include: ["Invoice", "Dealer"],
-      order: [["createdAt", "DESC"]]
+      order: [["createdAt", "DESC"]],
     });
 
     res.json({ pending: data });
@@ -161,128 +260,63 @@ const getPendingPayments = async (req, res) => {
   }
 };
 
-/**
- * Finance Admin: final approve / reject.
- * If approved -> mark invoice as paid and balanceAmount = 0
- */
-const reviewPayment = async (req, res) => {
-  const t = await sequelize.transaction();
-  try {
-    const { action, remarks } = req.body; // action: 'approve' | 'reject'
-    const request = await PaymentRequest.findByPk(req.params.id, { include: ["Invoice"], transaction: t });
-
-    if (!request) {
-      await t.rollback();
-      return res.status(404).json({ error: "Payment request not found" });
-    }
-
-    if (request.status !== "finance_pending") {
-      await t.rollback();
-      return res.status(400).json({ error: "Request not pending finance approval" });
-    }
-
-    const status = action === "approve" ? "approved" : "rejected";
-
-    // Update payment request
-    await request.update({
-      status,
-      remarks: remarks || null,
-      approvedBy: req.user.username || req.user.id,
-      approvedAt: new Date()
-    }, { transaction: t });
-
-    // If finance approves, update invoice
-    if (status === "approved") {
-      const invoice = await Invoice.findByPk(request.invoiceId, { transaction: t });
-      if (invoice) {
-        await invoice.update({
-          status: "paid",
-          balanceAmount: 0
-        }, { transaction: t });
-      }
-    }
-
-    await AuditLog.create({
-      userId: req.user.id,
-      action: status === "approved" ? "FINANCE_APPROVE_PAYMENT" : "FINANCE_REJECT_PAYMENT",
-      entity: "PaymentRequest",
-      entityId: request.id,
-      changes: { status, remarks },
-      ipAddress: req.ip
-    }, { transaction: t });
-
-    await t.commit();
-    res.json({ message: `Payment ${status}`, request });
-  } catch (err) {
-    await t.rollback();
-    console.error("reviewPayment:", err);
-    res.status(500).json({ error: "Failed to review payment" });
-  }
-};
-
-/**
- * Auto-Reconciliation:
- * - Runs over finance_pending requests which have UTRs.
- * - If amount === invoice.balanceAmount, auto-approve.
- * - Otherwise flag for manual review (returned in response).
- */
+// ========================================================================
+// AUTO-RECONCILE
+// ========================================================================
 const autoReconcile = async (req, res) => {
   const t = await sequelize.transaction();
   try {
     const matches = await PaymentRequest.findAll({
       where: {
-        status: "finance_pending",
-        utrNumber: { [Op.ne]: null }
+        approvalStage: "finance_admin",
+        approvalStatus: "pending",
+        utrNumber: { [Op.ne]: null },
       },
       include: ["Invoice"],
       transaction: t,
-      lock: t.LOCK.UPDATE
+      lock: t.LOCK.UPDATE,
     });
 
-    let autoApproved = [];
-    let flagged = [];
+    const autoApproved = [];
+    const flagged = [];
 
     for (let p of matches) {
       const invoice = p.Invoice;
-      // strict numeric compare
+
       if (invoice && Number(p.amount) === Number(invoice.balanceAmount)) {
-        await p.update({
-          status: "approved",
-          approvedAt: new Date(),
-          approvedBy: "AUTO-RECONCILE"
-        }, { transaction: t });
+        await p.update(
+          {
+            status: "approved",
+            approvalStatus: "approved",
+            approvalStage: null,
+            approvedBy: "AUTO-RECONCILE",
+            approvedAt: new Date(),
+          },
+          { transaction: t }
+        );
 
-        await invoice.update({
-          status: "paid",
-          balanceAmount: 0
-        }, { transaction: t });
-
-        await AuditLog.create({
-          userId: null,
-          action: "AUTO_RECONCILE_APPROVE",
-          entity: "PaymentRequest",
-          entityId: p.id,
-          changes: { approvedBy: "AUTO-RECONCILE" },
-          ipAddress: req.ip
-        }, { transaction: t });
+        await invoice.update(
+          { status: "paid", balanceAmount: 0 },
+          { transaction: t }
+        );
 
         autoApproved.push(p.id);
       } else {
-        // add a little context to flagged list
         flagged.push({
           paymentRequestId: p.id,
-          invoiceId: invoice ? invoice.id : null,
+          invoiceId: invoice?.id,
           paymentAmount: p.amount,
-          invoiceBalance: invoice ? invoice.balanceAmount : null
+          invoiceBalance: invoice?.balanceAmount,
         });
       }
     }
 
     await t.commit();
+
     res.json({
       autoApprovedCount: autoApproved.length,
       flaggedCount: flagged.length,
-      flagged
+      flagged,
     });
   } catch (err) {
     await t.rollback();
@@ -291,12 +325,18 @@ const autoReconcile = async (req, res) => {
   }
 };
 
+// ========================================================================
+// EXPORTS
+// ========================================================================
 module.exports = {
   createPaymentRequest,
   getDealerPayments,
   getDealerAdminPending,
-  reviewPaymentByDealerAdmin,
   getPendingPayments,
-  reviewPayment,
-  autoReconcile
+  approvePayment,
+  rejectPayment,
+  autoReconcile,
 };
+
+
+

@@ -1,9 +1,12 @@
 const express = require("express");
 const router = express.Router();
+
 const orderController = require("../controllers/orderController");
 const { authenticate, authorize } = require("../middleware/auth");
 
-
+// ---------------------------
+// DEALER / STAFF CREATE ORDER
+// ---------------------------
 router.post(
   "/",
   authenticate,
@@ -11,6 +14,9 @@ router.post(
   orderController.placeOrder
 );
 
+// ---------------------------
+// DEALER VIEW OWN ORDERS
+// ---------------------------
 router.get(
   "/my",
   authenticate,
@@ -18,17 +24,41 @@ router.get(
   orderController.getMyOrders
 );
 
-// Admin / Manager view ALL orders
-router.get("/", authenticate, authorize("dealer_admin","admin", "manager"), orderController.getAllOrders);
+// ---------------------------
+// ADMIN / MANAGER VIEW ALL
+// ---------------------------
+router.get(
+  "/",
+  authenticate,
+  authorize("dealer_admin", "regional_manager", "regional_admin", "super_admin"),
+  orderController.getAllOrders
+);
 
-// Admin / Manager update status
-router.patch("/:id/status", authenticate, authorize("dealer_admin","admin", "manager"), orderController.updateOrderStatus);
+// ---------------------------
+// STATUS UPDATE
+// ---------------------------
+router.patch(
+  "/:id/status",
+  authenticate,
+  authorize("dealer_admin", "regional_manager", "regional_admin", "super_admin"),
+  orderController.updateOrderStatus
+);
 
-// Admin / Manager approve
-router.patch("/:id/approve", authenticate, authorize("dealer_admin","admin", "manager"), orderController.approveOrder);
+// ---------------------------
+// MULTI-STAGE APPROVAL
+// ---------------------------
+router.patch(
+  "/:id/approve",
+  authenticate,
+  authorize("dealer_admin", "regional_manager", "regional_admin", "super_admin"),
+  orderController.approveOrder
+);
 
-// Admin / Manager reject
-router.patch("/:id/reject", authenticate, authorize("dealer_admin","admin", "manager"), orderController.rejectOrder);
+router.patch(
+  "/:id/reject",
+  authenticate,
+  authorize("dealer_admin", "regional_manager", "regional_admin", "super_admin"),
+  orderController.rejectOrder
+);
 
 module.exports = router;
-

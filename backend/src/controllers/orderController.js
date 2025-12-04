@@ -163,31 +163,92 @@ exports.updateOrderStatus = async (req, res) => {
 };
 
 // --------------------------------------
-// APPROVE ORDER
+// MULTI-STAGE APPROVAL WORKFLOW
+// --------------------------------------
+const { nextStage, isApproverForStage } = require("../utils/approvalEngine");
+
+// --------------------------------------
+// APPROVE ORDER (Multi-stage)
 // --------------------------------------
 exports.approveOrder = async (req, res) => {
-  const order = await Order.findByPk(req.params.id);
-  if (!order)
-    return res.status(404).json({ error: "Order not found" });
+  try {
+    const order = await Order.findByPk(req.params.id);
+    if (!order)
+      return res.status(404).json({ error: "Order not found" });
 
-  order.status = "Approved";
-  await order.save();
-  res.json({ message: "Order approved" });
+    const role = req.user.roleDetails?.name || req.user.role;
+    const currentStage = order.approvalStage || null;
+
+    // Check if user is correct approver for current stage
+    if (!isApproverForStage(role, currentStage || "dealer_admin")) {
+      return res.status(403).json({
+        error: `You are not authorized for this approval stage (${currentStage}).`,
+      });
+    }
+
+    const next = nextStage(currentStage, "order");
+
+    if (!next) {
+      // Final stage approval
+      order.approvalStage = null;
+      order.approvalStatus = "approved";
+      order.status = "Approved";
+    } else {
+      // Move to next stage
+      order.approvalStage = next;
+      order.approvalStatus = "pending";
+    }
+
+    order.approvedBy = req.user.id;
+    order.approvedAt = new Date();
+
+    await order.save();
+
+    return res.json({
+      message: next ? `Order moved to next stage: ${next}` : "Order fully approved",
+      order,
+    });
+  } catch (err) {
+    console.error("approveOrder:", err);
+    return res.status(500).json({ error: "Failed to approve order" });
+  }
 };
 
 // --------------------------------------
-// REJECT ORDER
+// REJECT ORDER (Multi-stage)
 // --------------------------------------
 exports.rejectOrder = async (req, res) => {
-  const { reason } = req.body;
+  try {
+    const { reason } = req.body;
 
-  const order = await Order.findByPk(req.params.id);
-  if (!order)
-    return res.status(404).json({ error: "Order not found" });
+    const order = await Order.findByPk(req.params.id);
+    if (!order)
+      return res.status(404).json({ error: "Order not found" });
 
-  order.status = "Rejected";
-  order.notes = reason;
-  await order.save();
+    const role = req.user.roleDetails?.name || req.user.role;
+    const currentStage = order.approvalStage || null;
 
-  res.json({ message: "Order rejected" });
+    if (!isApproverForStage(role, currentStage || "dealer_admin")) {
+      return res.status(403).json({
+        error: `You are not authorized to reject at stage (${currentStage}).`,
+      });
+    }
+
+    order.approvalStatus = "rejected";
+    order.status = "Rejected";
+    order.rejectionReason = reason || "Rejected by approver";
+    order.approvalStage = null;
+    order.approvedBy = req.user.id;
+    order.approvedAt = new Date();
+
+    await order.save();
+
+    return res.json({
+      message: "Order rejected",
+      order,
+    });
+  } catch (err) {
+    console.error("rejectOrder:", err);
+    return res.status(500).json({ error: "Failed to reject order" });
+  }
 };
