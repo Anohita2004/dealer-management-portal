@@ -6,7 +6,21 @@ module.exports = (sequelize, DataTypes) => {
       defaultValue: DataTypes.UUIDV4
     },
     name: DataTypes.STRING,
-    regionId: DataTypes.UUID
+    regionId: DataTypes.UUID,
+
+    // ADD THESE FIELDS
+    geojson: {
+      type: DataTypes.JSONB,
+      allowNull: true
+    },
+    centroidLat: {
+      type: DataTypes.DOUBLE,
+      allowNull: true
+    },
+    centroidLng: {
+      type: DataTypes.DOUBLE,
+      allowNull: true
+    }
   }, { tableName: 'territories' });
 
   Territory.associate = models => {
