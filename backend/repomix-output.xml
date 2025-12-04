@@ -42,6 +42,8 @@ The content is organized as follows:
 <directory_structure>
 .env.example
 .gitignore
+assets/~$material_template.xlsx
+assets/material_template.xlsx
 package.json
 reports/dealer_performance.pdf
 reports/dealer_performance.xlsx
@@ -128,6 +130,11 @@ src/routes/reportRoutes.js
 src/routes/roles.js
 src/routes/sapRoutes.js
 src/server.js
+src/uploads/1764841543303-929036021.xlsx
+src/uploads/1764842156761-528762324.xlsx
+src/uploads/1764842666516-4666789.xlsx
+src/uploads/1764842747919-204325724.xlsx
+src/uploads/1764842877915-945065415.xlsx
 src/utils/jwt.js
 src/utils/seed.js
 src/utils/seedPermissions.js
@@ -202,6 +209,7 @@ CORS_ORIGIN=http://localhost:8080
   "description": "",
   "dependencies": {
     "bcryptjs": "^3.0.2",
+    "convert-excel-to-json": "^1.7.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "exceljs": "^4.4.0",
@@ -3203,7 +3211,8 @@ exports.getTerritoriesGeo = async (req, res) => {
 <file path="src/controllers/materialController.js">
 // src/controllers/materialController.js
 const { Material, MaterialGroup, OrderItem, sequelize } = require('../models');
-const { Op } = require('sequelize');
+const { Op,fn, col, literal } = require('sequelize');
+const excelToJson = require("convert-excel-to-json");
 
 
 exports.createMaterial = async (req, res) => {
@@ -3274,119 +3283,177 @@ res.status(500).json({ error: 'Failed to delete' });
 
 // Import materials from XLSX/CSV
 exports.importMaterials = async (req, res) => {
-	try {
-		if (!req.file) return res.status(400).json({ error: 'No file uploaded. Use field name "file".' });
+  try {
+    if (!req.file)
+      return res.status(400).json({ error: 'No file uploaded. Use field name "file".' });
 
-		let xlsx;
-		try {
-			xlsx = require('xlsx');
-		} catch (e) {
-			return res.status(500).json({ error: 'Missing dependency: please run `npm install xlsx`' });
-		}
+    const xlsx = require("xlsx");
 
-		const workbook = xlsx.readFile(req.file.path);
-		const sheetName = workbook.SheetNames[0];
-		const rows = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: null });
+    const workbook = xlsx.readFile(req.file.path);
+    const sheet = workbook.SheetNames[0];
+    const rows = xlsx.utils.sheet_to_json(workbook.Sheets[sheet], { defval: null });
 
-		const results = { created: 0, updated: 0, errors: [] };
+    const results = { created: 0, updated: 0, errors: [] };
 
-		for (let i = 0; i < rows.length; i++) {
-			const row = rows[i];
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
 
-			// flexible mapping for common column names
-			const materialNumber = row.materialNumber || row['Material Number'] || row['material_number'] || row['material number'] || row.MAT_NO || row.mat_no;
-			const name = row.name || row.Name || row.materialName || row['Material Name'];
-			const description = row.description || row.Description || row.desc;
-			const uom = row.uom || row.UOM || row.unit;
-			const plant = row.plant || row.Plant || row.site;
-			const stock = row.stock != null ? parseInt(row.stock, 10) : (row.Stock != null ? parseInt(row.Stock, 10) : 0);
-			const reorderLevel = row.reorderLevel != null ? parseInt(row.reorderLevel, 10) : (row.reorder_level != null ? parseInt(row.reorder_level, 10) : 0);
-			const expiryDate = row.expiryDate || row['expiry_date'] || row['Expiry Date'] || row.EXPIRY_DATE || null;
+      const materialNumber =
+        row.materialNumber ||
+        row["Material Number"] ||
+        row["material_number"] ||
+        row["material number"] ||
+        row.MAT_NO ||
+        row.mat_no;
 
-			if (!materialNumber || !name) {
-				results.errors.push({ row: i + 1, error: 'Missing materialNumber or name' });
-				continue;
-			}
+      const name =
+        row.name ||
+        row.Name ||
+        row.materialName ||
+        row["Material Name"];
 
-			try {
-				const existing = await Material.findOne({ where: { materialNumber } });
-				if (existing) {
-					await existing.update({ name, description, uom, plant, stock, reorderLevel, expiryDate });
-					results.updated++;
-				} else {
-					await Material.create({ materialNumber, name, description, uom, plant, stock, reorderLevel, expiryDate });
-					results.created++;
-				}
-			} catch (err) {
-				results.errors.push({ row: i + 1, error: err.message });
-			}
-		}
+      const description =
+        row.description || row.Description || row.desc;
 
-		res.json({ message: 'Import completed', results });
-	} catch (err) {
-		console.error('importMaterials:', err);
-		res.status(500).json({ error: 'Failed to import materials', details: err.message });
-	}
+      const uom = row.uom || row.UOM || row.unit;
+      const plant = row.plant || row.Plant || row.site;
+
+      const stock = parseInt(row.stock ?? row.Stock ?? 0, 10);
+      const reorderLevel = parseInt(row.reorderLevel ?? row.reorder_level ?? 0, 10);
+
+      const expiryDate =
+        row.expiryDate ||
+        row["Expiry Date"] ||
+        row["expiry_date"] ||
+        row.EXPIRY_DATE ||
+        null;
+
+      if (!materialNumber || !name) {
+        results.errors.push({
+          row: i + 1,
+          error: "Missing materialNumber or name",
+        });
+        continue;
+      }
+
+      try {
+        const existing = await Material.findOne({
+          where: { materialNumber },
+        });
+
+        if (existing) {
+          await existing.update({
+            name,
+            description,
+            uom,
+            plant,
+            stock,
+            reorderLevel,
+            expiryDate,
+          });
+
+          results.updated++;
+        } else {
+          await Material.create({
+            materialNumber,
+            name,
+            description,
+            uom,
+            plant,
+            stock,
+            reorderLevel,
+            expiryDate,
+          });
+
+          results.created++;
+        }
+      } catch (err) {
+        results.errors.push({
+          row: i + 1,
+          error: err.message,
+        });
+      }
+    }
+
+    res.json({
+      message: "Import completed",
+      results,
+    });
+  } catch (err) {
+    console.error("importMaterials:", err);
+    res.status(500).json({
+      error: "Failed to import materials",
+      details: err.message,
+    });
+  }
 };
 
 
 // Analytics: fast-moving and slow-moving materials
 exports.analytics = async (req, res) => {
-	try {
-		const { start, end, limit = 10 } = req.query;
-		const where = {};
-		if (start && end) {
-			where.createdAt = { [Op.between]: [new Date(start), new Date(end)] };
-		} else if (start) {
-			where.createdAt = { [Op.gte]: new Date(start) };
-		} else if (end) {
-			where.createdAt = { [Op.lte]: new Date(end) };
-		}
+  try {
+    const { start, end, limit = 10 } = req.query;
+    const where = {};
 
-		// aggregate quantities by material
-		const aggregates = await OrderItem.findAll({
-			attributes: [
-				'materialId',
-				[sequelize.fn('SUM', sequelize.col('qty')), 'totalQty']
-			],
-			where,
-			group: ['materialId'],
-			order: [[sequelize.literal('totalQty'), 'DESC']]
-		});
+    // filter by date if provided
+    if (start && end) {
+      where.createdAt = { [Op.between]: [new Date(start), new Date(end)] };
+    } else if (start) {
+      where.createdAt = { [Op.gte]: new Date(start) };
+    } else if (end) {
+      where.createdAt = { [Op.lte]: new Date(end) };
+    }
 
-		const map = aggregates.map(a => ({ materialId: a.materialId, totalQty: parseInt(a.get('totalQty'), 10) }));
+    // aggregate quantities by material
+    const aggregates = await OrderItem.findAll({
+      attributes: [
+        'materialId',
+        [fn('SUM', col('qty')), 'totalqty'] // lowercase alias
+      ],
+      where,
+      group: ['materialId'],
+      order: [[literal('totalqty'), 'DESC']] // match alias
+    });
 
-		// get top N
-		const top = map.slice(0, limit);
+    const map = aggregates.map(a => ({
+      materialId: a.materialId,
+      totalQty: parseInt(a.get('totalqty'), 10)
+    }));
 
-		// prepare bottom N: include materials with zero sales
-		const materialIdsWithSales = map.map(m => m.materialId);
-		const materialsNoSales = await Material.findAll({
-			where: { id: { [Op.notIn]: materialIdsWithSales } },
-			limit: parseInt(limit, 10)
-		});
+    // Get material IDs with sales
+    const materialIdsWithSales = map.map(m => m.materialId);
 
-		// build responses with material details
-		const enrich = async (arr) => {
-			const ids = arr.map(x => x.materialId);
-			const mats = await Material.findAll({ where: { id: ids } });
-			return arr.map(x => ({ materialId: x.materialId, totalQty: x.totalQty, material: mats.find(m => m.id === x.materialId) || null }));
-		};
+    // Fetch all materials once
+    const allMaterials = await Material.findAll();
+    const materialMap = Object.fromEntries(allMaterials.map(m => [m.id, m]));
 
-		const fastMoving = await enrich(top);
+    // Top N fast-moving
+    const top = map.slice(0, limit).map(x => ({
+      materialId: x.materialId,
+      totalQty: x.totalQty,
+      material: materialMap[x.materialId] || null
+    }));
 
-		// slow-moving: take lowest aggregated, then append materials with no sales
-		const bottomAgg = map.slice(-limit).reverse();
-		const slowFromAgg = await enrich(bottomAgg);
-		const slowFromNoSales = materialsNoSales.map(m => ({ materialId: m.id, totalQty: 0, material: m }));
+    // Bottom N slow-moving: lowest sales + zero sales
+    const bottomAgg = map.slice(-limit).reverse();
+    const slowFromAgg = bottomAgg.map(x => ({
+      materialId: x.materialId,
+      totalQty: x.totalQty,
+      material: materialMap[x.materialId] || null
+    }));
 
-		const slowMoving = [...slowFromAgg, ...slowFromNoSales].slice(0, limit);
+    const materialsNoSales = allMaterials
+      .filter(m => !materialIdsWithSales.includes(m.id))
+      .slice(0, limit)
+      .map(m => ({ materialId: m.id, totalQty: 0, material: m }));
 
-		res.json({ fastMoving, slowMoving });
-	} catch (err) {
-		console.error('analytics:', err);
-		res.status(500).json({ error: 'Failed to compute analytics', details: err.message });
-	}
+    const slowMoving = [...slowFromAgg, ...materialsNoSales].slice(0, limit);
+
+    res.json({ fastMoving: top, slowMoving });
+  } catch (err) {
+    console.error('analytics:', err);
+    res.status(500).json({ error: 'Failed to compute analytics', details: err.message });
+  }
 };
 
 
@@ -3406,6 +3473,114 @@ exports.alerts = async (req, res) => {
 		console.error('alerts:', err);
 		res.status(500).json({ error: 'Failed to fetch alerts', details: err.message });
 	}
+};
+const path = require('path');
+
+
+exports.downloadTemplate = (req, res) => {
+  try {
+    const filePath = path.join(__dirname, "..", "..", "assets", "material_template.xlsx");
+
+    res.download(filePath, "material_template.xlsx", (err) => {
+      if (err) {
+        console.error("Error sending template:", err);
+        return res.status(500).send("Failed to download template");
+      }
+    });
+  } catch (err) {
+    console.error("downloadTemplate:", err);
+    res.status(500).send("Failed to download template");
+  }
+};
+// ------------------------------
+// 📌 UPLOAD + PREVIEW VALIDATION
+// ------------------------------
+ // make sure you have this installed
+
+exports.uploadMaterialPreview = async (req, res) => {
+  try {
+    // file must exist
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    // convert Excel → JSON
+    const result = excelToJson({
+      sourceFile: req.file.path,
+      header: { rows: 1 }, // first row is header
+      columnToKey: {
+        A: "materialNumber",
+        B: "name",
+        C: "description",
+        D: "uom",
+        E: "plant",
+        F: "stock",
+        G: "reorderLevel",
+        H: "expiryDate",
+        I: "materialGroupCode"
+      }
+    });
+
+    const rows = result["Sheet1"];
+
+    if (!rows || rows.length === 0) {
+      return res.status(400).json({ error: "Excel file is empty" });
+    }
+
+    const errors = [];
+    const validRows = [];
+
+    rows.forEach((row, index) => {
+      const rowNumber = index + 2; // because row 1 is header
+      let rowErrors = [];
+
+      // required field validation
+      if (!row.materialNumber) rowErrors.push("Material Number is required");
+      if (!row.name) rowErrors.push("Name is required");
+      if (!row.description) rowErrors.push("Description is required");
+      if (!row.uom) rowErrors.push("UOM is required");
+      if (!row.plant) rowErrors.push("Plant is required");
+      if (!row.expiryDate) rowErrors.push("Expiry Date is required");
+      if (!row.materialGroupCode) rowErrors.push("Material Group Code is required");
+
+      // numeric validation
+      if (row.stock !== undefined && (row.stock === "" || isNaN(Number(row.stock)))) {
+        rowErrors.push("Stock must be numeric");
+      } else if (row.stock !== undefined) {
+        row.stock = Number(row.stock);
+      }
+
+      if (row.reorderLevel !== undefined && (row.reorderLevel === "" || isNaN(Number(row.reorderLevel)))) {
+        rowErrors.push("Reorder Level must be numeric");
+      } else if (row.reorderLevel !== undefined) {
+        row.reorderLevel = Number(row.reorderLevel);
+      }
+
+      if (rowErrors.length > 0) {
+        errors.push({ row: rowNumber, issues: rowErrors });
+      } else {
+        validRows.push(row);
+      }
+    });
+
+    // return validation errors if any
+    if (errors.length > 0) {
+      return res.status(400).json({
+        status: "validation_failed",
+        errors
+      });
+    }
+
+    // send preview if all rows are valid
+    return res.status(200).json({
+      status: "preview_ok",
+      preview: validRows
+    });
+
+  } catch (err) {
+    console.error("uploadMaterialPreview:", err);
+    return res.status(500).json({ error: "Failed to validate file" });
+  }
 };
 </file>
 
@@ -6794,7 +6969,21 @@ module.exports = (sequelize, DataTypes) => {
       defaultValue: DataTypes.UUIDV4
     },
     name: DataTypes.STRING,
-    regionId: DataTypes.UUID
+    regionId: DataTypes.UUID,
+
+    // ADD THESE FIELDS
+    geojson: {
+      type: DataTypes.JSONB,
+      allowNull: true
+    },
+    centroidLat: {
+      type: DataTypes.DOUBLE,
+      allowNull: true
+    },
+    centroidLng: {
+      type: DataTypes.DOUBLE,
+      allowNull: true
+    }
   }, { tableName: 'territories' });
 
   Territory.associate = models => {
@@ -7171,10 +7360,6 @@ router.patch('/:partnerId/read', authenticate, chatCtrl.markAsRead);
 router.get("/unread-count", authenticate, chatCtrl.getUnreadCount);
 
 module.exports = router;
-
-
-
-module.exports = router;
 </file>
 
 <file path="src/routes/dealerRoutes.js">
@@ -7372,8 +7557,22 @@ const materialGroupController = require("../controllers/materialGroupController"
 const { authenticate, authorize } = require("../middleware/auth");
 const upload = require("../middleware/upload");
 
+// -------------------------
 // Material Groups
-router.get("/groups", authenticate, materialGroupController.getGroups);
+// -------------------------
+
+router.get(
+  "/groups",
+  authenticate,
+  materialGroupController.getGroups
+);
+
+router.post(
+  "/groups",
+  authenticate,
+  authorize("super_admin", "technical_admin", "dealer", "inventory"),
+  materialGroupController.createGroup
+);
 
 router.post(
   "/groups/:id/assign-material",
@@ -7382,18 +7581,71 @@ router.post(
   materialGroupController.assignMaterial
 );
 
+// -------------------------
 // Material Master
-router.get("/", authenticate, materialController.getMaterials);
-router.get("/:id", authenticate, materialController.getMaterialById);
-router.post("/", authenticate, authorize("super_admin", "technical_admin","inventory"), materialController.createMaterial);
-// Bulk import materials via Excel/XLSX
-router.post("/import", authenticate, authorize("super_admin", "inventory"), upload.single('file'), materialController.importMaterials);
-router.get("/analytics", authenticate, materialController.analytics);
-router.get("/alerts", authenticate, materialController.alerts);
-router.put("/:id", authenticate, authorize("super_admin","technical_admin", "inventory"), materialController.updateMaterial);
-router.delete("/:id", authenticate, authorize("super_admin","technical_admin", "inventory"), materialController.deleteMaterial);
-router.post("/groups", authenticate, authorize("super_admin", "technical_admin","dealer", "inventory"), materialGroupController.createGroup);
+// -------------------------
 
+router.get(
+  "/analytics",
+  authenticate,
+  materialController.analytics
+);
+
+router.get(
+  "/alerts",
+  authenticate,
+  materialController.alerts
+);
+
+// 🔥 SINGLE clean template route
+router.get(
+  "/template",
+  authenticate,
+  materialController.downloadTemplate
+);
+
+router.get(
+  "/",
+  authenticate,
+  materialController.getMaterials
+);
+
+router.get(
+  "/:id",
+  authenticate,
+  materialController.getMaterialById
+);
+
+router.post(
+  "/",
+  authenticate,
+  authorize("super_admin", "technical_admin", "inventory"),
+  materialController.createMaterial
+);
+
+router.post(
+  "/import",
+  authenticate,
+   authorize("super_admin", "technical_admin", "inventory"),
+  upload.single("file"),
+  materialController.importMaterials
+);
+
+router.put(
+  "/:id",
+  authenticate,
+  authorize("super_admin", "technical_admin", "inventory"),
+  materialController.updateMaterial
+);
+
+router.delete(
+  "/:id",
+  authenticate,
+  authorize("super_admin", "technical_admin", "inventory"),
+  materialController.deleteMaterial
+);
+// upload + preview validation
+router.post("/upload-preview", upload.single("file"), materialController.uploadMaterialPreview);
 module.exports = router;
 </file>
 
@@ -7772,6 +8024,7 @@ app.use('/api/roles', rolesRoutes);
 app.use('/api/permissions', permissionsRoutes);
 app.use('/api', regionRoutes);
 app.use('/api/materials', materialRoutes);
+
 app.use('/api/orders', orderRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/chat', chatRoutes); // role-filtered chat REST endpoints

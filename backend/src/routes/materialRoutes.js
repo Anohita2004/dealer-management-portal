@@ -68,14 +68,14 @@ router.get(
 router.post(
   "/",
   authenticate,
-  authorize("super_admin", "technical_admin", "inventory"),
+  authorize("super_admin", "technical_admin", "inventory_user"),
   materialController.createMaterial
 );
 
 router.post(
   "/import",
   authenticate,
-   authorize("super_admin", "technical_admin", "inventory"),
+   authorize("super_admin", "technical_admin", "inventory_user"),
   upload.single("file"),
   materialController.importMaterials
 );
@@ -83,14 +83,14 @@ router.post(
 router.put(
   "/:id",
   authenticate,
-  authorize("super_admin", "technical_admin", "inventory"),
+  authorize("super_admin", "technical_admin", "inventory_user"),
   materialController.updateMaterial
 );
 
 router.delete(
   "/:id",
   authenticate,
-  authorize("super_admin", "technical_admin", "inventory"),
+  authorize("super_admin", "technical_admin", "inventory_user"),
   materialController.deleteMaterial
 );
 // upload + preview validation

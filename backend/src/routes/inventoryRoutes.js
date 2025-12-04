@@ -7,7 +7,7 @@ const inventoryController = require("../controllers/inventoryController");
 router.get(
   "/summary",
   authenticate,
-  authorize("inventory", "super_admin", "key_user","dealer_admin", "tm"),
+  authorize("inventory_user", "super_admin", "key_user","dealer_admin", "tm"),
   inventoryController.getInventorySummary
 );
 
@@ -15,7 +15,7 @@ router.get(
 router.get(
   "/details",
   authenticate,
-  authorize("inventory", "super_admin"),
+  authorize("inventory_user", "super_admin"),
   inventoryController.getInventoryDetails
 );
 
@@ -23,7 +23,7 @@ router.get(
 router.post(
   "/",
   authenticate,
-  authorize("inventory", "super_admin"),
+  authorize("inventory_user", "super_admin"),
   inventoryController.addItem
 );
 
@@ -31,7 +31,7 @@ router.post(
 router.put(
   "/:id",
   authenticate,
-  authorize("inventory", "super_admin"),
+  authorize("inventory_user", "super_admin"),
   inventoryController.updateItem
 );
 
@@ -39,7 +39,7 @@ router.put(
 router.delete(
   "/:id",
   authenticate,
-  authorize("inventory", "super_admin"),
+  authorize("inventory_user", "super_admin"),
   inventoryController.deleteItem
 );
 
@@ -47,7 +47,7 @@ router.delete(
 router.get(
   "/export",
   authenticate,
-  authorize("inventory", "super_admin", "key_user"),
+  authorize("inventory_user", "super_admin", "key_user"),
   inventoryController.exportInventory
 );
 
