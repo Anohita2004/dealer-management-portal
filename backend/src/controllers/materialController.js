@@ -212,3 +212,19 @@ exports.alerts = async (req, res) => {
 		res.status(500).json({ error: 'Failed to fetch alerts', details: err.message });
 	}
 };
+const path = require('path');
+
+exports.downloadTemplate = (req, res) => {
+  try {
+    const filePath = path.join(__dirname, '..', 'assets', 'material_template.xlsx');
+    res.download(filePath, 'material_template.xlsx', (err) => {
+      if (err) {
+        console.error('Error sending template:', err);
+        res.status(500).send('Failed to download template');
+      }
+    });
+  } catch (err) {
+    console.error('downloadTemplate:', err);
+    res.status(500).send('Failed to download template');
+  }
+};

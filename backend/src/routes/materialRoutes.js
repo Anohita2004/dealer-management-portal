@@ -1,5 +1,6 @@
 // src/routes/materialRoutes.js
 const express = require("express");
+const path = require("path");
 const router = express.Router();
 const materialController = require("../controllers/materialController");
 const materialGroupController = require("../controllers/materialGroupController");
@@ -33,9 +34,20 @@ router.post(
 // Material Master
 // -------------------------
 
-// Analytics & alerts must come first to avoid being captured by /:id
+// Analytics & alerts must come first
 router.get("/analytics", authenticate, materialController.analytics);
 router.get("/alerts", authenticate, materialController.alerts);
+
+// Serve template file for import
+router.get("/template", authenticate, (req, res) => {
+  const filePath = path.join(__dirname, "../../assets/material_template.xlsx"); // adjust path if needed
+  res.download(filePath, "material_template.xlsx", (err) => {
+    if (err) {
+      console.error("Template download error:", err);
+      res.status(500).send("Failed to download template");
+    }
+  });
+});
 
 // List all materials
 router.get("/", authenticate, materialController.getMaterials);
@@ -75,6 +87,7 @@ router.delete(
   authorize("super_admin", "technical_admin", "inventory"),
   materialController.deleteMaterial
 );
+// Download material template
+router.get('/template', authenticate, materialController.downloadTemplate);
 
 module.exports = router;
-
