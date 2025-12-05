@@ -1,5 +1,6 @@
 // src/controllers/orderController.js
 const { Order, OrderItem, Material, Dealer, sequelize } = require("../models");
+const { nextStage, isApproverForStage } = require("../utils/approvalEngine");
 
 // --------------------------------------
 // PLACE ORDER  (Dealer / Dealer Staff)
@@ -16,7 +17,6 @@ exports.placeOrder = async (req, res) => {
       return res.status(400).json({ error: "No items provided" });
 
     let total = 0;
-
     for (const it of items) {
       const mat = await Material.findByPk(it.materialId);
       if (!mat) {
@@ -28,6 +28,9 @@ exports.placeOrder = async (req, res) => {
       total += Number(it.qty) * Number(it.unitPrice || 0);
     }
 
+    // Initialize approvalStage with first stage
+    const firstStage = nextStage(null, "order");
+
     const order = await Order.create(
       {
         dealerId,
@@ -35,6 +38,8 @@ exports.placeOrder = async (req, res) => {
         status: "Pending",
         totalAmount: total,
         notes,
+        approvalStage: firstStage,
+        approvalStatus: "pending",
       },
       { transaction: t }
     );
@@ -57,13 +62,13 @@ exports.placeOrder = async (req, res) => {
     return res.status(201).json({
       orderId: order.id,
       orderNumber: order.orderNumber,
+      approvalStage: order.approvalStage,
+      approvalStatus: order.approvalStatus,
     });
   } catch (err) {
     await t.rollback();
     console.error("placeOrder:", err);
-    res
-      .status(500)
-      .json({ error: "Failed to place order", details: err.message });
+    res.status(500).json({ error: "Failed to place order", details: err.message });
   }
 };
 
@@ -79,13 +84,8 @@ exports.getMyOrders = async (req, res) => {
       include: [
         {
           model: OrderItem,
-          as: "items", // 🔥 FIXED alias
-          include: [
-            {
-              model: Material,
-              as: "material", // 🔥 FIXED alias
-            },
-          ],
+          as: "items",
+          include: [{ model: Material, as: "material" }],
         },
       ],
       order: [["createdAt", "DESC"]],
@@ -105,15 +105,8 @@ exports.getAllOrders = async (req, res) => {
   try {
     const orders = await Order.findAll({
       include: [
-        {
-          model: OrderItem,
-          as: "items",
-          include: [{ model: Material, as: "material" }],
-        },
-        {
-          model: Dealer,
-          as: "dealer",
-        },
+        { model: OrderItem, as: "items", include: [{ model: Material, as: "material" }] },
+        { model: Dealer, as: "dealer" },
       ],
       order: [["createdAt", "DESC"]],
     });
@@ -134,10 +127,7 @@ exports.updateOrderStatus = async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
 
-    const order = await Order.findByPk(id, {
-      include: [{ model: OrderItem, as: "items" }],
-    });
-
+    const order = await Order.findByPk(id, { include: [{ model: OrderItem, as: "items" }] });
     if (!order) return res.status(404).json({ error: "Order not found" });
 
     order.status = status;
@@ -163,33 +153,26 @@ exports.updateOrderStatus = async (req, res) => {
 };
 
 // --------------------------------------
-// MULTI-STAGE APPROVAL WORKFLOW
-// --------------------------------------
-const { nextStage, isApproverForStage } = require("../utils/approvalEngine");
-
-// --------------------------------------
 // APPROVE ORDER (Multi-stage)
 // --------------------------------------
 exports.approveOrder = async (req, res) => {
   try {
     const order = await Order.findByPk(req.params.id);
-    if (!order)
-      return res.status(404).json({ error: "Order not found" });
+    if (!order) return res.status(404).json({ error: "Order not found" });
 
     const role = req.user.roleDetails?.name || req.user.role;
-    const currentStage = order.approvalStage || null;
+    const currentStage = order.approvalStage;
 
-    // Check if user is correct approver for current stage
-    if (!isApproverForStage(role, currentStage || "dealer_admin")) {
+    if (!isApproverForStage(role, currentStage, "order")) {
       return res.status(403).json({
-        error: `You are not authorized for this approval stage (${currentStage}).`,
+        error: `You are not authorized to approve at this stage (${currentStage}).`,
       });
     }
 
     const next = nextStage(currentStage, "order");
 
     if (!next) {
-      // Final stage approval
+      // Final approval
       order.approvalStage = null;
       order.approvalStatus = "approved";
       order.status = "Approved";
@@ -210,9 +193,10 @@ exports.approveOrder = async (req, res) => {
     });
   } catch (err) {
     console.error("approveOrder:", err);
-    return res.status(500).json({ error: "Failed to approve order" });
+    res.status(500).json({ error: "Failed to approve order" });
   }
 };
+
 
 // --------------------------------------
 // REJECT ORDER (Multi-stage)
@@ -220,17 +204,15 @@ exports.approveOrder = async (req, res) => {
 exports.rejectOrder = async (req, res) => {
   try {
     const { reason } = req.body;
-
     const order = await Order.findByPk(req.params.id);
-    if (!order)
-      return res.status(404).json({ error: "Order not found" });
+    if (!order) return res.status(404).json({ error: "Order not found" });
 
     const role = req.user.roleDetails?.name || req.user.role;
-    const currentStage = order.approvalStage || null;
+    const currentStage = order.approvalStage;
 
-    if (!isApproverForStage(role, currentStage || "dealer_admin")) {
+    if (!isApproverForStage(role, currentStage)) {
       return res.status(403).json({
-        error: `You are not authorized to reject at stage (${currentStage}).`,
+        error: `You are not authorized to reject at this stage (${currentStage}).`,
       });
     }
 
@@ -242,13 +224,9 @@ exports.rejectOrder = async (req, res) => {
     order.approvedAt = new Date();
 
     await order.save();
-
-    return res.json({
-      message: "Order rejected",
-      order,
-    });
+    return res.json({ message: "Order rejected", order });
   } catch (err) {
     console.error("rejectOrder:", err);
-    return res.status(500).json({ error: "Failed to reject order" });
+    res.status(500).json({ error: "Failed to reject order" });
   }
 };
