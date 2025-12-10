@@ -9,8 +9,8 @@ module.exports = (sequelize, DataTypes) => {
       },
       name: { type: DataTypes.STRING, allowNull: false, unique: true },
       geojson: DataTypes.JSON,
-centroidLat: DataTypes.FLOAT,
-centroidLng: DataTypes.FLOAT,
+      centroidLat: DataTypes.FLOAT,
+      centroidLng: DataTypes.FLOAT,
 
     },
     {
@@ -29,6 +29,12 @@ centroidLng: DataTypes.FLOAT,
     Region.hasMany(models.Dealer, {
       foreignKey: "regionId",
       as: "dealers",
+    });
+
+    // ✅ Add area association
+    Region.hasMany(models.Area, {
+      foreignKey: "regionId",
+      as: "areas",
     });
   };
 

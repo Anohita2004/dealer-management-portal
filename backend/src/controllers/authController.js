@@ -34,7 +34,13 @@ const login = async (req, res) => {
       userAgent: req.headers["user-agent"],
     });
 
-    return res.json({ message: "OTP sent", userId: user.id, otpSent: true });
+    return res.json({
+      message: "OTP generated (check console)",
+      userId: user.id,
+      otpSent: true,
+      // For development only - remove in production
+      otp: process.env.NODE_ENV === 'development' ? otp : undefined
+    });
   } catch (err) {
     console.error("Login error:", err);
     return res.status(500).json({ error: "Login failed" });

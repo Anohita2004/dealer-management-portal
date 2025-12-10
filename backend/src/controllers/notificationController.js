@@ -21,14 +21,14 @@ const createNotification = async (req, res) => {
     if (userId) {
       // Single user notification
       const notification = await Notification.create({
-        userId,
+        recipientId: userId,
         title,
         message,
         type,
         priority,
         actionUrl,
         data: data || {},
-        read: false
+        isRead: false
       });
       notifications.push(notification);
 
@@ -54,14 +54,14 @@ const createNotification = async (req, res) => {
 
       const notificationPromises = users.map(user =>
         Notification.create({
-          userId: user.id,
+          recipientId: user.id,
           title,
           message,
           type,
           priority,
           actionUrl,
           data: data || {},
-          read: false
+          isRead: false
         })
       );
 
@@ -71,7 +71,7 @@ const createNotification = async (req, res) => {
       const io = req.app.get('io');
       if (io) {
         users.forEach(user => {
-          const userNotifications = notifications.filter(n => n.userId === user.id);
+          const userNotifications = notifications.filter(n => n.recipientId === user.id);
           io.to(`user:${user.id}`).emit('notifications', userNotifications.map(n => ({
             id: n.id,
             title: n.title,
@@ -103,9 +103,9 @@ const getUserNotifications = async (req, res) => {
     const offset = (page - 1) * limit;
     const userId = req.user.id;
 
-    const where = { userId };
+    const where = { recipientId: userId };
     if (unreadOnly === 'true') {
-      where.read = false;
+      where.isRead = false;
     }
 
     const notifications = await Notification.findAll({
@@ -139,14 +139,14 @@ const markAsRead = async (req, res) => {
     const userId = req.user.id;
 
     const notification = await Notification.findOne({
-      where: { id, userId }
+      where: { id, recipientId: userId }
     });
 
     if (!notification) {
       return res.status(404).json({ error: 'Notification not found' });
     }
 
-    await notification.update({ read: true, readAt: new Date() });
+    await notification.update({ isRead: true, readAt: new Date() });
 
     res.json({ message: 'Notification marked as read', notification });
   } catch (err) {
@@ -161,8 +161,8 @@ const markAllAsRead = async (req, res) => {
     const userId = req.user.id;
 
     const updated = await Notification.update(
-      { read: true, readAt: new Date() },
-      { where: { userId, read: false } }
+      { isRead: true, readAt: new Date() },
+      { where: { recipientId: userId, isRead: false } }
     );
 
     res.json({ message: `${updated[0]} notifications marked as read` });
@@ -179,7 +179,7 @@ const deleteNotification = async (req, res) => {
     const userId = req.user.id;
 
     const deleted = await Notification.destroy({
-      where: { id, userId }
+      where: { id, recipientId: userId }
     });
 
     if (deleted === 0) {
@@ -199,7 +199,7 @@ const getUnreadCount = async (req, res) => {
     const userId = req.user.id;
 
     const count = await Notification.count({
-      where: { userId, read: false }
+      where: { recipientId: userId, isRead: false }
     });
 
     res.json({ unreadCount: count });
@@ -230,7 +230,7 @@ const sendApprovalNotification = async (userId, entityType, entityId, action, ap
   const message = messages[entityType]?.[action] || `${entityType} #${entityId} has been ${action}d`;
 
   await Notification.create({
-    userId,
+    recipientId: userId,
     title,
     message,
     type: action === 'approve' ? 'success' : 'warning',
@@ -248,7 +248,7 @@ const sendEscalationNotification = async (userId, entityType, entityId, slaDays)
   const message = `${entityType} #${entityId} has exceeded ${slaDays} days SLA. Immediate attention required.`;
 
   await Notification.create({
-    userId,
+    recipientId: userId,
     title,
     message,
     type: 'error',

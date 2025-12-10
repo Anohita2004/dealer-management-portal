@@ -1026,201 +1026,233 @@ module.exports = {
 </file>
 
 <file path="src/controllers/areaController.js">
-// src/controllers/areaController.js
-const { Area, Region, Territory, Dealer, sequelize } = require('../models');
+const { 
+  Area,
+  Region,
+  Territory,
+  Dealer,
+  Document,
+  PricingUpdate,
+  Campaign,
+  sequelize
+} = require("../models");
 
-// Create new area
+
+// =========================================================
+// CREATE AREA
+// =========================================================
 const createArea = async (req, res) => {
   try {
     const { name, regionId, geojson, centroidLat, centroidLng } = req.body;
 
-    // Validate region exists
     const region = await Region.findByPk(regionId);
-    if (!region) {
-      return res.status(404).json({ error: 'Region not found' });
-    }
+    if (!region) return res.status(404).json({ error: "Region not found" });
 
-    // Check hierarchical permissions
-    const userRole = req.user.roleDetails?.name || req.user.role;
-    if (userRole === 'regional_admin' && req.user.regionId !== regionId) {
-      return res.status(403).json({ error: 'Cannot create areas outside your region' });
-    }
+    if (req.user.role === "regional_admin" && req.user.regionId !== regionId)
+      return res.status(403).json({ error: "Cannot create outside region" });
 
-    const area = await Area.create({
-      name,
-      regionId,
-      geojson,
-      centroidLat,
-      centroidLng
-    });
+    const area = await Area.create({ name, regionId, geojson, centroidLat, centroidLng });
 
-    res.status(201).json({ message: 'Area created successfully', area });
+    return res.status(201).json({ message: "Area created successfully", area });
   } catch (err) {
-    console.error('createArea:', err);
-    res.status(500).json({ error: 'Failed to create area' });
+    console.error("createArea:", err);
+    return res.status(500).json({ error: "Failed to create area" });
   }
 };
 
-// Get all areas (scoped by user role)
+
+// =========================================================
+// GET AREAS LIST
+// =========================================================
 const getAreas = async (req, res) => {
   try {
-    const whereClause = {};
-    const userRole = req.user.roleDetails?.name || req.user.role;
-
-    if (userRole === 'regional_admin') {
-      whereClause.regionId = req.user.regionId;
-    }
+    const filter = req.user.role === "regional_admin" 
+      ? { regionId: req.user.regionId } 
+      : {};
 
     const areas = await Area.findAll({
-      where: whereClause,
+      where: filter,
       include: [
-        {
-          model: Region,
-          as: 'region',
-          attributes: ['id', 'name']
-        },
-        {
-          model: Territory,
-          as: 'territories',
-          attributes: ['id', 'name']
-        }
-      ],
-      order: [['name', 'ASC']]
+        { model: Region, as: "region", attributes: ["id", "name"] },   // ← fixed
+        { model: Territory, as: "territories", attributes: ["id", "name"] } // ← fixed
+      ]
     });
 
     res.json({ areas });
   } catch (err) {
-    console.error('getAreas:', err);
-    res.status(500).json({ error: 'Failed to fetch areas' });
+    console.error("getAreas:", err);
+    res.status(500).json({ error: "Failed to fetch areas" });
   }
 };
 
-// Get single area with full details
+// =========================================================
+// GET SINGLE AREA
+// =========================================================
 const getArea = async (req, res) => {
   try {
-    const { id } = req.params;
-
-    const area = await Area.findByPk(id, {
+    const area = await Area.findByPk(req.params.id, {
       include: [
-        {
-          model: Region,
-          as: 'region',
-          attributes: ['id', 'name', 'geojson']
-        },
+        { model: Region, as: "region", attributes: ["id","name","geojson"] },   // ← fixed
         {
           model: Territory,
-          as: 'territories',
-          include: [{
-            model: Dealer,
-            as: 'dealers',
-            attributes: ['id', 'businessName', 'dealerCode', 'lat', 'lng']
-          }]
+          as: "territories",   // ← required alias
+          include: [
+            { model: Dealer, as: "dealers", attributes: ["id","businessName","dealerCode","lat","lng"] }
+          ]
         }
       ]
     });
 
-    if (!area) {
-      return res.status(404).json({ error: 'Area not found' });
-    }
-
-    // Check access permissions
-    const userRole = req.user.roleDetails?.name || req.user.role;
-    if (userRole === 'regional_admin' && area.regionId !== req.user.regionId) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
+    if (!area) return res.status(404).json({ error: "Area not found" });
+    if (req.user.role === "regional_admin" && req.user.regionId !== area.regionId)
+      return res.status(403).json({ error: "Access denied" });
 
     res.json({ area });
   } catch (err) {
-    console.error('getArea:', err);
-    res.status(500).json({ error: 'Failed to fetch area' });
+    console.error("getArea:", err);
+    res.status(500).json({ error: "Failed to fetch area" });
   }
 };
 
-// Update area
+// =========================================================
+// UPDATE AREA  🔥 (missing earlier)
+// =========================================================
 const updateArea = async (req, res) => {
   try {
-    const { id } = req.params;
-    const { name, geojson, centroidLat, centroidLng } = req.body;
+    const area = await Area.findByPk(req.params.id);
+    if (!area) return res.status(404).json({ error: "Area not found" });
 
-    const area = await Area.findByPk(id);
-    if (!area) {
-      return res.status(404).json({ error: 'Area not found' });
-    }
+    if (req.user.role === "regional_admin" && req.user.regionId !== area.regionId)
+      return res.status(403).json({ error: "Outside region" });
 
-    // Check permissions
-    const userRole = req.user.roleDetails?.name || req.user.role;
-    if (userRole === 'regional_admin' && area.regionId !== req.user.regionId) {
-      return res.status(403).json({ error: 'Cannot modify areas outside your region' });
-    }
+    await area.update(req.body);
+    return res.json({ message: "Area updated", area });
 
-    await area.update({
-      name: name || area.name,
-      geojson: geojson || area.geojson,
-      centroidLat: centroidLat || area.centroidLat,
-      centroidLng: centroidLng || area.centroidLng
-    });
-
-    res.json({ message: 'Area updated successfully', area });
   } catch (err) {
-    console.error('updateArea:', err);
-    res.status(500).json({ error: 'Failed to update area' });
+    console.error("updateArea:", err);
+    return res.status(500).json({ error: "Failed to update" });
   }
 };
 
-// Delete area (with validation)
+
+// =========================================================
+// DELETE AREA  🔥 (missing earlier)
+// =========================================================
 const deleteArea = async (req, res) => {
   const t = await sequelize.transaction();
   try {
-    const { id } = req.params;
-
-    const area = await Area.findByPk(id, {
+    const area = await Area.findByPk(req.params.id, {
       include: [
-        { model: Territory, as: 'territories' },
-        { model: Dealer, as: 'dealers' }
+        { model: Territory },
+        { model: Dealer }
       ],
       transaction: t
     });
 
-    if (!area) {
-      return res.status(404).json({ error: 'Area not found' });
-    }
-
-    // Check if area has territories or dealers
-    if (area.territories && area.territories.length > 0) {
-      return res.status(400).json({
-        error: 'Cannot delete area that contains territories. Move territories first.'
-      });
-    }
-
-    if (area.dealers && area.dealers.length > 0) {
-      return res.status(400).json({
-        error: 'Cannot delete area that contains dealers. Reassign dealers first.'
-      });
-    }
-
-    // Check permissions
-    const userRole = req.user.roleDetails?.name || req.user.role;
-    if (userRole === 'regional_admin' && area.regionId !== req.user.regionId) {
-      return res.status(403).json({ error: 'Cannot delete areas outside your region' });
-    }
+    if (!area) return res.status(404).json({ error: "Area not found" });
+    if (area.territories?.length) return res.status(400).json({ error: "Move territories first" });
+    if (area.dealers?.length) return res.status(400).json({ error: "Reassign dealers first" });
 
     await area.destroy({ transaction: t });
     await t.commit();
+    return res.json({ message: "Area deleted successfully" });
 
-    res.json({ message: 'Area deleted successfully' });
   } catch (err) {
     await t.rollback();
-    console.error('deleteArea:', err);
-    res.status(500).json({ error: 'Failed to delete area' });
+    console.error("deleteArea:", err);
+    return res.status(500).json({ error: "Failed to delete" });
   }
 };
 
+
+// =========================================================
+// DASHBOARD SUMMARY
+// =========================================================
+const getAreaDashboardSummary = async (req, res) => {
+  try {
+    const areaId = req.user.areaId;
+    if (!areaId) return res.status(400).json({ error: "No assigned areaId found" });
+
+    const dealers = await Dealer.count({ where: { areaId }}); 
+    const territories = await Territory.count({ where: { areaId }});
+
+    const pendingDocs = await Document.count({
+      include: [{ model: Dealer, as: "dealer", where: { areaId }}],
+      where: { status: "pending" }
+    });
+
+    const pendingPricing = await PricingUpdate.count({
+      include: [{ model: Dealer, as: "dealer", where: { areaId }}],
+      where: { status: "pending" }
+    });
+
+    const activeCampaigns = await Campaign.count({ where: { areaId, isActive: true }});
+
+    return res.json({
+      dealers,
+      territories,
+      approvalsPending: pendingDocs + pendingPricing,
+      activeCampaigns
+    });
+
+  } catch (err) {
+    console.error("🔴 AREA SUMMARY ERROR:", err);
+    return res.status(500).json({ error: "Failed to load dashboard summary" });
+  }
+};
+
+
+// =========================================================
+// AREA DEALERS LIST
+// =========================================================
+const getAreaDealers = async (req, res) => {
+  try {
+    const dealers = await Dealer.findAll({
+      where:{ areaId:req.user.areaId },
+      attributes:["id","businessName","dealerCode","phoneNumber","isActive"]
+    });
+
+    return res.json(dealers);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error:"Failed to load dealers" });
+  }
+};
+
+
+// =========================================================
+// APPROVALS LIST
+// =========================================================
+const getAreaApprovals = async (req,res)=>{
+  try{
+    const approvals = await Document.findAll({
+      include:[{
+        model: Dealer,
+        as: "dealer",
+        where:{ areaId: req.user.areaId }
+      }],
+      where:{ status:"pending" }
+    });
+
+    return res.json(approvals);
+
+  }catch(err){
+    console.error("Area approvals error:", err);
+    return res.status(500).json({ error:"Failed to load approvals" });
+  }
+};
+
+
+// 🎯 FINAL EXPORT FIXED
 module.exports = {
   createArea,
   getAreas,
   getArea,
   updateArea,
-  deleteArea
+  deleteArea,
+  getAreaDashboardSummary,
+  getAreaDealers,
+  getAreaApprovals
 };
 </file>
 
@@ -4431,117 +4463,149 @@ module.exports = {
 </file>
 
 <file path="src/controllers/notificationsController.js">
-const { Notification,Dealer, Document } = require('../models');
-const { Op } = require('sequelize');
+const { Notification, Dealer, Document } = require("../models");
+const { Op } = require("sequelize");
 
-// ========================= Get Manager Notifications =========================
+/* =====================================================================
+   1) MANAGER LIVE DASHBOARD SNAPSHOT (NOT LIST)
+=====================================================================*/
 exports.getManagerNotifications = async (req, res) => {
   try {
-    const { role, region, territory, id } = req.user;
-    const whereDealer = {};
-    if (region) whereDealer.region = region;
-    if (territory) whereDealer.territory = territory;
+    const { region, territory, id } = req.user;
+    const where = {};
+    if (region) where.region = region;
+    if (territory) where.territory = territory;
 
     const expiringLicenses = await Dealer.count({
       where: {
-        ...whereDealer,
+        ...where,
         licenses: { [Op.ne]: null },
-        updatedAt: { [Op.lt]: new Date(Date.now() - 330 * 24 * 60 * 60 * 1000) } // older than 11 months
+        updatedAt: { [Op.lt]: new Date(Date.now() - (330 * 24 * 60 * 60 * 1000)) }
       }
     });
 
     const pendingDocs = await Document.count({
-      where: { status: 'pending', ...whereDealer }
+      where: { status: "pending", ...where }
     });
 
-    const data = {
-      expiringLicenses,
-      pendingDocs,
-      message: 'Notifications fetched successfully'
-    };
+    const summary = { expiringLicenses, pendingDocs };
 
-    // 🔌 SOCKET: emit real-time update to TM/AM dashboard
-    const io = req.app.get('io');
-    if (io) io.to(`user:${id}`).emit('notification:update', data);
+    req.app.get("io")?.to(`user:${id}`).emit("notification:update", summary);
+    return res.json(summary);
 
-    res.json(data);
-  } catch (error) {
-    console.error('Manager notifications error:', error);
-    res.status(500).json({ error: 'Failed to fetch notifications' });
-  }
-};
-// src/controllers/notificationController.js
-
-// ========================= Manager Snapshot Notifications =========================
-exports.getManagerNotifications = async (req, res) => {
-  try {
-    const { role, region, territory, id } = req.user;
-    const whereDealer = {};
-    if (region) whereDealer.region = region;
-    if (territory) whereDealer.territory = territory;
-
-    const expiringLicenses = await Dealer.count({
-      where: {
-        ...whereDealer,
-        licenses: { [Op.ne]: null },
-        updatedAt: { [Op.lt]: new Date(Date.now() - 330 * 24 * 60 * 60 * 1000) },
-      },
-    });
-
-    const pendingDocs = await Document.count({
-      where: { status: 'pending', ...whereDealer },
-    });
-
-    const summary = {
-      expiringLicenses,
-      pendingDocs,
-      message: 'Notifications fetched successfully',
-    };
-
-    const io = req.app.get('io');
-    if (io) io.to(`user:${id}`).emit('notification:update', summary);
-
-    res.json(summary);
-  } catch (error) {
-    console.error('Manager notifications error:', error);
-    res.status(500).json({ error: 'Failed to fetch notifications' });
+  } catch (err) {
+    console.error("Manager Notification Error:", err);
+    res.status(500).json({ error: "Failed to fetch notifications" });
   }
 };
 
-// ========================= Real Notification CRUD =========================
+/* =====================================================================
+   2) User — GET Notifications List
+=====================================================================*/
 exports.getUserNotifications = async (req, res) => {
   try {
     const { id, role } = req.user;
-    const where = {
-      [Op.or]: [
-        { recipientId: id },
-        { recipientRole: role },
-      ],
-    };
 
     const notes = await Notification.findAll({
-      where,
-      order: [['createdAt', 'DESC']],
+      where: {
+        [Op.or]: [
+          { recipientId: id },      // user-specific
+          { recipientRole: role },  // role broadcast
+        ]
+      },
+      order: [["createdAt", "DESC"]],
+      limit: 50
     });
 
     res.json({ notifications: notes });
   } catch (err) {
-    console.error('Get notifications error:', err);
-    res.status(500).json({ error: 'Failed to fetch notifications' });
+    console.error("getUserNotifications ERROR:", err);
+    res.status(500).json({ error: "Failed to fetch notifications" });
   }
 };
 
+
+/* =====================================================================
+   3) Create Notification (Admin / System)
+=====================================================================*/
+exports.createNotification = async (req, res) => {
+  try {
+    const note = await Notification.create(req.body);
+
+    // Push live to recipient channel
+    req.app.get("io")?.to(`user:${note.recipientId}`).emit("notification:new", note);
+
+    res.json({ message: "Notification created", note });
+
+  } catch (err) {
+    console.error("Create Notification Error:", err);
+    res.status(500).json({ error: "Failed to create notification" });
+  }
+};
+
+/* =====================================================================
+   4) Mark Single Notification Read
+=====================================================================*/
 exports.markAsRead = async (req, res) => {
   try {
-    const { id } = req.params;
-    const note = await Notification.findByPk(id);
-    if (!note) return res.status(404).json({ error: 'Notification not found' });
+    const note = await Notification.findByPk(req.params.id);
+    if (!note) return res.status(404).json({ error: "Not found" });
 
     await note.update({ isRead: true });
-    res.json({ message: 'Notification marked as read', note });
+    res.json({ message: "Marked as read" });
+
   } catch (err) {
-    console.error('Mark notification read error:', err);
-    res.status(500).json({ error: 'Failed to update notification' });
+    console.error(err);
+    res.status(500).json({ error: "Failed to update notification" });
+  }
+};
+
+/* =====================================================================
+   5) Mark ALL as read
+=====================================================================*/
+exports.markAllAsRead = async (req, res) => {
+  try {
+    await Notification.update(
+      { isRead: true },
+      { where: { recipientId: req.user.id } }
+    );
+
+    res.json({ message: "All marked as read" });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to mark all read" });
+  }
+};
+
+/* =====================================================================
+   6) Delete Notification
+=====================================================================*/
+exports.deleteNotification = async (req, res) => {
+  try {
+    await Notification.destroy({ where: { id: req.params.id }});
+    res.json({ message: "Notification deleted" });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to delete notification" });
+  }
+};
+
+/* =====================================================================
+   7) Unread Count
+=====================================================================*/
+exports.getUnreadCount = async (req, res) => {
+  try {
+    const unread = await Notification.count({
+      where: { recipientId: req.user.id, isRead: false }
+    });
+
+    res.json({ unread });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to get unread count" });
   }
 };
 </file>
@@ -6689,222 +6753,165 @@ module.exports = {
 <file path="src/controllers/territoryController.js">
 // src/controllers/territoryController.js
 const { Territory, Area, Region, Dealer, User, sequelize } = require('../models');
+const { Op } = require("sequelize");
 
-// Create new territory
-const createTerritory = async (req, res) => {
+// CREATE TERRITORY
+exports.createTerritory = async (req, res) => {
   try {
     const { name, areaId, geojson, centroidLat, centroidLng } = req.body;
-
-    // Validate area exists and check permissions
     const area = await Area.findByPk(areaId);
-    if (!area) {
-      return res.status(404).json({ error: 'Area not found' });
-    }
 
-    // Check hierarchical permissions
-    const userRole = req.user.roleDetails?.name || req.user.role;
-    if (userRole === 'area_manager' && req.user.areaId !== areaId) {
-      return res.status(403).json({ error: 'Cannot create territories outside your area' });
-    } else if (userRole === 'regional_admin' && area.regionId !== req.user.regionId) {
-      return res.status(403).json({ error: 'Cannot create territories in areas outside your region' });
-    }
+    if (!area) return res.status(404).json({ error: "Area not found" });
 
-    const territory = await Territory.create({
-      name,
-      areaId,
-      geojson,
-      centroidLat,
-      centroidLng
-    });
+    const role = req.user.roleDetails?.name || req.user.role;
 
-    res.status(201).json({ message: 'Territory created successfully', territory });
+    if (role === "area_manager" && req.user.areaId !== areaId)
+      return res.status(403).json({ error: "Not allowed outside your area" });
+
+    if (role === "regional_admin" && area.regionId !== req.user.regionId)
+      return res.status(403).json({ error: "Different region" });
+
+    const territory = await Territory.create({ name, areaId, geojson, centroidLat, centroidLng });
+    res.status(201).json({ message: "Territory created", territory });
+
   } catch (err) {
-    console.error('createTerritory:', err);
-    res.status(500).json({ error: 'Failed to create territory' });
+    console.error("createTerritory:", err);
+    res.status(500).json({ error: "Failed to create" });
   }
 };
 
-// Get territories (scoped by user role)
-const getTerritories = async (req, res) => {
-  try {
-    const whereClause = {};
-    const userRole = req.user.roleDetails?.name || req.user.role;
 
-    // Apply scoping
-    if (userRole === 'area_manager') {
-      whereClause.areaId = req.user.areaId;
-    } else if (userRole === 'regional_admin') {
-      // Get areas in user's region, then territories in those areas
-      const areas = await Area.findAll({
-        where: { regionId: req.user.regionId },
-        attributes: ['id']
-      });
-      const areaIds = areas.map(a => a.id);
-      whereClause.areaId = { [require('sequelize').Op.in]: areaIds };
+// GET TERRITORIES
+exports.getTerritories = async (req, res) => {
+  try {
+    const where = {};
+    const role = req.user.roleDetails?.name || req.user.role;
+
+    if (role === "area_manager") where.areaId = req.user.areaId;
+
+    if (role === "regional_admin") {
+      const areas = await Area.findAll({ where: { regionId: req.user.regionId }, attributes:["id"] });
+      where.areaId = { [Op.in]: areas.map(a => a.id) };
     }
 
     const territories = await Territory.findAll({
-      where: whereClause,
+      where,
       include: [
         {
           model: Area,
-          as: 'area',
-          attributes: ['id', 'name'],
-          include: [{
-            model: Region,
-            as: 'region',
-            attributes: ['id', 'name']
-          }]
+          as: "area",
+          attributes:["id","name"],
+          include:[{ model: Region, as:"region", attributes:["id","name"] }]
         },
-        {
-          model: Dealer,
-          as: 'dealers',
-          attributes: ['id', 'businessName', 'dealerCode']
-        }
+        { model: Dealer, as:"dealers", attributes:["id","businessName","dealerCode"] }
       ],
-      order: [['name', 'ASC']]
+      order:[["name","ASC"]]
     });
 
     res.json({ territories });
+
   } catch (err) {
-    console.error('getTerritories:', err);
-    res.status(500).json({ error: 'Failed to fetch territories' });
+    console.error("getTerritories:", err);
+    res.status(500).json({ error:"Failed to load territories" });
   }
 };
 
-// Get single territory
-const getTerritory = async (req, res) => {
-  try {
-    const { id } = req.params;
 
-    const territory = await Territory.findByPk(id, {
-      include: [
+// SINGLE TERRITORY
+exports.getTerritory = async (req, res) => {
+  try {
+    const territory = await Territory.findByPk(req.params.id, {
+      include:[
         {
           model: Area,
-          as: 'area',
-          include: [{
-            model: Region,
-            as: 'region'
-          }]
+          as:"area",
+          include:[{ model: Region, as:"region" }]
         },
         {
           model: Dealer,
-          as: 'dealers',
-          include: [{
-            model: User,
-            as: 'user',
-            attributes: ['id', 'username', 'email']
-          }]
+          as:"dealers",
+          include:[{ model: User, as:"user", attributes:["id","username","email"] }]
         }
       ]
     });
 
-    if (!territory) {
-      return res.status(404).json({ error: 'Territory not found' });
-    }
+    if (!territory) return res.status(404).json({ error:"Not found" });
 
-    // Check permissions
-    const userRole = req.user.roleDetails?.name || req.user.role;
-    if (userRole === 'area_manager' && territory.areaId !== req.user.areaId) {
-      return res.status(403).json({ error: 'Access denied' });
-    } else if (userRole === 'regional_admin' && territory.area?.regionId !== req.user.regionId) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
+    const role = req.user.roleDetails?.name || req.user.role;
+    if (role === "area_manager" && territory.areaId !== req.user.areaId)
+      return res.status(403).json({ error:"Access denied" });
+
+    if (role === "regional_admin" && territory.area?.regionId !== req.user.regionId)
+      return res.status(403).json({ error:"Access denied" });
 
     res.json({ territory });
+
   } catch (err) {
-    console.error('getTerritory:', err);
-    res.status(500).json({ error: 'Failed to fetch territory' });
+    console.error("getTerritory:", err);
+    res.status(500).json({ error:"Failed to fetch" });
   }
 };
 
-// Update territory
-const updateTerritory = async (req, res) => {
+
+// UPDATE TERRITORY
+exports.updateTerritory = async (req, res) => {
   try {
-    const { id } = req.params;
-    const { name, geojson, centroidLat, centroidLng } = req.body;
+    const territory = await Territory.findByPk(req.params.id);
+    if (!territory) return res.status(404).json({ error:"Not found" });
 
-    const territory = await Territory.findByPk(id);
-    if (!territory) {
-      return res.status(404).json({ error: 'Territory not found' });
+    const role = req.user.roleDetails?.name || req.user.role;
+
+    if (role === "area_manager" && req.user.areaId !== territory.areaId)
+      return res.status(403).json({ error:"Not your area" });
+
+    if (role === "regional_admin") {
+      const area = await Area.findByPk(territory.areaId);
+      if (area.regionId !== req.user.regionId)
+        return res.status(403).json({ error:"Not your region" });
     }
 
-    // Check permissions
-    const userRole = req.user.roleDetails?.name || req.user.role;
-    if (userRole === 'area_manager' && territory.areaId !== req.user.areaId) {
-      return res.status(403).json({ error: 'Cannot modify territories outside your area' });
-    } else if (userRole === 'regional_admin' && territory.area?.regionId !== req.user.regionId) {
-      return res.status(403).json({ error: 'Cannot modify territories outside your region' });
-    }
+    await territory.update(req.body);
+    res.json({ message:"Updated", territory });
 
-    await territory.update({
-      name: name || territory.name,
-      geojson: geojson || territory.geojson,
-      centroidLat: centroidLat || territory.centroidLat,
-      centroidLng: centroidLng || territory.centroidLng
-    });
-
-    res.json({ message: 'Territory updated successfully', territory });
   } catch (err) {
-    console.error('updateTerritory:', err);
-    res.status(500).json({ error: 'Failed to update territory' });
+    console.error("updateTerritory:", err);
+    res.status(500).json({ error:"Update failed" });
   }
 };
 
-// Delete territory (with validation)
-const deleteTerritory = async (req, res) => {
+
+// DELETE TERRITORY
+exports.deleteTerritory = async (req, res) => {
   const t = await sequelize.transaction();
   try {
-    const { id } = req.params;
-
-    const territory = await Territory.findByPk(id, {
-      include: [
-        { model: Dealer, as: 'dealers' },
-        {
-          model: Area,
-          as: 'area',
-          include: [{ model: Region, as: 'region' }]
-        }
+    const territory = await Territory.findByPk(req.params.id, {
+      include:[
+        { model: Dealer, as:"dealers" },
+        { model: Area, as:"area", include:[{ model:Region, as:"region" }] }
       ],
-      transaction: t
+      transaction:t
     });
 
-    if (!territory) {
-      return res.status(404).json({ error: 'Territory not found' });
-    }
+    if (!territory) return res.status(404).json({ error:"Not found" });
+    if (territory.dealers.length) return res.status(400).json({ error:"Move dealers first" });
 
-    // Check if territory has dealers
-    if (territory.dealers && territory.dealers.length > 0) {
-      return res.status(400).json({
-        error: 'Cannot delete territory that contains dealers. Move dealers first.'
-      });
-    }
+    const role = req.user.roleDetails?.name || req.user.role;
 
-    // Check permissions
-    const userRole = req.user.roleDetails?.name || req.user.role;
-    if (userRole === 'area_manager' && territory.areaId !== req.user.areaId) {
-      return res.status(403).json({ error: 'Cannot delete territories outside your area' });
-    } else if (userRole === 'regional_admin' && territory.area?.regionId !== req.user.regionId) {
-      return res.status(403).json({ error: 'Cannot delete territories outside your region' });
-    }
+    if (role === "area_manager" && req.user.areaId !== territory.areaId)
+      return res.status(403).json({ error:"Not your area" });
 
-    await territory.destroy({ transaction: t });
+    if (role === "regional_admin" && territory.area.regionId !== req.user.regionId)
+      return res.status(403).json({ error:"Not your region" });
+
+    await territory.destroy({ transaction:t });
     await t.commit();
+    res.json({ message:"Deleted" });
 
-    res.json({ message: 'Territory deleted successfully' });
   } catch (err) {
     await t.rollback();
-    console.error('deleteTerritory:', err);
-    res.status(500).json({ error: 'Failed to delete territory' });
+    console.error("deleteTerritory:", err);
+    res.status(500).json({ error:"Delete failed" });
   }
-};
-
-module.exports = {
-  createTerritory,
-  getTerritories,
-  getTerritory,
-  updateTerritory,
-  deleteTerritory
 };
 </file>
 
@@ -6958,15 +6965,20 @@ const authenticate = async (req, res, next) => {
     if (!user) return res.status(401).json({ error: "User not found" });
 
     req.user = {
-      id: user.id,
-      username: user.username,
-      email: user.email,
-      roleId: user.roleId,
-      role: user.roleDetails?.name || null,
-      dealerId: user.dealerId || user.dealer?.id || null,
-      isActive: user.isActive,
-      isBlocked: user.isBlocked,
-    };
+  id: user.id,
+  username: user.username,
+  email: user.email,
+  roleId: user.roleId,
+  role: user.roleDetails?.name || null,
+  dealerId: user.dealerId || user.dealer?.id || null,
+  isActive: user.isActive,
+  isBlocked: user.isBlocked,
+
+  regionId: user.regionId || null,
+  areaId: user.areaId || null,
+  territoryId: user.territoryId || null
+};
+
 
     return next();
   } catch (err) {
@@ -6999,29 +7011,36 @@ module.exports = { authenticate, authorize };
 </file>
 
 <file path="src/middleware/checkPermission.js">
-const { RolePermission, Permission } = require("../models");
+const { Role, Permission } = require("../models");
 
 module.exports = (permissionKey) => {
   return async (req, res, next) => {
     try {
-      const roleId = req.user.roleId;
+      const roleId = req.user?.roleId;
+      if (!roleId) return res.status(401).json({ error: "Unauthorized – No role found" });
 
-      const match = await Permission.findOne({
+      const hasPermission = await Permission.findOne({
         where: { key: permissionKey },
-        include: {
-          model: RolePermission,
-          where: { roleId }
-        }
+        include: [
+          {
+            model: Role,
+            as: "roles",                 // 🔥 REQUIRED ALIAS FIX
+            where: { id: roleId },
+            attributes: ["id"],
+            through: { attributes: [] }
+          }
+        ]
       });
 
-      if (!match) {
-        return res.status(403).json({ error: "Access denied: Permission missing" });
+      if (!hasPermission) {
+        return res.status(403).json({ error: "Access Denied — Missing Permission" });
       }
 
       next();
+
     } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: "Permission check failed" });
+      console.error("Permission middleware error:", err);
+      return res.status(500).json({ error: "Internal permission validation failed" });
     }
   };
 };
@@ -7770,40 +7789,29 @@ module.exports = (sequelize, DataTypes) => {
 <file path="src/models/Area.js">
 // src/models/Area.js
 module.exports = (sequelize, DataTypes) => {
-  const Area = sequelize.define('Area', {
-    id: {
-      type: DataTypes.UUID,
-      primaryKey: true,
-      defaultValue: DataTypes.UUIDV4
+  const Area = sequelize.define(
+    'Area',
+    {
+      id: {
+        type: DataTypes.UUID,
+        primaryKey: true,
+        defaultValue: DataTypes.UUIDV4
+      },
+      name: DataTypes.STRING,
+      regionId: DataTypes.UUID,
+      geojson: DataTypes.JSONB,
+      centroidLat: DataTypes.DOUBLE,
+      centroidLng: DataTypes.DOUBLE
     },
-    name: {
-      type: DataTypes.STRING,
-      allowNull: false
-    },
-    regionId: {
-      type: DataTypes.UUID,
-      allowNull: true
-    },
-    geojson: {
-      type: DataTypes.JSONB,
-      allowNull: true
-    },
-    centroidLat: {
-      type: DataTypes.DOUBLE,
-      allowNull: true
-    },
-    centroidLng: {
-      type: DataTypes.DOUBLE,
-      allowNull: true
-    }
-  }, {
-    tableName: 'areas'
-  });
+    { tableName: "areas" }
+  );
 
   Area.associate = (models) => {
-    Area.belongsTo(models.Region, { foreignKey: 'regionId' });
-    Area.hasMany(models.Territory, { foreignKey: 'areaId' });
-    Area.hasMany(models.User, { foreignKey: 'areaId', as: 'managers' });
+    Area.belongsTo(models.Region, { foreignKey: "regionId", as: "region" });
+
+    Area.hasMany(models.Territory, { foreignKey: "areaId", as: "territories" });
+
+    Area.hasMany(models.Dealer, { foreignKey: "areaId", as: "dealers" });
   };
 
   return Area;
@@ -7856,60 +7864,53 @@ module.exports = (sequelize, DataTypes) => {
 </file>
 
 <file path="src/models/Campaign.js">
-const { DataTypes } = require('sequelize');
-
 module.exports = (sequelize, DataTypes) => {
 
   const Campaign = sequelize.define('Campaign', {
     id: {
       type: DataTypes.UUID,
       defaultValue: DataTypes.UUIDV4,
-      primaryKey: true
+      primaryKey: true,
     },
-    campaignName: {
-      type: DataTypes.STRING,
-      allowNull: false
+
+    campaignName: { type: DataTypes.STRING, allowNull:false },
+    campaignType: { 
+      type: DataTypes.ENUM('promotion','sales_scheme','seasonal_offer'),
+      allowNull:false
     },
-    campaignType: {
-      type: DataTypes.ENUM('promotion', 'sales_scheme', 'seasonal_offer'),
-      allowNull: false
-    },
-    description: {
-      type: DataTypes.TEXT
-    },
-    startDate: {
-      type: DataTypes.DATE,
-      allowNull: false
-    },
-    endDate: {
-      type: DataTypes.DATE,
-      allowNull: false
-    },
-    productGroup: {
-      type: DataTypes.STRING
-    },
-    discountPercentage: {
-      type: DataTypes.DECIMAL(5, 2)
-    },
-    discountAmount: {
-      type: DataTypes.DECIMAL(15, 2)
-    },
-    targetAudience: {
-      type: DataTypes.JSON
-    },
+    description: DataTypes.TEXT,
+
+    startDate: { type: DataTypes.DATE, allowNull:false },
+    endDate: { type: DataTypes.DATE, allowNull:false },
+
+    productGroup: DataTypes.STRING,
+    discountPercentage: DataTypes.DECIMAL(5,2),
+    discountAmount: DataTypes.DECIMAL(15,2),
+
+    targetAudience: DataTypes.JSON,
+
     isActive: {
       type: DataTypes.BOOLEAN,
       defaultValue: true
     },
-    terms: {
-      type: DataTypes.TEXT
-    },
-    bannerImage: {
-      type: DataTypes.STRING
-    }
+
+    terms: DataTypes.TEXT,
+    bannerImage: DataTypes.STRING,
+
+    areaId: { type: DataTypes.UUID, allowNull:true }
   }, {
-    timestamps: true
+    timestamps:true,
+    tableName:"Campaigns"
   });
+
+  // 🔥 Add association (critical)
+  Campaign.associate = models => {
+    Campaign.belongsTo(models.Area, {
+      foreignKey:"areaId",
+      as:"area",
+      onDelete:"SET NULL"
+    });
+  };
 
   return Campaign;
 };
@@ -8515,27 +8516,38 @@ messageType: {
 <file path="src/models/Notification.js">
 // src/models/Notification.js
 module.exports = (sequelize, DataTypes) => {
-  const Notification = sequelize.define('Notification', {
-    // Optional sender (the user who triggered the event)
-    senderId: { type: DataTypes.UUID, allowNull: true },
+  const Notification = sequelize.define("Notification", {
+    id: {
+      type: DataTypes.UUID,
+      primaryKey: true,
+      defaultValue: DataTypes.UUIDV4
+    },
 
-    // Optional recipient (null if broadcasted to a role)
-    recipientId: { type: DataTypes.UUID, allowNull: true },
-
-    // Role-based broadcast target (e.g., 'manager', 'dealer', 'admin')
-    recipientRole: { type: DataTypes.STRING, allowNull: true },
+    senderId: { type: DataTypes.UUID, allowNull: true },       // person who triggered event
+    recipientId: { type: DataTypes.UUID, allowNull: true },    // sends to specific user
+    recipientRole: { type: DataTypes.STRING, allowNull: true },// OR role-wide
 
     title: { type: DataTypes.STRING, allowNull: false },
     message: { type: DataTypes.TEXT, allowNull: false },
 
-    // Category: 'document', 'pricing', 'chat', etc.
-    type: { type: DataTypes.STRING, allowNull: true },
+    type: { type: DataTypes.STRING, allowNull: true },         // 'document', 'pricing', etc.
+    relatedId: { type: DataTypes.UUID, allowNull: true },
 
-    // Related record ID (documentId, pricingId, etc.)
-    relatedId: { type: DataTypes.INTEGER, allowNull: true },
-
-    isRead: { type: DataTypes.BOOLEAN, defaultValue: false },
+    isRead: { type: DataTypes.BOOLEAN, defaultValue: false }
   });
+
+  // Add correct relationships
+  Notification.associate = (models) => {
+    Notification.belongsTo(models.User, {
+      foreignKey: "senderId",
+      as: "sender"
+    });
+
+    Notification.belongsTo(models.User, {
+      foreignKey: "recipientId",
+      as: "recipient"
+    });
+  };
 
   return Notification;
 };
@@ -8978,36 +8990,44 @@ module.exports = (sequelize, DataTypes) => {
 </file>
 
 <file path="src/models/Territory.js">
+// src/models/Territory.js
 module.exports = (sequelize, DataTypes) => {
-  const Territory = sequelize.define('Territory', {
+  const Territory = sequelize.define("Territory", {
     id: {
       type: DataTypes.UUID,
       primaryKey: true,
       defaultValue: DataTypes.UUIDV4
     },
     name: DataTypes.STRING,
+
     regionId: DataTypes.UUID,
     areaId: DataTypes.UUID,
 
-    // ADD THESE FIELDS
-    geojson: {
-      type: DataTypes.JSONB,
-      allowNull: true
-    },
-    centroidLat: {
-      type: DataTypes.DOUBLE,
-      allowNull: true
-    },
-    centroidLng: {
-      type: DataTypes.DOUBLE,
-      allowNull: true
-    }
-  }, { tableName: 'territories' });
+    geojson: DataTypes.JSONB,
+    centroidLat: DataTypes.DOUBLE,
+    centroidLng: DataTypes.DOUBLE
+  }, {
+    tableName: "territories"
+  });
 
   Territory.associate = models => {
-    Territory.belongsTo(models.Region, { foreignKey: 'regionId' });
-    Territory.belongsTo(models.Area, { foreignKey: 'areaId' });
-    Territory.hasMany(models.Dealer, { foreignKey: 'territoryId' });
+    // territory → region
+    Territory.belongsTo(models.Region, {
+      foreignKey: "regionId",
+      as: "region"
+    });
+
+    // territory → area
+    Territory.belongsTo(models.Area, {
+      foreignKey: "areaId",
+      as: "area"              // MUST MATCH controller
+    });
+
+    // territory → many dealers
+    Territory.hasMany(models.Dealer, {
+      foreignKey: "territoryId",
+      as: "dealers"           // MUST MATCH controller
+    });
   };
 
   return Territory;
@@ -9019,7 +9039,7 @@ const bcrypt = require("bcryptjs");
 
 module.exports = (sequelize, DataTypes) => {
 
-  const User = sequelize.define(
+ const User = sequelize.define(
     "User",
     {
       id: {
@@ -9028,167 +9048,88 @@ module.exports = (sequelize, DataTypes) => {
         primaryKey: true,
       },
 
-      username: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        unique: true,
-      },
+      username: { type: DataTypes.STRING, allowNull: false, unique: true },
+      email: { type: DataTypes.STRING, allowNull: false, unique: true, validate:{isEmail:true} },
+      password: { type: DataTypes.STRING, allowNull: false },
 
-      email: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        unique: true,
-        validate: { isEmail: true },
-      },
+      // 🔥 RBAC
+      roleId: { type: DataTypes.INTEGER, references:{ model:"roles", key:"id" } },
 
-      // 🔥 Link to roles table (RBAC)
-      roleId: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-        references: { model: "roles", key: "id" },
-      },
+      // 🔥 Org hierarchy mapping
+      regionId:   { type: DataTypes.UUID, references:{ model:"Regions", key:"id" }},
+      areaId:     { type: DataTypes.UUID, references:{ model:"Areas", key:"id" }},
+      territoryId:{ type: DataTypes.UUID, references:{ model:"Territories", key:"id" }},
+      dealerId:   { type: DataTypes.UUID, allowNull:true },
 
-      // 🔥 Link to Regions table
-      regionId: {
-        type: DataTypes.UUID,
-        allowNull: true,
-        references: { model: "Regions", key: "id" },
-      },
-
-      // 🔥 Link to Areas table
-      areaId: {
-        type: DataTypes.UUID,
-        allowNull: true,
-        references: { model: "Areas", key: "id" },
-      },
-
-      // 🔥 Link to Territories table
-      territoryId: {
-        type: DataTypes.UUID,
-        allowNull: true,
-        references: { model: "Territories", key: "id" },
-      },
-
-      // (Old ENUM – we can remove later)
-      role: {
-        type: DataTypes.ENUM(
-          "dealer",
-          "tm",
-          "am",
-          "sm",
-          "admin",
-          "key_user",
-          "accounts",
-          "inventory"
-        ),
-        allowNull: false,
-        defaultValue: "dealer",
-      },
-
-      password: {
-        type: DataTypes.STRING,
-        allowNull: false,
-      },
+      // 🔥 NEW → who this user reports to
+      managerId:  { type: DataTypes.UUID, allowNull:true, references:{ model:"Users", key:"id" }},
 
       phoneNumber: DataTypes.STRING,
-      isActive: { type: DataTypes.BOOLEAN, defaultValue: true },
-      isBlocked: { type: DataTypes.BOOLEAN, defaultValue: false },
+      isActive: { type: DataTypes.BOOLEAN, defaultValue:true },
+      isBlocked:{ type: DataTypes.BOOLEAN, defaultValue:false },
 
       lastLogin: DataTypes.DATE,
       otp: DataTypes.STRING,
       otpExpiry: DataTypes.DATE,
+
+      // Legacy ENUM — safe to remove later
+      role: {
+        type: DataTypes.ENUM("dealer","tm","am","sm","admin","key_user","accounts","inventory"),
+        defaultValue:"dealer"
+      }
     },
     {
-      timestamps: true,
-      tableName: "Users",
-      freezeTableName: true,
+      tableName:"Users",
+      timestamps:true,
+      freezeTableName:true,
 
-      hooks: {
-        beforeCreate: async (user) => {
-          if (user.password)
-            user.password = await bcrypt.hash(user.password, 10);
-        },
-        beforeUpdate: async (user) => {
-          if (user.changed("password"))
-            user.password = await bcrypt.hash(user.password, 10);
-        },
-      },
+      hooks:{
+        beforeCreate:async(user)=>{ if(user.password) user.password = await bcrypt.hash(user.password,10); },
+        beforeUpdate:async(user)=>{ if(user.changed("password")) user.password = await bcrypt.hash(user.password,10); }
+      }
     }
   );
 
-  // ============================
-  // INSTANCE METHODS
-  // ============================
-  User.prototype.validatePassword = function (password) {
-    return bcrypt.compare(password, this.password);
-  };
-
-  User.prototype.generateOTP = function () {
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  this.otp = otp;
-  this.otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
-
-  console.log(`🔐 OTP generated for user: ${this.username} → ${otp}`);
-
-  return otp;
-};
-
-
-  User.prototype.validateOTP = function (otp) {
-    if (!this.otp || !this.otpExpiry) return false;
-    return this.otp === otp && new Date() < this.otpExpiry;
-  };
-
-  // ============================
-  // ASSOCIATIONS
-  // ============================
+  // =====================================================
+  //        RELATIONSHIPS (NOW WITH HIERARCHY)
+  // =====================================================
   User.associate = (models) => {
-    // Dealer profile
-    User.belongsTo(models.Dealer, {
-      foreignKey: "dealerId",
-      as: "dealer",
-    });
 
-    // Managers manage many dealers
-    User.hasMany(models.Dealer, {
-      foreignKey: "managerId",
-      as: "managedDealers",
-    });
+    // SELF HIERARCHY 🔥🔥🔥
+    User.belongsTo(models.User,{ foreignKey:"managerId", as:"manager" });
+    User.hasMany(models.User,{ foreignKey:"managerId", as:"subordinates" });
 
-    // RBAC Role
-    User.belongsTo(models.Role, {
-      foreignKey: "roleId",
-      as: "roleDetails",
-    });
+    // Dealer access
+    User.belongsTo(models.Dealer,{ foreignKey:"dealerId", as:"dealer" });
+    User.hasMany(models.Dealer,{ foreignKey:"managerId", as:"managedDealers" });
 
-    // Region
-    User.belongsTo(models.Region, {
-      foreignKey: "regionId",
-      as: "region",
-    });
+    // RBAC
+    User.belongsTo(models.Role,{ foreignKey:"roleId", as:"roleDetails" });
 
-    // Area
-    User.belongsTo(models.Area, {
-      foreignKey: "areaId",
-      as: "area",
-    });
+    User.belongsTo(models.Region,{ foreignKey:"regionId", as:"region" });
+    User.belongsTo(models.Area,{ foreignKey:"areaId", as:"area" });
+    User.belongsTo(models.Territory,{ foreignKey:"territoryId", as:"territory" });
 
-    // Territory
-    User.belongsTo(models.Territory, {
-      foreignKey: "territoryId",
-      as: "territory",
-    });
+    // Chat/messages
+    User.hasMany(models.Message,{ foreignKey:"senderId", as:"sentMessages" });
+    User.hasMany(models.Message,{ foreignKey:"recipientId", as:"receivedMessages" });
+  };
 
-    // Chat
-    User.hasMany(models.Message, {
-      foreignKey: "senderId",
-      as: "sentMessages",
-    });
+  // =================
+  // INSTANCE METHODS
+  // =================
+  User.prototype.validatePassword = function(pwd){ return bcrypt.compare(pwd,this.password); };
 
-    User.hasMany(models.Message, {
-      foreignKey: "recipientId",
-      as: "receivedMessages",
-    });
+  User.prototype.generateOTP = function(){
+    const otp = Math.floor(100000 + Math.random()*900000).toString();
+    this.otp = otp;
+    this.otpExpiry = new Date(Date.now()+10*60*1000);
+    return otp;
+  };
+
+  User.prototype.validateOTP = function(otp){
+    if(!this.otp || !this.otpExpiry) return false;
+    return this.otp === otp && new Date() < this.otpExpiry;
   };
 
   return User;
@@ -9365,6 +9306,29 @@ router.post('/', authenticate, checkPermission('areas.manage'), createArea);
 router.get('/:id', authenticate, checkPermission('areas.view'), getArea);
 router.put('/:id', authenticate, checkPermission('areas.manage'), updateArea);
 router.delete('/:id', authenticate, checkPermission('areas.manage'), deleteArea);
+// 📌 AREA MANAGER DASHBOARD ROUTES (ADD BELOW CRUD ROUTES)
+
+router.get(
+  "/dashboard/summary",
+  authenticate,
+  checkPermission("dashboard.view.manager"),   // or create new: dashboard.view.area
+  require("../controllers/areaController").getAreaDashboardSummary
+);
+
+router.get(
+  "/dashboard/dealers",
+  authenticate,
+  checkPermission("dealer.view"),
+  require("../controllers/areaController").getAreaDealers
+);
+
+router.get(
+  "/dashboard/approvals",
+  authenticate,
+  checkPermission("documents.view"),
+  require("../controllers/areaController").getAreaApprovals
+);
+
 
 module.exports = router;
 </file>

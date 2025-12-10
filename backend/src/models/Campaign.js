@@ -8,7 +8,7 @@ module.exports = (sequelize, DataTypes) => {
     },
 
     campaignName: { type: DataTypes.STRING, allowNull:false },
-    campaignType: { 
+    campaignType: {
       type: DataTypes.ENUM('promotion','sales_scheme','seasonal_offer'),
       allowNull:false
     },
@@ -31,7 +31,20 @@ module.exports = (sequelize, DataTypes) => {
     terms: DataTypes.TEXT,
     bannerImage: DataTypes.STRING,
 
-    areaId: { type: DataTypes.UUID, allowNull:true }
+    areaId: { type: DataTypes.UUID, allowNull:true },
+
+    // Approval workflow fields
+    approvalStage: {
+      type: DataTypes.ENUM('area_manager', 'regional_admin', 'super_admin'),
+      allowNull: true
+    },
+    approvalStatus: {
+      type: DataTypes.ENUM('pending', 'approved', 'rejected'),
+      defaultValue: 'pending'
+    },
+    approvedBy: DataTypes.STRING,
+    approvedAt: DataTypes.DATE,
+    rejectionReason: DataTypes.TEXT
   }, {
     timestamps:true,
     tableName:"Campaigns"

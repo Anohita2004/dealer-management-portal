@@ -74,6 +74,19 @@ module.exports = (sequelize, DataTypes) => {
       pdfPath: DataTypes.STRING,
       sapDocumentNumber: DataTypes.STRING,
       paymentDate: DataTypes.DATE,
+
+      // Approval workflow fields
+      approvalStage: {
+        type: DataTypes.ENUM('dealer_admin', 'territory_manager', 'area_manager', 'regional_manager', 'regional_admin'),
+        allowNull: true
+      },
+      approvalStatus: {
+        type: DataTypes.ENUM('pending', 'approved', 'rejected'),
+        defaultValue: 'pending'
+      },
+      approvedBy: DataTypes.STRING,
+      approvedAt: DataTypes.DATE,
+      rejectionReason: DataTypes.TEXT
     },
     {
       timestamps: true,

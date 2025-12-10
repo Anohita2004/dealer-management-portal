@@ -1,26 +1,37 @@
 // src/models/Notification.js
 module.exports = (sequelize, DataTypes) => {
-  const Notification = sequelize.define('Notification', {
-    // Optional sender (the user who triggered the event)
-    senderId: { type: DataTypes.UUID, allowNull: true },
+  const Notification = sequelize.define("Notification", {
+    id: {
+      type: DataTypes.UUID,
+      primaryKey: true,
+      defaultValue: DataTypes.UUIDV4
+    },
 
-    // Optional recipient (null if broadcasted to a role)
-    recipientId: { type: DataTypes.UUID, allowNull: true },
-
-    // Role-based broadcast target (e.g., 'manager', 'dealer', 'admin')
-    recipientRole: { type: DataTypes.STRING, allowNull: true },
+    senderId: { type: DataTypes.UUID, allowNull: true },       // person who triggered event
+    recipientId: { type: DataTypes.UUID, allowNull: true },    // sends to specific user
+    recipientRole: { type: DataTypes.STRING, allowNull: true },// OR role-wide
 
     title: { type: DataTypes.STRING, allowNull: false },
     message: { type: DataTypes.TEXT, allowNull: false },
 
-    // Category: 'document', 'pricing', 'chat', etc.
-    type: { type: DataTypes.STRING, allowNull: true },
+    type: { type: DataTypes.STRING, allowNull: true },         // 'document', 'pricing', etc.
+    relatedId: { type: DataTypes.UUID, allowNull: true },
 
-    // Related record ID (documentId, pricingId, etc.)
-    relatedId: { type: DataTypes.INTEGER, allowNull: true },
-
-    isRead: { type: DataTypes.BOOLEAN, defaultValue: false },
+    isRead: { type: DataTypes.BOOLEAN, defaultValue: false }
   });
+
+  // Add correct relationships
+  Notification.associate = (models) => {
+    Notification.belongsTo(models.User, {
+      foreignKey: "senderId",
+      as: "sender"
+    });
+
+    Notification.belongsTo(models.User, {
+      foreignKey: "recipientId",
+      as: "recipient"
+    });
+  };
 
   return Notification;
 };

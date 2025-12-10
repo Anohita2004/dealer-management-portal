@@ -11,4 +11,8 @@ router.get('/:id/pdf', authenticate, invoiceController.generateInvoicePDF);
 router.post('/', authenticate, authorize('super_admin', 'key_user', 'dealer_staff'), invoiceController.createInvoice);
 router.put('/:id', authenticate, authorize('super_admin', 'key_user'), invoiceController.updateInvoice);
 
+// Approval routes
+router.post('/:id/approve', authenticate, authorize('dealer_admin', 'territory_manager', 'area_manager', 'regional_manager', 'regional_admin'), invoiceController.approveInvoice);
+router.get('/pending/approvals', authenticate, authorize('dealer_admin', 'territory_manager', 'area_manager', 'regional_manager', 'regional_admin'), invoiceController.getPendingInvoices);
+
 module.exports = router;
