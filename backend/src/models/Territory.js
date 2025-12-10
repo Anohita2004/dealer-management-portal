@@ -7,6 +7,7 @@ module.exports = (sequelize, DataTypes) => {
     },
     name: DataTypes.STRING,
     regionId: DataTypes.UUID,
+    areaId: DataTypes.UUID,
 
     // ADD THESE FIELDS
     geojson: {
@@ -25,6 +26,7 @@ module.exports = (sequelize, DataTypes) => {
 
   Territory.associate = models => {
     Territory.belongsTo(models.Region, { foreignKey: 'regionId' });
+    Territory.belongsTo(models.Area, { foreignKey: 'areaId' });
     Territory.hasMany(models.Dealer, { foreignKey: 'territoryId' });
   };
 

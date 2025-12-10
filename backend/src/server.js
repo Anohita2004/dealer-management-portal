@@ -9,7 +9,7 @@ const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
-const { syncDatabase, sequelize } = require('./models');
+const { sequelize } = require('./models');
 
 // --- Import routes (keep the same as your repo) ---
 const authRoutes = require('./routes/authRoutes');
@@ -34,6 +34,9 @@ const materialRoutes = require('./routes/materialRoutes');
 const orderRoutes = require('./routes/orderRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const chatRoutes = require('./routes/chatRoutes'); // new chat endpoints
+const areaRoutes = require('./routes/areaRoutes');
+const territoryRoutes = require('./routes/territoryRoutes');
+const teamRoutes = require('./routes/teamRoutes');
 
 // --- Express app setup ---
 const app = express();
@@ -90,6 +93,9 @@ app.use('/api/materials', materialRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/chat', chatRoutes); // role-filtered chat REST endpoints
+app.use('/api/areas', areaRoutes);
+app.use('/api/territories', territoryRoutes);
+app.use('/api/teams', teamRoutes);
 
 // --- Error handling (keep your behavior) ---
 app.use((err, req, res, next) => {

@@ -1,27 +1,35 @@
 // src/utils/approvalEngine.js
 
-// Define multi-stage flows
+// Define multi-stage flows based on hierarchy
 const FLOWS = {
-  order: ["regional_manager", "regional_admin", "super_admin"],
-  payment: ["dealer_admin", "finance_admin", "super_admin"],
-  document: ["dealer_admin", "regional_manager", "regional_admin", "super_admin"],
+  order: ["territory_manager", "area_manager", "regional_manager"],
+  payment: ["dealer_admin", "territory_manager", "area_manager", "regional_manager", "regional_admin"],
+  document: ["dealer_admin", "territory_manager", "area_manager", "regional_manager"],
+  pricing: ["area_manager", "regional_admin", "super_admin"], // For pricing approvals
 };
 
 // Map stage → allowed roles (can be same as stage or include higher roles)
 const STAGE_APPROVERS = {
   order: {
+    territory_manager: ["territory_manager", "area_manager", "regional_manager", "regional_admin", "super_admin"],
+    area_manager: ["area_manager", "regional_manager", "regional_admin", "super_admin"],
     regional_manager: ["regional_manager", "regional_admin", "super_admin"],
-    regional_admin: ["regional_admin", "super_admin"],
-    super_admin: ["super_admin"],
   },
   payment: {
-    dealer_admin: ["dealer_admin", "super_admin"],
-    finance_admin: ["finance_admin", "super_admin"],
-    super_admin: ["super_admin"],
+    dealer_admin: ["dealer_admin", "territory_manager", "area_manager", "super_admin"],
+    territory_manager: ["territory_manager", "area_manager", "regional_manager", "regional_admin", "super_admin"],
+    area_manager: ["area_manager", "regional_manager", "regional_admin", "super_admin"],
+    regional_manager: ["regional_manager", "regional_admin", "super_admin"],
+    regional_admin: ["regional_admin", "super_admin"],
   },
   document: {
-    dealer_admin: ["dealer_admin", "super_admin"],
-    regional_manager: ["regional_manager", "super_admin"],
+    dealer_admin: ["dealer_admin", "territory_manager", "area_manager", "super_admin"],
+    territory_manager: ["territory_manager", "area_manager", "regional_manager", "regional_admin", "super_admin"],
+    area_manager: ["area_manager", "regional_manager", "regional_admin", "super_admin"],
+    regional_manager: ["regional_manager", "regional_admin", "super_admin"],
+  },
+  pricing: {
+    area_manager: ["area_manager", "regional_admin", "super_admin"],
     regional_admin: ["regional_admin", "super_admin"],
     super_admin: ["super_admin"],
   },

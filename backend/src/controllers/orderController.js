@@ -1,6 +1,7 @@
 // src/controllers/orderController.js
 const { Order, OrderItem, Material, Dealer, sequelize } = require("../models");
 const { nextStage, isApproverForStage } = require("../utils/approvalEngine");
+const { getDealersUnderUserScope } = require("../middleware/scoping");
 
 // --------------------------------------
 // PLACE ORDER  (Dealer / Dealer Staff)
@@ -99,11 +100,21 @@ exports.getMyOrders = async (req, res) => {
 };
 
 // --------------------------------------
-// ADMIN / MANAGER → ALL ORDERS
+// ADMIN / MANAGER → ALL ORDERS (SCOPED)
 // --------------------------------------
 exports.getAllOrders = async (req, res) => {
   try {
+    const roleName = req.user.roleDetails?.name || req.user.role;
+    let whereClause = {};
+
+    // Apply scoping for non-super-admin roles
+    if (!['super_admin', 'technical_admin'].includes(roleName)) {
+      const dealersUnderScope = await getDealersUnderUserScope(req.user);
+      whereClause.dealerId = { [require('sequelize').Op.in]: dealersUnderScope };
+    }
+
     const orders = await Order.findAll({
+      where: whereClause,
       include: [
         { model: OrderItem, as: "items", include: [{ model: Material, as: "material" }] },
         { model: Dealer, as: "dealer" },

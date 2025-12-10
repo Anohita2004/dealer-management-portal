@@ -42,7 +42,7 @@ The content is organized as follows:
 <directory_structure>
 .env.example
 .gitignore
-assets/~$material_template.xlsx
+.sequelizerc
 assets/material_template.xlsx
 package.json
 reports/dealer_performance.pdf
@@ -51,6 +51,7 @@ src/config/config.js
 src/config/database.js
 src/controllers/accountsController.js
 src/controllers/adminController.js
+src/controllers/areaController.js
 src/controllers/authController.js
 src/controllers/campaignController.js
 src/controllers/chatController.js
@@ -63,6 +64,7 @@ src/controllers/mapsController.js
 src/controllers/materialController.js
 src/controllers/materialGroupController.js
 src/controllers/messageController.js
+src/controllers/notificationController.js
 src/controllers/notificationsController.js
 src/controllers/orderController.js
 src/controllers/paymentController.js
@@ -73,15 +75,24 @@ src/controllers/regionController.js
 src/controllers/reportController.js
 src/controllers/roleController.js
 src/controllers/sapController.js
+src/controllers/teamController.js
+src/controllers/territoryController.js
 src/middleware/auth.js
 src/middleware/checkPermission.js
 src/middleware/checkRole.js
+src/middleware/scoping.js
 src/middleware/upload.js
 src/migrations/00-create-regions.js
 src/migrations/01-create-territories.js
 src/migrations/02-add-latlng-territoryid-to-dealers.js
 src/migrations/03-add-geo-to-regions.js
+src/migrations/04-create-areas.js
+src/migrations/05-add-areaId-to-territories.js
+src/migrations/06-add-areaId-to-dealers.js
+src/migrations/07-add-area-and-territory-to-users.js
+src/migrations/20-add-approval-fields.js
 src/models/AccountStatement.js
+src/models/Area.js
 src/models/AuditLog.js
 src/models/Campaign.js
 src/models/CreditDebitNote.js
@@ -96,7 +107,7 @@ src/models/Message.js
 src/models/Notification.js
 src/models/Order.js
 src/models/OrderItem.js
-src/models/PaymenRequest.js
+src/models/PaymentRequest.js
 src/models/Permission.js
 src/models/PricingUpdate.js
 src/models/Product.js
@@ -108,6 +119,7 @@ src/models/Territory.js
 src/models/User.js
 src/routes/accountsRoutes.js
 src/routes/adminRoutes.js
+src/routes/areaRoutes.js
 src/routes/authRoutes.js
 src/routes/campaignRoutes.js
 src/routes/chatRoutes.js
@@ -129,12 +141,15 @@ src/routes/regionRoutes.js
 src/routes/reportRoutes.js
 src/routes/roles.js
 src/routes/sapRoutes.js
+src/routes/teamRoutes.js
+src/routes/territoryRoutes.js
 src/server.js
 src/uploads/1764841543303-929036021.xlsx
 src/uploads/1764842156761-528762324.xlsx
 src/uploads/1764842666516-4666789.xlsx
 src/uploads/1764842747919-204325724.xlsx
 src/uploads/1764842877915-945065415.xlsx
+src/utils/approvalEngine.js
 src/utils/jwt.js
 src/utils/seed.js
 src/utils/seedPermissions.js
@@ -191,6 +206,17 @@ CORS_ORIGIN=http://localhost:8080
 <file path=".gitignore">
 .github/instructions/kluster-code-verify.instructions.md
 .kluster
+</file>
+
+<file path=".sequelizerc">
+const path = require('path')
+
+module.exports = {
+  'config': path.resolve('src', 'config', 'config.js'),
+  'migrations-path': path.resolve('src', 'migrations'),
+  'models-path': path.resolve('src', 'models'),
+  'seeders-path': path.resolve('src', 'seeders')
+}
 </file>
 
 <file path="package.json">
@@ -649,22 +675,77 @@ const getAllUsers = async (req, res) => {
   }
 };
 const createUser = async (req, res) => {
+  const t = await sequelize.transaction();
   try {
-    const { username, email, password, roleId, dealerId, regionId, isActive } = req.body;
+    const {
+      username,
+      email,
+      password,
+      roleId,
+      dealerId,
+      regionId,
+      areaId,
+      territoryId,
+      isActive
+    } = req.body;
 
     // Check for duplicate email
-    const existing = await User.findOne({ where: { email } });
+    const existing = await User.findOne({ where: { email }, transaction: t });
     if (existing) return res.status(400).json({ error: "Email already exists" });
+
+    // Get the role being assigned
+    const targetRole = await Role.findByPk(roleId, { transaction: t });
+    if (!targetRole) return res.status(400).json({ error: "Invalid role" });
+
+    const creatorRole = req.user.roleDetails?.name || req.user.role;
+
+    // Hierarchical constraints based on creator's role
+    let validatedRegionId = regionId;
+    let validatedAreaId = areaId;
+    let validatedTerritoryId = territoryId;
+    let validatedDealerId = dealerId;
+
+    if (creatorRole === 'regional_admin') {
+      // Regional admin can only create users in their region
+      validatedRegionId = req.user.regionId;
+      if (targetRole.name === 'regional_admin' || targetRole.name === 'regional_manager') {
+        // Only create other regional roles if same region
+      } else if (targetRole.name === 'area_manager') {
+        validatedAreaId = areaId; // Must be an area in their region
+      } else if (targetRole.name === 'territory_manager') {
+        validatedTerritoryId = territoryId; // Must be territory in their region
+      }
+    } else if (creatorRole === 'area_manager') {
+      // Area manager can only create users in their area
+      validatedAreaId = req.user.areaId;
+      if (targetRole.name === 'area_manager' || targetRole.name === 'regional_admin') {
+        return res.status(403).json({ error: "Cannot create higher-level admin" });
+      }
+    } else if (creatorRole === 'territory_manager') {
+      // Territory manager can only create territory and dealer staff
+      validatedTerritoryId = req.user.territoryId;
+      if (!['territory_manager', 'dealer_admin', 'dealer_staff'].includes(targetRole.name)) {
+        return res.status(403).json({ error: "Cannot create users above your level" });
+      }
+    } else if (creatorRole !== 'super_admin') {
+      // Dealer admins can only create dealer staff
+      if (targetRole.name !== 'dealer_staff') {
+        return res.status(403).json({ error: "Dealer admin can only create dealer staff" });
+      }
+      validatedDealerId = req.user.dealerId;
+    }
 
     const user = await User.create({
       username,
       email,
       password, // assuming hooks handle hashing
       roleId,
-      dealerId: dealerId || null,
-      regionId: regionId || null,
+      dealerId: dealerId || validatedDealerId || null,
+      regionId: validatedRegionId || null,
+      areaId: validatedAreaId || null,
+      territoryId: validatedTerritoryId || null,
       isActive
-    });
+    }, { transaction: t });
 
     await AuditLog.create({
       userId: req.user.id,
@@ -673,10 +754,12 @@ const createUser = async (req, res) => {
       entityId: user.id,
       changes: req.body,
       ipAddress: req.ip
-    });
+    }, { transaction: t });
 
+    await t.commit();
     res.json({ message: "User created", user });
   } catch (err) {
+    await t.rollback();
     console.error("createUser:", err);
     res.status(500).json({ error: "Failed to create user" });
   }
@@ -939,6 +1022,205 @@ module.exports = {
   getAdminReport,
   assignRegion,
   
+};
+</file>
+
+<file path="src/controllers/areaController.js">
+// src/controllers/areaController.js
+const { Area, Region, Territory, Dealer, sequelize } = require('../models');
+
+// Create new area
+const createArea = async (req, res) => {
+  try {
+    const { name, regionId, geojson, centroidLat, centroidLng } = req.body;
+
+    // Validate region exists
+    const region = await Region.findByPk(regionId);
+    if (!region) {
+      return res.status(404).json({ error: 'Region not found' });
+    }
+
+    // Check hierarchical permissions
+    const userRole = req.user.roleDetails?.name || req.user.role;
+    if (userRole === 'regional_admin' && req.user.regionId !== regionId) {
+      return res.status(403).json({ error: 'Cannot create areas outside your region' });
+    }
+
+    const area = await Area.create({
+      name,
+      regionId,
+      geojson,
+      centroidLat,
+      centroidLng
+    });
+
+    res.status(201).json({ message: 'Area created successfully', area });
+  } catch (err) {
+    console.error('createArea:', err);
+    res.status(500).json({ error: 'Failed to create area' });
+  }
+};
+
+// Get all areas (scoped by user role)
+const getAreas = async (req, res) => {
+  try {
+    const whereClause = {};
+    const userRole = req.user.roleDetails?.name || req.user.role;
+
+    if (userRole === 'regional_admin') {
+      whereClause.regionId = req.user.regionId;
+    }
+
+    const areas = await Area.findAll({
+      where: whereClause,
+      include: [
+        {
+          model: Region,
+          as: 'region',
+          attributes: ['id', 'name']
+        },
+        {
+          model: Territory,
+          as: 'territories',
+          attributes: ['id', 'name']
+        }
+      ],
+      order: [['name', 'ASC']]
+    });
+
+    res.json({ areas });
+  } catch (err) {
+    console.error('getAreas:', err);
+    res.status(500).json({ error: 'Failed to fetch areas' });
+  }
+};
+
+// Get single area with full details
+const getArea = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const area = await Area.findByPk(id, {
+      include: [
+        {
+          model: Region,
+          as: 'region',
+          attributes: ['id', 'name', 'geojson']
+        },
+        {
+          model: Territory,
+          as: 'territories',
+          include: [{
+            model: Dealer,
+            as: 'dealers',
+            attributes: ['id', 'businessName', 'dealerCode', 'lat', 'lng']
+          }]
+        }
+      ]
+    });
+
+    if (!area) {
+      return res.status(404).json({ error: 'Area not found' });
+    }
+
+    // Check access permissions
+    const userRole = req.user.roleDetails?.name || req.user.role;
+    if (userRole === 'regional_admin' && area.regionId !== req.user.regionId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    res.json({ area });
+  } catch (err) {
+    console.error('getArea:', err);
+    res.status(500).json({ error: 'Failed to fetch area' });
+  }
+};
+
+// Update area
+const updateArea = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, geojson, centroidLat, centroidLng } = req.body;
+
+    const area = await Area.findByPk(id);
+    if (!area) {
+      return res.status(404).json({ error: 'Area not found' });
+    }
+
+    // Check permissions
+    const userRole = req.user.roleDetails?.name || req.user.role;
+    if (userRole === 'regional_admin' && area.regionId !== req.user.regionId) {
+      return res.status(403).json({ error: 'Cannot modify areas outside your region' });
+    }
+
+    await area.update({
+      name: name || area.name,
+      geojson: geojson || area.geojson,
+      centroidLat: centroidLat || area.centroidLat,
+      centroidLng: centroidLng || area.centroidLng
+    });
+
+    res.json({ message: 'Area updated successfully', area });
+  } catch (err) {
+    console.error('updateArea:', err);
+    res.status(500).json({ error: 'Failed to update area' });
+  }
+};
+
+// Delete area (with validation)
+const deleteArea = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const { id } = req.params;
+
+    const area = await Area.findByPk(id, {
+      include: [
+        { model: Territory, as: 'territories' },
+        { model: Dealer, as: 'dealers' }
+      ],
+      transaction: t
+    });
+
+    if (!area) {
+      return res.status(404).json({ error: 'Area not found' });
+    }
+
+    // Check if area has territories or dealers
+    if (area.territories && area.territories.length > 0) {
+      return res.status(400).json({
+        error: 'Cannot delete area that contains territories. Move territories first.'
+      });
+    }
+
+    if (area.dealers && area.dealers.length > 0) {
+      return res.status(400).json({
+        error: 'Cannot delete area that contains dealers. Reassign dealers first.'
+      });
+    }
+
+    // Check permissions
+    const userRole = req.user.roleDetails?.name || req.user.role;
+    if (userRole === 'regional_admin' && area.regionId !== req.user.regionId) {
+      return res.status(403).json({ error: 'Cannot delete areas outside your region' });
+    }
+
+    await area.destroy({ transaction: t });
+    await t.commit();
+
+    res.json({ message: 'Area deleted successfully' });
+  } catch (err) {
+    await t.rollback();
+    console.error('deleteArea:', err);
+    res.status(500).json({ error: 'Failed to delete area' });
+  }
+};
+
+module.exports = {
+  createArea,
+  getAreas,
+  getArea,
+  updateArea,
+  deleteArea
 };
 </file>
 
@@ -2010,12 +2292,18 @@ module.exports = {
 </file>
 
 <file path="src/controllers/documentController.js">
+// =====================================================================
+// DOCUMENT CONTROLLER (Multi-Stage Workflow Integrated)
+// =====================================================================
 const { Document, Dealer, AuditLog, Notification } = require('../models');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const { nextStage, isApproverForStage } = require("../utils/approvalEngine");
 
-// ========================= Multer Storage Config =========================
+// =====================================================================
+// MULTER STORAGE CONFIG
+// =====================================================================
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const uploadPath = path.join(__dirname, '../../uploads');
@@ -2025,8 +2313,8 @@ const storage = multer.diskStorage({
     cb(null, uploadPath);
   },
   filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+    const unique = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    cb(null, file.fieldname + '-' + unique + path.extname(file.originalname));
   },
 });
 
@@ -2034,31 +2322,39 @@ const upload = multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
   fileFilter: (req, file, cb) => {
-    const allowedTypes = /pdf|doc|docx|jpg|jpeg|png/;
-    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-    const mimetype = allowedTypes.test(file.mimetype);
-    if (mimetype && extname) cb(null, true);
-    else cb(new Error('Only PDF, DOC, DOCX, JPG, JPEG, PNG files are allowed'));
+    const allowed = /pdf|doc|docx|jpg|jpeg|png/;
+    const isExt = allowed.test(path.extname(file.originalname).toLowerCase());
+    const isMime = allowed.test(file.mimetype);
+
+    if (isExt && isMime) cb(null, true);
+    else cb(new Error("Only PDF, DOC, DOCX, JPG, JPEG, PNG allowed"));
   },
 });
 
-// ========================= Get All Documents =========================
+// =====================================================================
+// GET ALL DOCUMENTS
+// =====================================================================
 const getAllDocuments = async (req, res) => {
   try {
     const { page = 1, limit = 10, dealerId, documentType } = req.query;
     const offset = (page - 1) * limit;
 
     const where = {};
+
     if (dealerId) where.dealerId = dealerId;
     if (documentType) where.documentType = documentType;
-    if (req.user.role === 'dealer') where.dealerId = req.user.dealerId;
+
+    // Dealer role restriction
+    if (req.user.role === "dealer") {
+      where.dealerId = req.user.dealerId;
+    }
 
     const { count, rows } = await Document.findAndCountAll({
       where,
-      include: [{ model: Dealer, as: 'dealer' }],
+      include: [{ model: Dealer, as: "dealer" }],
       limit: parseInt(limit),
       offset: parseInt(offset),
-      order: [['createdAt', 'DESC']],
+      order: [["createdAt", "DESC"]],
     });
 
     res.json({
@@ -2067,16 +2363,18 @@ const getAllDocuments = async (req, res) => {
       page: parseInt(page),
       totalPages: Math.ceil(count / limit),
     });
-  } catch (error) {
-    console.error('Get documents error:', error);
-    res.status(500).json({ error: 'Failed to fetch documents' });
+  } catch (err) {
+    console.error("Get documents error:", err);
+    res.status(500).json({ error: "Failed to fetch documents" });
   }
 };
 
-// ========================= Upload Document =========================
+// =====================================================================
+// UPLOAD DOCUMENT
+// =====================================================================
 const uploadDocument = async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
     const { documentType, description, dealerId } = req.body;
 
@@ -2086,192 +2384,234 @@ const uploadDocument = async (req, res) => {
       filePath: req.file.path,
       fileSize: req.file.size,
       mimeType: req.file.mimetype,
-      uploadedBy: req.user.username,
       description,
-      dealerId: req.user.role === 'dealer' ? req.user.dealerId : dealerId,
+
+      dealerId: req.user.role === "dealer" ? req.user.dealerId : dealerId,
+      uploadedBy: req.user.username,
+
+      // Multi-stage workflow defaults
+      approvalStage: "dealer_admin",
+      approvalStatus: "pending",
     });
 
     await AuditLog.create({
       userId: req.user.id,
-      action: 'UPLOAD_DOCUMENT',
-      entity: 'Document',
+      action: "UPLOAD_DOCUMENT",
+      entity: "Document",
       entityId: document.id,
-      changes: { documentName: req.file.originalname, documentType },
+      changes: { documentType, documentName: req.file.originalname },
       ipAddress: req.ip,
-      userAgent: req.headers['user-agent'],
+      userAgent: req.headers["user-agent"],
     });
 
-    // ✅ Notify managers (real-time + persistent)
-    const io = req.app.get('io');
+    // Notify TMs and AMs
+    const io = req.app.get("io");
     if (io) {
-      io.to('role:tm').emit('document:new', { dealerId: document.dealerId });
-      io.to('role:am').emit('document:new', { dealerId: document.dealerId });
+      io.to("role:tm").emit("document:new", { dealerId: document.dealerId });
+      io.to("role:am").emit("document:new", { dealerId: document.dealerId });
     }
 
-    // 🔔 Create notification entry for managers
     await Notification.create({
       senderId: req.user.id,
-      recipientRole: 'tm',
-      title: 'New Document Uploaded',
+      recipientRole: "tm",
+      title: "New Document Uploaded",
       message: `${req.user.username} uploaded "${document.documentName}".`,
-      type: 'document',
+      type: "document",
       relatedId: document.id,
     });
 
-    if (io) {
-      io.to('role:tm').emit('notification', {
-        title: 'New Document Uploaded',
-        message: `${req.user.username} uploaded "${document.documentName}".`,
-        type: 'document',
-      });
-    }
-
     res.status(201).json(document);
-  } catch (error) {
-    console.error('Upload document error:', error);
-    res.status(500).json({ error: 'Failed to upload document' });
+  } catch (err) {
+    console.error("Upload document error:", err);
+    res.status(500).json({ error: "Failed to upload document" });
   }
 };
 
-// ========================= Download Document =========================
+// =====================================================================
+// DOWNLOAD DOCUMENT
+// =====================================================================
 const downloadDocument = async (req, res) => {
   try {
     const { id } = req.params;
+
     const where = { id };
-    if (req.user.role === 'dealer') where.dealerId = req.user.dealerId;
+    if (req.user.role === "dealer") where.dealerId = req.user.dealerId;
 
     const document = await Document.findOne({ where });
-    if (!document) return res.status(404).json({ error: 'Document not found' });
+    if (!document) return res.status(404).json({ error: "Document not found" });
+
     if (!fs.existsSync(document.filePath))
-      return res.status(404).json({ error: 'File not found on server' });
+      return res.status(404).json({ error: "File missing on server" });
 
     await AuditLog.create({
       userId: req.user.id,
-      action: 'DOWNLOAD_DOCUMENT',
-      entity: 'Document',
+      action: "DOWNLOAD_DOCUMENT",
+      entity: "Document",
       entityId: document.id,
       ipAddress: req.ip,
-      userAgent: req.headers['user-agent'],
+      userAgent: req.headers["user-agent"],
     });
 
-    res.download(document.filePath, document.documentName);
-  } catch (error) {
-    console.error('Download document error:', error);
-    res.status(500).json({ error: 'Failed to download document' });
+    return res.download(document.filePath, document.documentName);
+  } catch (err) {
+    console.error("Download document error:", err);
+    res.status(500).json({ error: "Failed to download document" });
   }
 };
 
-// ========================= Delete Document =========================
+// =====================================================================
+// DELETE DOCUMENT
+// =====================================================================
 const deleteDocument = async (req, res) => {
   try {
-    const { id } = req.params;
-    const document = await Document.findByPk(id);
-    if (!document) return res.status(404).json({ error: 'Document not found' });
+    const document = await Document.findByPk(req.params.id);
+    if (!document) return res.status(404).json({ error: "Document not found" });
 
-    if (fs.existsSync(document.filePath)) fs.unlinkSync(document.filePath);
+    if (fs.existsSync(document.filePath)) {
+      fs.unlinkSync(document.filePath);
+    }
+
     await document.destroy();
 
     await AuditLog.create({
       userId: req.user.id,
-      action: 'DELETE_DOCUMENT',
-      entity: 'Document',
+      action: "DELETE_DOCUMENT",
+      entity: "Document",
       entityId: document.id,
       ipAddress: req.ip,
-      userAgent: req.headers['user-agent'],
+      userAgent: req.headers["user-agent"],
     });
 
-    res.json({ message: 'Document deleted successfully' });
-  } catch (error) {
-    console.error('Delete document error:', error);
-    res.status(500).json({ error: 'Failed to delete document' });
+    res.json({ message: "Document deleted successfully" });
+  } catch (err) {
+    console.error("Delete document error:", err);
+    res.status(500).json({ error: "Failed to delete document" });
   }
 };
 
-// ========================= Approve / Reject Document =========================
+// =====================================================================
+// APPROVE / REJECT DOCUMENT (Multi-Stage)
+// =====================================================================
 const approveDocument = async (req, res) => {
   try {
     const { id } = req.params;
     const { action, reason } = req.body;
-    if (!['approve', 'reject'].includes(action))
-      return res.status(400).json({ error: 'Invalid action' });
+
+    if (!["approve", "reject"].includes(action))
+      return res.status(400).json({ error: "Invalid action" });
 
     const document = await Document.findByPk(id);
-    if (!document) return res.status(404).json({ error: 'Document not found' });
+    if (!document) return res.status(404).json({ error: "Document not found" });
 
-    document.status = action === 'approve' ? 'approved' : 'rejected';
+    const role = req.user.roleDetails?.name || req.user.role;
+    const stage = document.approvalStage || "dealer_admin";
+
+    // Permission check
+    if (!isApproverForStage(role, stage)) {
+      return res.status(403).json({
+        error: `You are not authorized to approve/reject this document at stage: ${stage}`,
+      });
+    }
+
+    if (action === "reject") {
+      document.approvalStatus = "rejected";
+      document.status = "rejected";
+      document.rejectionReason = reason || "Rejected by approver";
+      document.approvalStage = null;
+    } else {
+      const next = nextStage(stage, "document");
+
+      if (!next) {
+        // Final approval
+        document.approvalStatus = "approved";
+        document.status = "approved";
+        document.approvalStage = null;
+      } else {
+        document.approvalStatus = "pending";
+        document.approvalStage = next;
+      }
+    }
+
     document.approvedBy = req.user.id;
     document.approvedAt = new Date();
-    document.rejectionReason = action === 'reject' ? reason : null;
+
     await document.save();
 
     await AuditLog.create({
       userId: req.user.id,
-      action: action === 'approve' ? 'APPROVE_DOCUMENT' : 'REJECT_DOCUMENT',
-      entity: 'Document',
+      action: action === "approve" ? "APPROVE_DOCUMENT" : "REJECT_DOCUMENT",
+      entity: "Document",
       entityId: document.id,
-      changes: { status: document.status, reason },
+      changes: { action, reason },
       ipAddress: req.ip,
-      userAgent: req.headers['user-agent'],
+      userAgent: req.headers["user-agent"],
     });
 
-    // ✅ Notify dealer in DB + via socket
-    const io = req.app.get('io');
+    // Notify dealer
+    const io = req.app.get("io");
 
     await Notification.create({
       senderId: req.user.id,
       recipientId: document.dealerId,
       title: `Document ${document.status}`,
       message:
-        document.status === 'approved'
-          ? `Your document "${document.documentName}" was approved by ${req.user.username}.`
-          : `Your document "${document.documentName}" was rejected. Reason: ${document.rejectionReason || 'N/A'}.`,
-      type: 'document',
+        document.status === "approved"
+          ? `Your document "${document.documentName}" was approved.`
+          : `Your document "${document.documentName}" was rejected. Reason: ${document.rejectionReason}`,
+      type: "document",
       relatedId: document.id,
     });
 
     if (io) {
-      io.to(`user:${document.dealerId}`).emit('notification', {
+      io.to(`user:${document.dealerId}`).emit("notification", {
         title: `Document ${document.status}`,
         message:
-          document.status === 'approved'
+          document.status === "approved"
             ? `✅ "${document.documentName}" approved`
             : `❌ "${document.documentName}" rejected`,
-        type: 'document',
+        type: "document",
       });
 
-      io.to('role:tm').emit('document:pending:update');
-      io.to('role:am').emit('document:pending:update');
+      io.to("role:tm").emit("document:pending:update");
+      io.to("role:am").emit("document:pending:update");
     }
 
-    res.json({ message: `Document ${document.status}`, document });
+    res.json({
+      message: `Document ${document.status}`,
+      document,
+    });
   } catch (err) {
-    console.error('Approve document error:', err);
-    res.status(500).json({ error: 'Failed to update document status' });
+    console.error("Approve document error:", err);
+    res.status(500).json({ error: "Failed to update document status" });
   }
 };
 
+// =====================================================================
+// MANAGER DOCUMENTS
+// =====================================================================
 const getManagerDocuments = async (req, res) => {
   try {
-    const managerId = req.user.id;
-
     const documents = await Document.findAll({
       include: [
         {
           model: Dealer,
-          as: 'dealer',
-          where: { managerId },
+          as: "dealer",
+          where: { managerId: req.user.id },
         },
       ],
-      order: [['createdAt', 'DESC']],
+      order: [["createdAt", "DESC"]],
     });
 
     res.json({ documents });
   } catch (err) {
-    console.error('getManagerDocuments:', err);
-    res.status(500).json({ error: 'Failed to fetch documents' });
+    console.error("getManagerDocuments:", err);
+    res.status(500).json({ error: "Failed to fetch documents" });
   }
 };
 
+// =====================================================================
+// EXPORTS
+// =====================================================================
 module.exports = {
   upload,
   getAllDocuments,
@@ -2468,231 +2808,290 @@ exports.exportInventory = async (req, res) => {
 </file>
 
 <file path="src/controllers/invoiceController.js">
-const { Invoice, Dealer, AuditLog, Order } = require('../models');
-const { Op } = require('sequelize');
-const PDFDocument = require('pdfkit');
-const fs = require('fs');
-const path = require('path');
+const { Invoice, Dealer, AuditLog, Order } = require("../models");
+const { Op } = require("sequelize");
+const PDFDocument = require("pdfkit");
+const fs = require("fs");
+const path = require("path");
+
+/* ============================================================
+   Utility Functions
+============================================================ */
+
+const computeAmounts = (data = {}) => {
+  const base = Number(data.baseAmount || data.amount || 0);
+  const tax = Number(data.taxAmount || 0);
+  const paid = Number(data.paidAmount || 0);
+
+  const total = base + tax;
+  const balance = total - paid;
+
+  return {
+    baseAmount: base,
+    taxAmount: tax,
+    totalAmount: total,
+    paidAmount: paid,
+    balanceAmount: balance < 0 ? 0 : balance
+  };
+};
+
+const ensureDirectory = (dirPath) => {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+  }
+};
+
+/* ============================================================
+   GET ALL INVOICES (with advanced filtering)
+============================================================ */
 
 const getAllInvoices = async (req, res) => {
   try {
-    const { page = 1, limit = 10, dealerId, status, productGroup, startDate, endDate } = req.query;
+    const {
+      page = 1,
+      limit = 10,
+      dealerId,
+      status,
+      startDate,
+      endDate,
+      search
+    } = req.query;
+
     const offset = (page - 1) * limit;
 
     const where = {};
+
     if (dealerId) where.dealerId = dealerId;
     if (status) where.status = status;
-    if (productGroup) where.productGroup = productGroup;
+
     if (startDate && endDate) {
       where.invoiceDate = {
-        [Op.between]: [new Date(startDate), new Date(endDate)]
+        [Op.between]: [new Date(startDate), new Date(endDate)],
       };
     }
 
-    if (req.user.role === 'dealer') {
+    if (search) {
+      where[Op.or] = [
+        { invoiceNumber: { [Op.like]: `%${search}%` } },
+        { description: { [Op.like]: `%${search}%` } }
+      ];
+    }
+
+    if (req.user.role === "dealer") {
       where.dealerId = req.user.dealerId;
     }
 
     const { count, rows } = await Invoice.findAndCountAll({
       where,
-      include: [{ model: Dealer, as: 'dealer' }],
+      include: [{ model: Dealer, as: "dealer" }],
       limit: parseInt(limit),
-      offset: parseInt(offset),
-      order: [['invoiceDate', 'DESC']]
+      offset,
+      order: [["invoiceDate", "DESC"]],
     });
 
     res.json({
       invoices: rows,
       total: count,
-      page: parseInt(page),
-      totalPages: Math.ceil(count / limit)
+      page: Number(page),
+      totalPages: Math.ceil(count / limit),
     });
   } catch (error) {
-    console.error('Get invoices error:', error);
-    res.status(500).json({ error: 'Failed to fetch invoices' });
+    console.error("Get invoices error:", error);
+    res.status(500).json({ error: "Failed to fetch invoices" });
   }
 };
+
+/* ============================================================
+   GET SINGLE INVOICE
+============================================================ */
 
 const getInvoiceById = async (req, res) => {
   try {
     const { id } = req.params;
+
     const where = { id };
 
-    if (req.user.role === 'dealer') {
+    if (req.user.role === "dealer") {
       where.dealerId = req.user.dealerId;
     }
 
     const invoice = await Invoice.findOne({
       where,
-      include: [{ model: Dealer, as: 'dealer' }]
+      include: [{ model: Dealer, as: "dealer" }],
     });
 
     if (!invoice) {
-      return res.status(404).json({ error: 'Invoice not found' });
+      return res.status(404).json({ error: "Invoice not found" });
     }
 
     res.json(invoice);
   } catch (error) {
-    console.error('Get invoice error:', error);
-    res.status(500).json({ error: 'Failed to fetch invoice' });
+    console.error("Get invoice error:", error);
+    res.status(500).json({ error: "Failed to fetch invoice" });
   }
 };
 
+/* ============================================================
+   CREATE INVOICE (Dealer Staff & Admin)
+============================================================ */
+
 const createInvoice = async (req, res) => {
   try {
+    let data = { ...req.body };
 
-    // Business rule: dealer_staff may create invoice only for orders that
-    // belong to their dealer and are already Approved by dealer_admin.
-    const invoiceData = { ...req.body };
+    if (req.user.role === "dealer_staff") {
+      const { orderId } = data;
 
-    if (req.user.role === 'dealer_staff') {
-      const { orderId } = req.body;
       if (!orderId) {
-        return res.status(400).json({ error: 'orderId is required for dealer staff invoice requests' });
+        return res.status(400).json({ error: "orderId is required" });
       }
 
       const order = await Order.findByPk(orderId);
-      if (!order) return res.status(404).json({ error: 'Order not found' });
+      if (!order) return res.status(404).json({ error: "Order not found" });
 
-      if ((order.dealerId || '') !== (req.user.dealerId || '')) {
-        return res.status(403).json({ error: 'Forbidden: order does not belong to your dealer' });
+      if (order.dealerId !== req.user.dealerId) {
+        return res.status(403).json({ error: "Order does not belong to your dealer" });
       }
 
-      if (order.status !== 'Approved') {
-        return res.status(400).json({ error: 'Order must be Approved by dealer admin before creating invoice' });
+      if (order.status !== "Approved") {
+        return res
+          .status(400)
+          .json({ error: "Order must be approved before invoice creation" });
       }
 
-      // Derive invoice values from order if not provided
-      invoiceData.dealerId = order.dealerId;
-      invoiceData.orderId = order.id;
-      invoiceData.totalAmount = invoiceData.totalAmount || order.totalAmount;
-      invoiceData.invoiceNumber = invoiceData.invoiceNumber || `INV-${Date.now()}`;
-      invoiceData.invoiceDate = invoiceData.invoiceDate || new Date();
+      data.dealerId = order.dealerId;
+      data.orderId = order.id;
+      data.description = data.description || order.description;
+      data.invoiceNumber = data.invoiceNumber || `INV-${Date.now()}`;
+      data.invoiceDate = new Date();
+
+      data.baseAmount = data.baseAmount || order.totalAmount;
+      data.taxAmount = data.taxAmount || 0;
+      data.paidAmount = 0;
     }
 
-    // compute balanceAmount
-    invoiceData.balanceAmount = (invoiceData.totalAmount || 0) - (invoiceData.paidAmount || 0);
+    const amounts = computeAmounts(data);
+    const invoiceData = { ...data, ...amounts };
 
     const invoice = await Invoice.create(invoiceData);
 
     await AuditLog.create({
       userId: req.user.id,
-      action: 'CREATE_INVOICE',
-      entity: 'Invoice',
+      action: "CREATE_INVOICE",
+      entity: "Invoice",
       entityId: invoice.id,
       changes: invoiceData,
       ipAddress: req.ip,
-      userAgent: req.headers['user-agent']
+      userAgent: req.headers["user-agent"],
     });
 
     res.status(201).json(invoice);
   } catch (error) {
-    console.error('Create invoice error:', error);
-    res.status(500).json({ error: 'Failed to create invoice' });
+    console.error("Create invoice error:", error);
+    res.status(500).json({ error: "Failed to create invoice" });
   }
 };
+
+/* ============================================================
+   UPDATE INVOICE (Admins only)
+============================================================ */
 
 const updateInvoice = async (req, res) => {
   try {
     const { id } = req.params;
-    const invoice = await Invoice.findByPk(id);
 
-    if (!invoice) {
-      return res.status(404).json({ error: 'Invoice not found' });
-    }
+    const invoice = await Invoice.findByPk(id);
+    if (!invoice) return res.status(404).json({ error: "Invoice not found" });
 
     const oldData = invoice.toJSON();
+
+    const amounts = computeAmounts(req.body);
+
     const updateData = {
       ...req.body,
-      balanceAmount: req.body.totalAmount - (req.body.paidAmount || 0)
+      ...amounts,
     };
 
     await invoice.update(updateData);
 
     await AuditLog.create({
       userId: req.user.id,
-      action: 'UPDATE_INVOICE',
-      entity: 'Invoice',
+      action: "UPDATE_INVOICE",
+      entity: "Invoice",
       entityId: invoice.id,
       changes: { old: oldData, new: updateData },
       ipAddress: req.ip,
-      userAgent: req.headers['user-agent']
+      userAgent: req.headers["user-agent"],
     });
 
     res.json(invoice);
   } catch (error) {
-    console.error('Update invoice error:', error);
-    res.status(500).json({ error: 'Failed to update invoice' });
+    console.error("Update invoice error:", error);
+    res.status(500).json({ error: "Failed to update invoice" });
   }
 };
+
+/* ============================================================
+   GENERATE PDF WITH SAFE PATHS
+============================================================ */
 
 const generateInvoicePDF = async (req, res) => {
   try {
     const { id } = req.params;
-    const where = { id };
-
-    if (req.user.role === 'dealer') {
-      where.dealerId = req.user.dealerId;
-    }
 
     const invoice = await Invoice.findOne({
-      where,
-      include: [{ model: Dealer, as: 'dealer' }]
+      where: { id },
+      include: [{ model: Dealer, as: "dealer" }],
     });
 
-    if (!invoice) {
-      return res.status(404).json({ error: 'Invoice not found' });
-    }
+    if (!invoice) return res.status(404).json({ error: "Invoice not found" });
+
+    const pdfDir = path.join(__dirname, "../../uploads/invoices");
+    ensureDirectory(pdfDir);
+
+    const filename = `invoice-${invoice.invoiceNumber}.pdf`;
+    const filePath = path.join(pdfDir, filename);
 
     const doc = new PDFDocument();
-    const filename = `invoice-${invoice.invoiceNumber}.pdf`;
-    const filepath = path.join(__dirname, '../../uploads', filename);
+    doc.pipe(fs.createWriteStream(filePath));
 
-    doc.pipe(fs.createWriteStream(filepath));
+    doc.fontSize(22).text("TAX INVOICE", { underline: true });
+    doc.moveDown();
 
-    doc.fontSize(20).text('INVOICE', 50, 50);
+    doc.fontSize(12).text(`Invoice No: ${invoice.invoiceNumber}`);
+    doc.text(`Invoice Date: ${invoice.invoiceDate.toDateString()}`);
+    doc.text(`Dealer: ${invoice.dealer.businessName}`);
+    doc.text(`Address: ${invoice.dealer.address}`);
+    doc.text(`City: ${invoice.dealer.city}`);
+    doc.moveDown();
+
+    doc.fontSize(14).text("Amount Details", { underline: true });
     doc.fontSize(12);
-    doc.text(`Invoice Number: ${invoice.invoiceNumber}`, 50, 100);
-    doc.text(`Invoice Date: ${invoice.invoiceDate.toDateString()}`, 50, 120);
-    doc.text(`Due Date: ${invoice.dueDate ? invoice.dueDate.toDateString() : 'N/A'}`, 50, 140);
+    doc.text(`Base Amount: ₹${invoice.baseAmount}`);
+    doc.text(`Tax Amount: ₹${invoice.taxAmount}`);
+    doc.text(`Total Amount: ₹${invoice.totalAmount}`);
+    doc.text(`Paid: ₹${invoice.paidAmount}`);
+    doc.text(`Balance: ₹${invoice.balanceAmount}`);
+    doc.moveDown(2);
 
-    doc.text('Bill To:', 50, 180);
-    doc.text(`${invoice.dealer.businessName}`, 50, 200);
-    doc.text(`${invoice.dealer.address}`, 50, 220);
-    doc.text(`${invoice.dealer.city}, ${invoice.dealer.state} ${invoice.dealer.pincode}`, 50, 240);
-
-    doc.text('Description:', 50, 280);
-    doc.text(invoice.description || 'Invoice for products/services', 50, 300);
-
-    doc.text(`Amount: ₹${invoice.amount}`, 50, 340);
-    doc.text(`Tax Amount: ₹${invoice.taxAmount}`, 50, 360);
-    doc.text(`Total Amount: ₹${invoice.totalAmount}`, 50, 380);
-    doc.text(`Paid Amount: ₹${invoice.paidAmount}`, 50, 400);
-    doc.text(`Balance Amount: ₹${invoice.balanceAmount}`, 50, 420);
-    doc.text(`Status: ${invoice.status.toUpperCase()}`, 50, 440);
-
+    doc.text("Thank you for your business!", { italics: true });
     doc.end();
 
-    await invoice.update({ pdfPath: filepath });
+    await invoice.update({ pdfPath: filePath });
 
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
-    
-    const stream = fs.createReadStream(filepath);
-    stream.pipe(res);
+    res.download(filePath);
 
     await AuditLog.create({
       userId: req.user.id,
-      action: 'DOWNLOAD_INVOICE_PDF',
-      entity: 'Invoice',
+      action: "DOWNLOAD_INVOICE_PDF",
+      entity: "Invoice",
       entityId: invoice.id,
       ipAddress: req.ip,
-      userAgent: req.headers['user-agent']
+      userAgent: req.headers["user-agent"],
     });
-
   } catch (error) {
-    console.error('Generate invoice PDF error:', error);
-    res.status(500).json({ error: 'Failed to generate invoice PDF' });
+    console.error("PDF generation error:", error);
+    res.status(500).json({ error: "Failed to generate invoice PDF" });
   }
 };
 
@@ -2701,7 +3100,7 @@ module.exports = {
   getInvoiceById,
   createInvoice,
   updateInvoice,
-  generateInvoicePDF
+  generateInvoicePDF,
 };
 </file>
 
@@ -3756,6 +4155,281 @@ exports.getConversation = async (req, res) => {
 };
 </file>
 
+<file path="src/controllers/notificationController.js">
+// src/controllers/notificationController.js
+const { Notification, User, sequelize } = require('../models');
+const { Op } = require('sequelize');
+
+// Create notification for a user or role
+const createNotification = async (req, res) => {
+  try {
+    const {
+      userId,
+      roleName,
+      title,
+      message,
+      type = 'info',
+      priority = 'normal',
+      actionUrl,
+      data
+    } = req.body;
+
+    let notifications = [];
+
+    if (userId) {
+      // Single user notification
+      const notification = await Notification.create({
+        userId,
+        title,
+        message,
+        type,
+        priority,
+        actionUrl,
+        data: data || {},
+        read: false
+      });
+      notifications.push(notification);
+
+      // Send real-time notification via Socket.IO
+      const io = req.app.get('io');
+      if (io) {
+        io.to(`user:${userId}`).emit('notification', {
+          id: notification.id,
+          title: notification.title,
+          message: notification.message,
+          type: notification.type,
+          priority: notification.priority,
+          actionUrl: notification.actionUrl,
+          createdAt: notification.createdAt
+        });
+      }
+    } else if (roleName) {
+      // Role-based notification - send to all users with this role
+      const users = await User.findAll({
+        where: { roleId: roleName }, // Assuming roleId is used as role name
+        attributes: ['id']
+      });
+
+      const notificationPromises = users.map(user =>
+        Notification.create({
+          userId: user.id,
+          title,
+          message,
+          type,
+          priority,
+          actionUrl,
+          data: data || {},
+          read: false
+        })
+      );
+
+      notifications = await Promise.all(notificationPromises);
+
+      // Send to all users in role
+      const io = req.app.get('io');
+      if (io) {
+        users.forEach(user => {
+          const userNotifications = notifications.filter(n => n.userId === user.id);
+          io.to(`user:${user.id}`).emit('notifications', userNotifications.map(n => ({
+            id: n.id,
+            title: n.title,
+            message: n.message,
+            type: n.type,
+            priority: n.priority,
+            actionUrl: n.actionUrl,
+            createdAt: n.createdAt
+          })));
+        });
+      }
+    }
+
+    res.status(201).json({
+      message: 'Notifications created successfully',
+      count: notifications.length,
+      notifications
+    });
+  } catch (err) {
+    console.error('createNotification:', err);
+    res.status(500).json({ error: 'Failed to create notification' });
+  }
+};
+
+// Get user notifications
+const getUserNotifications = async (req, res) => {
+  try {
+    const { page = 1, limit = 50, unreadOnly = false } = req.query;
+    const offset = (page - 1) * limit;
+    const userId = req.user.id;
+
+    const where = { userId };
+    if (unreadOnly === 'true') {
+      where.read = false;
+    }
+
+    const notifications = await Notification.findAll({
+      where,
+      order: [['createdAt', 'DESC']],
+      limit: parseInt(limit),
+      offset: parseInt(offset)
+    });
+
+    const total = await Notification.count({ where });
+
+    res.json({
+      notifications,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / limit)
+      }
+    });
+  } catch (err) {
+    console.error('getUserNotifications:', err);
+    res.status(500).json({ error: 'Failed to fetch notifications' });
+  }
+};
+
+// Mark notification as read
+const markAsRead = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    const notification = await Notification.findOne({
+      where: { id, userId }
+    });
+
+    if (!notification) {
+      return res.status(404).json({ error: 'Notification not found' });
+    }
+
+    await notification.update({ read: true, readAt: new Date() });
+
+    res.json({ message: 'Notification marked as read', notification });
+  } catch (err) {
+    console.error('markAsRead:', err);
+    res.status(500).json({ error: 'Failed to mark notification as read' });
+  }
+};
+
+// Mark all notifications as read
+const markAllAsRead = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const updated = await Notification.update(
+      { read: true, readAt: new Date() },
+      { where: { userId, read: false } }
+    );
+
+    res.json({ message: `${updated[0]} notifications marked as read` });
+  } catch (err) {
+    console.error('markAllAsRead:', err);
+    res.status(500).json({ error: 'Failed to mark notifications as read' });
+  }
+};
+
+// Delete notification
+const deleteNotification = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    const deleted = await Notification.destroy({
+      where: { id, userId }
+    });
+
+    if (deleted === 0) {
+      return res.status(404).json({ error: 'Notification not found' });
+    }
+
+    res.json({ message: 'Notification deleted successfully' });
+  } catch (err) {
+    console.error('deleteNotification:', err);
+    res.status(500).json({ error: 'Failed to delete notification' });
+  }
+};
+
+// Get unread count
+const getUnreadCount = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const count = await Notification.count({
+      where: { userId, read: false }
+    });
+
+    res.json({ unreadCount: count });
+  } catch (err) {
+    console.error('getUnreadCount:', err);
+    res.status(500).json({ error: 'Failed to get unread count' });
+  }
+};
+
+// Send approval notification (workflow helper)
+const sendApprovalNotification = async (userId, entityType, entityId, action, approverName) => {
+  const messages = {
+    order: {
+      approve: `Your order #${entityId} has been approved by ${approverName}`,
+      reject: `Your order #${entityId} has been rejected by ${approverName}`
+    },
+    payment: {
+      approve: `Your payment request #${entityId} has been approved by ${approverName}`,
+      reject: `Your payment request #${entityId} has been rejected by ${approverName}`
+    },
+    document: {
+      approve: `Your document submission #${entityId} has been approved by ${approverName}`,
+      reject: `Your document submission #${entityId} has been rejected by ${approverName}`
+    }
+  };
+
+  const title = `${entityType.charAt(0).toUpperCase() + entityType.slice(1)} ${action}d`;
+  const message = messages[entityType]?.[action] || `${entityType} #${entityId} has been ${action}d`;
+
+  await Notification.create({
+    userId,
+    title,
+    message,
+    type: action === 'approve' ? 'success' : 'warning',
+    priority: 'high',
+    actionUrl: `/${entityType}s/${entityId}`,
+    data: { entityType, entityId, action, approverName }
+  });
+
+  return true;
+};
+
+// Send escalation notification
+const sendEscalationNotification = async (userId, entityType, entityId, slaDays) => {
+  const title = `SLA Escalation: ${entityType} #${entityId}`;
+  const message = `${entityType} #${entityId} has exceeded ${slaDays} days SLA. Immediate attention required.`;
+
+  await Notification.create({
+    userId,
+    title,
+    message,
+    type: 'error',
+    priority: 'urgent',
+    actionUrl: `/${entityType}s/${entityId}`,
+    data: { entityType, entityId, escalation: true, slaDays }
+  });
+
+  return true;
+};
+
+module.exports = {
+  createNotification,
+  getUserNotifications,
+  markAsRead,
+  markAllAsRead,
+  deleteNotification,
+  getUnreadCount,
+  sendApprovalNotification,
+  sendEscalationNotification
+};
+</file>
+
 <file path="src/controllers/notificationsController.js">
 const { Notification,Dealer, Document } = require('../models');
 const { Op } = require('sequelize');
@@ -3875,6 +4549,8 @@ exports.markAsRead = async (req, res) => {
 <file path="src/controllers/orderController.js">
 // src/controllers/orderController.js
 const { Order, OrderItem, Material, Dealer, sequelize } = require("../models");
+const { nextStage, isApproverForStage } = require("../utils/approvalEngine");
+const { getDealersUnderUserScope } = require("../middleware/scoping");
 
 // --------------------------------------
 // PLACE ORDER  (Dealer / Dealer Staff)
@@ -3891,7 +4567,6 @@ exports.placeOrder = async (req, res) => {
       return res.status(400).json({ error: "No items provided" });
 
     let total = 0;
-
     for (const it of items) {
       const mat = await Material.findByPk(it.materialId);
       if (!mat) {
@@ -3903,6 +4578,9 @@ exports.placeOrder = async (req, res) => {
       total += Number(it.qty) * Number(it.unitPrice || 0);
     }
 
+    // Initialize approvalStage with first stage
+    const firstStage = nextStage(null, "order");
+
     const order = await Order.create(
       {
         dealerId,
@@ -3910,6 +4588,8 @@ exports.placeOrder = async (req, res) => {
         status: "Pending",
         totalAmount: total,
         notes,
+        approvalStage: firstStage,
+        approvalStatus: "pending",
       },
       { transaction: t }
     );
@@ -3932,13 +4612,13 @@ exports.placeOrder = async (req, res) => {
     return res.status(201).json({
       orderId: order.id,
       orderNumber: order.orderNumber,
+      approvalStage: order.approvalStage,
+      approvalStatus: order.approvalStatus,
     });
   } catch (err) {
     await t.rollback();
     console.error("placeOrder:", err);
-    res
-      .status(500)
-      .json({ error: "Failed to place order", details: err.message });
+    res.status(500).json({ error: "Failed to place order", details: err.message });
   }
 };
 
@@ -3954,13 +4634,8 @@ exports.getMyOrders = async (req, res) => {
       include: [
         {
           model: OrderItem,
-          as: "items", // 🔥 FIXED alias
-          include: [
-            {
-              model: Material,
-              as: "material", // 🔥 FIXED alias
-            },
-          ],
+          as: "items",
+          include: [{ model: Material, as: "material" }],
         },
       ],
       order: [["createdAt", "DESC"]],
@@ -3974,21 +4649,24 @@ exports.getMyOrders = async (req, res) => {
 };
 
 // --------------------------------------
-// ADMIN / MANAGER → ALL ORDERS
+// ADMIN / MANAGER → ALL ORDERS (SCOPED)
 // --------------------------------------
 exports.getAllOrders = async (req, res) => {
   try {
+    const roleName = req.user.roleDetails?.name || req.user.role;
+    let whereClause = {};
+
+    // Apply scoping for non-super-admin roles
+    if (!['super_admin', 'technical_admin'].includes(roleName)) {
+      const dealersUnderScope = await getDealersUnderUserScope(req.user);
+      whereClause.dealerId = { [require('sequelize').Op.in]: dealersUnderScope };
+    }
+
     const orders = await Order.findAll({
+      where: whereClause,
       include: [
-        {
-          model: OrderItem,
-          as: "items",
-          include: [{ model: Material, as: "material" }],
-        },
-        {
-          model: Dealer,
-          as: "dealer",
-        },
+        { model: OrderItem, as: "items", include: [{ model: Material, as: "material" }] },
+        { model: Dealer, as: "dealer" },
       ],
       order: [["createdAt", "DESC"]],
     });
@@ -4009,10 +4687,7 @@ exports.updateOrderStatus = async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
 
-    const order = await Order.findByPk(id, {
-      include: [{ model: OrderItem, as: "items" }],
-    });
-
+    const order = await Order.findByPk(id, { include: [{ model: OrderItem, as: "items" }] });
     if (!order) return res.status(404).json({ error: "Order not found" });
 
     order.status = status;
@@ -4038,338 +4713,421 @@ exports.updateOrderStatus = async (req, res) => {
 };
 
 // --------------------------------------
-// APPROVE ORDER
+// APPROVE ORDER (Multi-stage)
 // --------------------------------------
 exports.approveOrder = async (req, res) => {
-  const order = await Order.findByPk(req.params.id);
-  if (!order)
-    return res.status(404).json({ error: "Order not found" });
+  try {
+    const order = await Order.findByPk(req.params.id);
+    if (!order) return res.status(404).json({ error: "Order not found" });
 
-  order.status = "Approved";
-  await order.save();
-  res.json({ message: "Order approved" });
+    const role = req.user.roleDetails?.name || req.user.role;
+    const currentStage = order.approvalStage;
+
+    if (!isApproverForStage(role, currentStage, "order")) {
+      return res.status(403).json({
+        error: `You are not authorized to approve at this stage (${currentStage}).`,
+      });
+    }
+
+    const next = nextStage(currentStage, "order");
+
+    if (!next) {
+      // Final approval
+      order.approvalStage = null;
+      order.approvalStatus = "approved";
+      order.status = "Approved";
+    } else {
+      // Move to next stage
+      order.approvalStage = next;
+      order.approvalStatus = "pending";
+    }
+
+    order.approvedBy = req.user.id;
+    order.approvedAt = new Date();
+
+    await order.save();
+
+    return res.json({
+      message: next ? `Order moved to next stage: ${next}` : "Order fully approved",
+      order,
+    });
+  } catch (err) {
+    console.error("approveOrder:", err);
+    res.status(500).json({ error: "Failed to approve order" });
+  }
 };
 
+
 // --------------------------------------
-// REJECT ORDER
+// REJECT ORDER (Multi-stage)
 // --------------------------------------
 exports.rejectOrder = async (req, res) => {
-  const { reason } = req.body;
+  try {
+    const { reason } = req.body;
+    const order = await Order.findByPk(req.params.id);
+    if (!order) return res.status(404).json({ error: "Order not found" });
 
-  const order = await Order.findByPk(req.params.id);
-  if (!order)
-    return res.status(404).json({ error: "Order not found" });
+    const role = req.user.roleDetails?.name || req.user.role;
+    const currentStage = order.approvalStage;
 
-  order.status = "Rejected";
-  order.notes = reason;
-  await order.save();
+    if (!isApproverForStage(role, currentStage)) {
+      return res.status(403).json({
+        error: `You are not authorized to reject at this stage (${currentStage}).`,
+      });
+    }
 
-  res.json({ message: "Order rejected" });
+    order.approvalStatus = "rejected";
+    order.status = "Rejected";
+    order.rejectionReason = reason || "Rejected by approver";
+    order.approvalStage = null;
+    order.approvedBy = req.user.id;
+    order.approvedAt = new Date();
+
+    await order.save();
+    return res.json({ message: "Order rejected", order });
+  } catch (err) {
+    console.error("rejectOrder:", err);
+    res.status(500).json({ error: "Failed to reject order" });
+  }
 };
 </file>
 
 <file path="src/controllers/paymentController.js">
 // src/controllers/paymentController.js
-// Payment workflow:
-//  - Dealer Staff -> creates request -> status: dealer_pending
-//  - Dealer Admin -> reviews -> if approved -> status: finance_pending
-//  - Finance Admin -> reviews -> if approved -> status: approved (invoice marked paid)
-//  - Auto-reconcile runs against finance_pending requests with UTRs
+// ========================================================================
+// PAYMENT CONTROLLER – Unified Multi-Stage Approval Workflow
+// dealer_staff → dealer_admin → finance_admin → approved
+// ========================================================================
 
 const { PaymentRequest, Invoice, Dealer, AuditLog, sequelize } = require("../models");
 const { Op } = require("sequelize");
+const { nextStage, isApproverForStage } = require("../utils/approvalEngine");
 
-/**
- * Dealer Staff creates a payment request.
- * Request moves to "dealer_pending" and waits for Dealer Admin approval.
- */
+// ========================================================================
+// CREATE PAYMENT REQUEST (Dealer Staff)
+// ========================================================================
+// ========================================================================
+// CREATE PAYMENT REQUEST (Dealer Staff) – Safe Version
+// ========================================================================
 const createPaymentRequest = async (req, res) => {
   try {
-    const { invoiceId, amount, paymentMode, utrNumber } = req.body;
-
-    const invoice = await Invoice.findByPk(invoiceId);
-    if (!invoice) return res.status(404).json({ error: "Invoice not found" });
-
-    if (Number(amount) !== Number(invoice.balanceAmount)) {
-      return res.status(400).json({ error: "Amount mismatch with invoice" });
+    // ===== 1. Check user =====
+    if (!req.user || !req.user.dealerId) {
+      console.warn("Unauthorized attempt to create payment request:", req.ip);
+      return res.status(401).json({ error: "Unauthorized: user info missing" });
     }
 
+    // ===== 2. Check body =====
+    if (!req.body) {
+      console.warn("Empty request body from user:", req.user.id);
+      return res.status(400).json({ error: "Request body is missing" });
+    }
+
+    const { invoiceId, amount, paymentMode, utrNumber } = req.body;
+
+    // ===== 3. Validate required fields =====
+    if (!invoiceId || !amount || !paymentMode) {
+      return res.status(400).json({ error: "Missing required fields: invoiceId, amount, paymentMode" });
+    }
+
+    // ===== 4. Fetch invoice =====
+    const invoice = await Invoice.findByPk(invoiceId);
+    if (!invoice) {
+      return res.status(404).json({ error: "Invoice not found" });
+    }
+
+    // ===== 5. Validate amount =====
+    if (Number(amount) !== Number(invoice.balanceAmount)) {
+      return res.status(400).json({ error: "Amount mismatch with invoice balance" });
+    }
+
+    // ===== 6. Handle proof file =====
     const proofPath = req.file ? req.file.path : null;
 
+    // ===== 7. Create payment request =====
     const payment = await PaymentRequest.create({
       invoiceId,
       dealerId: req.user.dealerId,
       amount,
       paymentMode,
-      utrNumber,
+      utrNumber: utrNumber || null,
       proofFile: proofPath,
-
-      // workflow fields
-      status: "dealer_pending",         // draft -> dealer_pending -> finance_pending -> approved/rejected
-      dealerApprovalStatus: "pending",  // dealer side approval state
+      approvalStage: "dealer_admin",
+      approvalStatus: "pending",
+      status: "dealer_admin_pending",
     });
 
-    // Audit log
+    // ===== 8. Log audit =====
     await AuditLog.create({
       userId: req.user.id,
       action: "CREATE_PAYMENT_REQUEST",
       entity: "PaymentRequest",
       entityId: payment.id,
       changes: { invoiceId, amount, paymentMode, utrNumber, proofFile: proofPath },
-      ipAddress: req.ip
+      ipAddress: req.ip,
     });
 
-    res.status(201).json({ message: "Payment request sent to Dealer Admin", payment });
+    // ===== 9. Return response =====
+    res.status(201).json({ message: "Payment request created", payment });
   } catch (err) {
-    console.error("createPaymentRequest:", err);
+    console.error("createPaymentRequest error:", err);
     res.status(500).json({ error: "Failed to submit payment request" });
   }
 };
 
-/**
- * Dealer: list their own payment requests
- */
+// ========================================================================
+// GET PAYMENTS (Dealer)
+// ========================================================================
 const getDealerPayments = async (req, res) => {
   try {
-    const data = await PaymentRequest.findAll({
+    const payments = await PaymentRequest.findAll({
       where: { dealerId: req.user.dealerId },
       include: ["Invoice"],
-      order: [["createdAt", "DESC"]]
+      order: [["createdAt", "DESC"]],
     });
-
-    res.json({ payments: data });
+    res.json({ payments });
   } catch (err) {
     console.error("getDealerPayments:", err);
     res.status(500).json({ error: "Failed to fetch payment requests" });
   }
 };
 
-/**
- * Dealer Admin: view pending requests for their dealer (status = dealer_pending)
- */
-const getDealerAdminPending = async (req, res) => {
-  try {
-    const data = await PaymentRequest.findAll({
-      where: {
-        dealerId: req.user.dealerId,
-        status: "dealer_pending"
-      },
-      include: ["Invoice"],
-      order: [["createdAt", "DESC"]]
-    });
-
-    res.json({ pending: data });
-  } catch (err) {
-    console.error("getDealerAdminPending:", err);
-    res.status(500).json({ error: "Failed to fetch dealer admin pending" });
-  }
-};
-
-/**
- * Dealer Admin: approve / reject a payment request.
- * On approve -> moves to finance_pending
- * On reject  -> final status = rejected
- */
-const reviewPaymentByDealerAdmin = async (req, res) => {
-  try {
-    const { action, remarks } = req.body; // action: 'approve' | 'reject'
-    const request = await PaymentRequest.findByPk(req.params.id, { include: ["Invoice", "Dealer"] });
-
-    if (!request) return res.status(404).json({ error: "Payment request not found" });
-
-    // Ensure the dealer admin belongs to the same dealer (basic guard)
-    if (req.user.dealerId !== request.dealerId) {
-      return res.status(403).json({ error: "Unauthorized: not your dealer's request" });
-    }
-
-    if (request.status !== "dealer_pending") {
-      return res.status(400).json({ error: "Request not pending dealer approval" });
-    }
-
-    const approvalStatus = action === "approve" ? "approved" : "rejected";
-
-    await request.update({
-      dealerApprovalStatus: approvalStatus,
-      dealerApprovalRemarks: remarks || null,
-      dealerApprovedAt: new Date(),
-      dealerApprovedBy: req.user.username || req.user.id,
-
-      // forward to finance if approved
-      status: approvalStatus === "approved" ? "finance_pending" : "rejected"
-    });
-
-    await AuditLog.create({
-      userId: req.user.id,
-      action: approvalStatus === "approved" ? "DEALER_APPROVE_PAYMENT" : "DEALER_REJECT_PAYMENT",
-      entity: "PaymentRequest",
-      entityId: request.id,
-      changes: { dealerApprovalStatus: approvalStatus, dealerApprovalRemarks: remarks },
-      ipAddress: req.ip
-    });
-
-    res.json({ message: `Payment ${approvalStatus} by Dealer Admin`, request });
-  } catch (err) {
-    console.error("reviewPaymentByDealerAdmin:", err);
-    res.status(500).json({ error: "Dealer admin approval failed" });
-  }
-};
-
-/**
- * Finance Admin: list requests that have been dealer-approved (status = finance_pending)
- */
+// ========================================================================
+// GET PENDING PAYMENTS (Dealer Admin / Finance Admin)
+// ========================================================================
 const getPendingPayments = async (req, res) => {
   try {
-    const data = await PaymentRequest.findAll({
-      where: { status: "finance_pending" },
+    const role = req.user.roleDetails?.name || req.user.role;
+    const stageField = role === "finance_admin" ? "finance_admin" : "dealer_admin";
+
+    const pending = await PaymentRequest.findAll({
+      where: {
+        approvalStage: stageField,
+        approvalStatus: "pending",
+        ...(role !== "finance_admin" && { dealerId: req.user.dealerId }),
+      },
       include: ["Invoice", "Dealer"],
-      order: [["createdAt", "DESC"]]
+      order: [["createdAt", "DESC"]],
     });
 
-    res.json({ pending: data });
+    res.json({ pending });
   } catch (err) {
     console.error("getPendingPayments:", err);
     res.status(500).json({ error: "Failed to fetch pending payments" });
   }
 };
 
-/**
- * Finance Admin: final approve / reject.
- * If approved -> mark invoice as paid and balanceAmount = 0
- */
-const reviewPayment = async (req, res) => {
+// ========================================================================
+// APPROVE PAYMENT (Multi-Stage)
+// ========================================================================
+const approvePayment = async (req, res) => {
   const t = await sequelize.transaction();
   try {
-    const { action, remarks } = req.body; // action: 'approve' | 'reject'
-    const request = await PaymentRequest.findByPk(req.params.id, { include: ["Invoice"], transaction: t });
+    const payment = await PaymentRequest.findByPk(req.params.id, {
+      include: ["Invoice", "Dealer"],
+      transaction: t,
+    });
 
-    if (!request) {
+    if (!payment) {
       await t.rollback();
       return res.status(404).json({ error: "Payment request not found" });
     }
 
-    if (request.status !== "finance_pending") {
+    const role = req.user.roleDetails?.name || req.user.role;
+    const currentStage = payment.approvalStage;
+
+    if (!isApproverForStage(role, currentStage, "payment")) {
       await t.rollback();
-      return res.status(400).json({ error: "Request not pending finance approval" });
+      return res.status(403).json({ error: `Not authorized to approve at stage: ${currentStage}` });
     }
 
-    const status = action === "approve" ? "approved" : "rejected";
+    const next = nextStage(currentStage, "payment");
 
-    // Update payment request
-    await request.update({
-      status,
-      remarks: remarks || null,
-      approvedBy: req.user.username || req.user.id,
-      approvedAt: new Date()
-    }, { transaction: t });
+    if (!next) {
+      // Final approval
+      payment.approvalStage = null;
+      payment.approvalStatus = "approved";
+      payment.status = "approved";
 
-    // If finance approves, update invoice
-    if (status === "approved") {
-      const invoice = await Invoice.findByPk(request.invoiceId, { transaction: t });
-      if (invoice) {
-        await invoice.update({
-          status: "paid",
-          balanceAmount: 0
-        }, { transaction: t });
+      // Mark invoice paid
+      if (payment.Invoice) {
+        await payment.Invoice.update({ status: "paid", balanceAmount: 0 }, { transaction: t });
       }
+    } else {
+      payment.approvalStage = next;
+      payment.approvalStatus = "pending";
+      payment.status = `${next}_pending`;
     }
 
-    await AuditLog.create({
-      userId: req.user.id,
-      action: status === "approved" ? "FINANCE_APPROVE_PAYMENT" : "FINANCE_REJECT_PAYMENT",
-      entity: "PaymentRequest",
-      entityId: request.id,
-      changes: { status, remarks },
-      ipAddress: req.ip
-    }, { transaction: t });
+    payment.approvedBy = req.user.username || req.user.id;
+    payment.approvedAt = new Date();
+
+    await payment.save({ transaction: t });
+
+    await AuditLog.create(
+      {
+        userId: req.user.id,
+        action: "PAYMENT_APPROVED",
+        entity: "PaymentRequest",
+        entityId: payment.id,
+        changes: { from: currentStage, to: next || "approved" },
+        ipAddress: req.ip,
+      },
+      { transaction: t }
+    );
 
     await t.commit();
-    res.json({ message: `Payment ${status}`, request });
+
+    res.json({
+      message: next ? `Payment moved to next stage: ${next}` : "Payment fully approved",
+      payment,
+    });
   } catch (err) {
     await t.rollback();
-    console.error("reviewPayment:", err);
-    res.status(500).json({ error: "Failed to review payment" });
+    console.error("approvePayment:", err);
+    res.status(500).json({ error: "Failed to approve payment" });
   }
 };
 
-/**
- * Auto-Reconciliation:
- * - Runs over finance_pending requests which have UTRs.
- * - If amount === invoice.balanceAmount, auto-approve.
- * - Otherwise flag for manual review (returned in response).
- */
+// ========================================================================
+// REJECT PAYMENT (Multi-Stage)
+// ========================================================================
+const rejectPayment = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const { reason } = req.body;
+
+    const payment = await PaymentRequest.findByPk(req.params.id, {
+      include: ["Invoice", "Dealer"],
+      transaction: t,
+    });
+
+    if (!payment) {
+      await t.rollback();
+      return res.status(404).json({ error: "Payment request not found" });
+    }
+
+    const role = req.user.roleDetails?.name || req.user.role;
+    const currentStage = payment.approvalStage;
+
+    if (!isApproverForStage(role, currentStage, "payment")) {
+      await t.rollback();
+      return res.status(403).json({ error: `Not authorized to reject at stage: ${currentStage}` });
+    }
+
+    payment.approvalStage = null;
+    payment.approvalStatus = "rejected";
+    payment.status = "rejected";
+    payment.rejectionReason = reason || "Rejected by approver";
+    payment.approvedBy = req.user.username || req.user.id;
+    payment.approvedAt = new Date();
+
+    await payment.save({ transaction: t });
+
+    await AuditLog.create(
+      {
+        userId: req.user.id,
+        action: "PAYMENT_REJECTED",
+        entity: "PaymentRequest",
+        entityId: payment.id,
+        changes: { reason },
+        ipAddress: req.ip,
+      },
+      { transaction: t }
+    );
+
+    await t.commit();
+
+    res.json({ message: "Payment rejected", payment });
+  } catch (err) {
+    await t.rollback();
+    console.error("rejectPayment:", err);
+    res.status(500).json({ error: "Failed to reject payment" });
+  }
+};
+
+// ========================================================================
+// AUTO-RECONCILE PAYMENTS
+// ========================================================================
 const autoReconcile = async (req, res) => {
   const t = await sequelize.transaction();
   try {
     const matches = await PaymentRequest.findAll({
       where: {
-        status: "finance_pending",
-        utrNumber: { [Op.ne]: null }
+        approvalStage: "finance_admin",
+        approvalStatus: "pending",
+        utrNumber: { [Op.ne]: null },
       },
       include: ["Invoice"],
       transaction: t,
-      lock: t.LOCK.UPDATE
+      lock: t.LOCK.UPDATE,
     });
 
-    let autoApproved = [];
-    let flagged = [];
+    const autoApproved = [];
+    const flagged = [];
 
-    for (let p of matches) {
-      const invoice = p.Invoice;
-      // strict numeric compare
-      if (invoice && Number(p.amount) === Number(invoice.balanceAmount)) {
-        await p.update({
-          status: "approved",
-          approvedAt: new Date(),
-          approvedBy: "AUTO-RECONCILE"
-        }, { transaction: t });
+    for (const p of matches) {
+      if (p.Invoice && Number(p.amount) === Number(p.Invoice.balanceAmount)) {
+        await p.update(
+          { approvalStage: null, approvalStatus: "approved", status: "approved", approvedBy: "AUTO-RECONCILE", approvedAt: new Date() },
+          { transaction: t }
+        );
 
-        await invoice.update({
-          status: "paid",
-          balanceAmount: 0
-        }, { transaction: t });
-
-        await AuditLog.create({
-          userId: null,
-          action: "AUTO_RECONCILE_APPROVE",
-          entity: "PaymentRequest",
-          entityId: p.id,
-          changes: { approvedBy: "AUTO-RECONCILE" },
-          ipAddress: req.ip
-        }, { transaction: t });
+        await p.Invoice.update({ status: "paid", balanceAmount: 0 }, { transaction: t });
 
         autoApproved.push(p.id);
       } else {
-        // add a little context to flagged list
         flagged.push({
           paymentRequestId: p.id,
-          invoiceId: invoice ? invoice.id : null,
+          invoiceId: p.Invoice?.id,
           paymentAmount: p.amount,
-          invoiceBalance: invoice ? invoice.balanceAmount : null
+          invoiceBalance: p.Invoice?.balanceAmount,
         });
       }
     }
 
     await t.commit();
-    res.json({
-      autoApprovedCount: autoApproved.length,
-      flaggedCount: flagged.length,
-      flagged
-    });
+
+    res.json({ autoApprovedCount: autoApproved.length, flaggedCount: flagged.length, flagged });
   } catch (err) {
     await t.rollback();
     console.error("autoReconcile:", err);
     res.status(500).json({ error: "Auto-reconciliation failed" });
   }
 };
+// ========================================================================
+// DEALER ADMIN → Pending Payment Requests
+// ========================================================================
+const getDealerAdminPending = async (req, res) => {
+  try {
+    const data = await PaymentRequest.findAll({
+      where: {
+        dealerId: req.user.dealerId,
+        approvalStage: "dealer_admin",
+        approvalStatus: "pending",
+      },
+      include: ["Invoice"],
+      order: [["createdAt", "DESC"]],
+    });
 
+    res.json({ pending: data });
+  } catch (err) {
+    console.error("getDealerAdminPending:", err);
+    res.status(500).json({ error: "Failed to fetch dealer admin pending payments" });
+  }
+};
+
+// ========================================================================
+// EXPORTS
+// ========================================================================
 module.exports = {
   createPaymentRequest,
   getDealerPayments,
-  getDealerAdminPending,
-  reviewPaymentByDealerAdmin,
   getPendingPayments,
-  reviewPayment,
-  autoReconcile
+  approvePayment,
+  rejectPayment,
+  autoReconcile,
+  getDealerAdminPending,
 };
 </file>
 
@@ -4407,8 +5165,9 @@ module.exports = {
 // FILE: src/controllers/pricingController.js
 // ==============================
 
-const { PricingUpdate, AuditLog, Product, Dealer, Notification } = require("../models");
+const { PricingUpdate, AuditLog, Product, Dealer, Notification, sequelize } = require("../models");
 const { Op } = require("sequelize");
+const { nextStage, isApproverForStage } = require("../utils/approvalEngine");
 
 // ----------------------------
 // 1️⃣ Request Pricing Change (Dealer → Manager Notification)
@@ -4433,6 +5192,8 @@ exports.requestPricingChange = async (req, res) => {
       requestedBy: req.user.username || req.user.id,
       requestedByUserId: req.user.id,
       status: "pending",
+      approvalStage: "area_manager",  // First stage of approval
+      approvalStatus: "pending",
     });
 
     await AuditLog.create({
@@ -4545,62 +5306,158 @@ exports.getManagerPricingRequests = async (req, res) => {
 };
 
 // ----------------------------
-// 5️⃣ Update Pricing Status (Manager → Dealer Notification)
+// 5️⃣ Approve Pricing Request (Multi-Stage Workflow)
 // ----------------------------
-exports.updatePricingStatus = async (req, res) => {
+exports.approvePricingRequest = async (req, res) => {
+  const t = await sequelize.transaction();
   try {
     const { id } = req.params;
-    const { status, remarks } = req.body;
+    const { action, remarks } = req.body;
 
-    if (!["approved", "rejected"].includes(status)) {
-      return res.status(400).json({ error: "Invalid status" });
+    if (!["approve", "reject"].includes(action)) {
+      return res.status(400).json({ error: "Invalid action. Use 'approve' or 'reject'" });
     }
 
-    const update = await PricingUpdate.findByPk(id);
-    if (!update) return res.status(404).json({ error: "Request not found" });
-
-    // If approved → update product price
-    if (status === "approved") {
-      await Product.update({ price: update.newPrice }, { where: { id: update.productId } });
+    const pricingRequest = await PricingUpdate.findByPk(id, { transaction: t });
+    if (!pricingRequest) {
+      return res.status(404).json({ error: "Pricing request not found" });
     }
 
-    update.status = status;
-    update.remarks = remarks;
-    update.approvedBy = req.user.username;
-    update.approvedAt = new Date();
-    await update.save();
+    const role = req.user.roleDetails?.name || req.user.role;
+    const stage = pricingRequest.approvalStage || "area_manager";
 
-    // ✅ Create Notification for Dealer
+    if (!isApproverForStage(role, stage, "pricing")) {
+      return res.status(403).json({
+        error: `Not authorized to approve/reject at stage: ${stage}`,
+      });
+    }
+
+    if (action === "reject") {
+      pricingRequest.approvalStatus = "rejected";
+      pricingRequest.status = "rejected";
+      pricingRequest.rejectionReason = remarks || "Rejected by approver";
+      pricingRequest.approvalStage = null;
+    } else {
+      const next = nextStage(stage, "pricing");
+
+      if (!next) {
+        // Final approval - update product price
+        pricingRequest.approvalStage = null;
+        pricingRequest.approvalStatus = "approved";
+        pricingRequest.status = "approved";
+
+        // Update product price
+        await Product.update(
+          { price: pricingRequest.newPrice },
+          { where: { id: pricingRequest.productId }, transaction: t }
+        );
+      } else {
+        pricingRequest.approvalStage = next;
+        pricingRequest.approvalStatus = "pending";
+      }
+    }
+
+    pricingRequest.approvedBy = req.user.username || req.user.id;
+    pricingRequest.approvedAt = new Date();
+    pricingRequest.remarks = remarks;
+    await pricingRequest.save({ transaction: t });
+
+    await AuditLog.create(
+      {
+        userId: req.user.id,
+        action: action === "approve" ? "PRICING_APPROVED" : "PRICING_REJECTED",
+        entity: "PricingUpdate",
+        entityId: pricingRequest.id,
+        changes: { from: stage, to: next || "final", action, remarks },
+        ipAddress: req.ip,
+      },
+      { transaction: t }
+    );
+
+    await t.commit();
+
+    // Send notification
     const io = req.app.get("io");
+    const statusMsg = pricingRequest.status;
+    const statusEmoji = statusMsg === "approved" ? "✅" : "❌";
 
     await Notification.create({
       senderId: req.user.id,
-      recipientId: update.requestedByUserId,
-      title: `Pricing ${status}`,
-      message:
-        status === "approved"
-          ? `Your pricing request for product ID ${update.productId} has been approved.`
-          : `Your pricing request for product ID ${update.productId} was rejected. Remarks: ${remarks || "N/A"}.`,
+      recipientId: pricingRequest.requestedByUserId,
+      title: `Pricing ${statusMsg}`,
+      message: `${statusEmoji} Your pricing request for Product ID ${pricingRequest.productId} was ${statusMsg}. ${remarks ? `Remarks: ${remarks}` : ""}`,
       type: "pricing",
-      relatedId: update.id,
+      relatedId: pricingRequest.id,
     });
 
     if (io) {
-      io.to(`user:${update.requestedByUserId}`).emit("notification", {
-        title: `Pricing ${status}`,
-        message:
-          status === "approved"
-            ? `✅ Your pricing request (Product ID ${update.productId}) was approved`
-            : `❌ Your pricing request (Product ID ${update.productId}) was rejected`,
+      io.to(`user:${pricingRequest.requestedByUserId}`).emit("notification", {
+        title: `Pricing ${statusMsg}`,
+        message: `${statusEmoji} Your pricing request (Product ID ${pricingRequest.productId}) was ${statusMsg}`,
         type: "pricing",
       });
     }
 
-    res.json({ message: "Status updated", update });
+    res.json({
+      message: pricingRequest.status === "approved"
+        ? `Pricing ${action}d successfully`
+        : "Pricing request rejected",
+      pricingRequest,
+    });
   } catch (err) {
-    console.error("updatePricingStatus:", err);
-    res.status(500).json({ error: "Failed to update pricing status" });
+    await t.rollback();
+    console.error("approvePricingRequest:", err);
+    res.status(500).json({ error: "Failed to process pricing request" });
   }
+};
+
+// ----------------------------
+// 6️⃣ Get Pending Pricing Requests (For Current Stage)
+// ----------------------------
+exports.getPendingPricingRequests = async (req, res) => {
+  try {
+    const role = req.user.roleDetails?.name || req.user.role;
+
+    // Determine approval stage based on role
+    let approvalStage;
+    if (role === 'area_manager') approvalStage = 'area_manager';
+    else if (role === 'regional_admin') approvalStage = 'regional_admin';
+    else if (role === 'super_admin') approvalStage = 'super_admin';
+    else {
+      return res.status(403).json({ error: "Role not authorized for pricing approvals" });
+    }
+
+    const requests = await PricingUpdate.findAll({
+      where: {
+        approvalStage,
+        approvalStatus: "pending"
+      },
+      include: [
+        {
+          model: Dealer,
+          as: "dealer",
+          attributes: ["id", "businessName", "dealerCode"]
+        },
+        {
+          model: Product,
+          as: "product",
+          attributes: ["id", "name", "price"]
+        }
+      ],
+      order: [["createdAt", "DESC"]],
+    });
+
+    res.json({ requests });
+  } catch (err) {
+    console.error("getPendingPricingRequests:", err);
+    res.status(500).json({ error: "Failed to fetch pending pricing requests" });
+  }
+};
+
+// Backward compatibility - single stage approval
+exports.updatePricingStatus = async (req, res) => {
+  console.warn("updatePricingStatus is deprecated. Use approvePricingRequest instead.");
+  await exports.approvePricingRequest(req, res);
 };
 </file>
 
@@ -5540,6 +6397,517 @@ module.exports = {
 };
 </file>
 
+<file path="src/controllers/teamController.js">
+// src/controllers/teamController.js
+const { SalesGroup, Dealer, User, sequelize } = require('../models');
+
+// Create new team/sales group
+const createTeam = async (req, res) => {
+  try {
+    const { name, region, description, metadata } = req.body;
+
+    // Check permissions
+    const userRole = req.user.roleDetails?.name || req.user.role;
+    if (userRole === 'regional_admin' && region !== req.user.regionId) {
+      return res.status(403).json({ error: 'Cannot create teams outside your region' });
+    } else if (userRole === 'area_manager') {
+      return res.status(403).json({ error: 'Area managers cannot create teams' });
+    }
+
+    const team = await SalesGroup.create({
+      name,
+      region,
+      description,
+      metadata: metadata || {}
+    });
+
+    res.status(201).json({ message: 'Team created successfully', team });
+  } catch (err) {
+    console.error('createTeam:', err);
+    res.status(500).json({ error: 'Failed to create team' });
+  }
+};
+
+// Get teams (scoped by user role)
+const getTeams = async (req, res) => {
+  try {
+    const whereClause = {};
+    const userRole = req.user.roleDetails?.name || req.user.role;
+
+    // Apply scoping
+    if (userRole === 'regional_admin') {
+      whereClause.region = req.user.regionId;
+    } else if (userRole === 'area_manager' || userRole === 'territory_manager') {
+      // Get teams from user's region
+      whereClause.region = req.user.regionId;
+    }
+
+    const teams = await SalesGroup.findAll({
+      where: whereClause,
+      include: [
+        {
+          model: Dealer,
+          as: 'dealers',
+          attributes: ['id', 'businessName', 'dealerCode', 'lat', 'lng'],
+          through: { attributes: [] } // Don't include junction table attributes
+        }
+      ],
+      order: [['name', 'ASC']]
+    });
+
+    res.json({ teams });
+  } catch (err) {
+    console.error('getTeams:', err);
+    res.status(500).json({ error: 'Failed to fetch teams' });
+  }
+};
+
+// Get single team with details
+const getTeam = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const team = await SalesGroup.findByPk(id, {
+      include: [
+        {
+          model: Dealer,
+          as: 'dealers',
+          include: [{
+            model: User,
+            as: 'user',
+            attributes: ['id', 'username', 'email']
+          }],
+          through: { attributes: [] }
+        }
+      ]
+    });
+
+    if (!team) {
+      return res.status(404).json({ error: 'Team not found' });
+    }
+
+    // Check permissions
+    const userRole = req.user.roleDetails?.name || req.user.role;
+    if (userRole === 'regional_admin' && team.region !== req.user.regionId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Add performance stats
+    const stats = await calculateTeamStats(team.id);
+    team.setDataValue('stats', stats);
+
+    res.json({ team });
+  } catch (err) {
+    console.error('getTeam:', err);
+    res.status(500).json({ error: 'Failed to fetch team' });
+  }
+};
+
+// Add dealer to team
+const addDealerToTeam = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const { teamId } = req.params;
+    const { dealerId } = req.body;
+
+    const team = await SalesGroup.findByPk(teamId, { transaction: t });
+    const dealer = await Dealer.findByPk(dealerId, { transaction: t });
+
+    if (!team || !dealer) {
+      return res.status(404).json({ error: 'Team or dealer not found' });
+    }
+
+    // Check permissions
+    const userRole = req.user.roleDetails?.name || req.user.role;
+    if (userRole === 'regional_admin' && team.region !== req.user.regionId) {
+      return res.status(403).json({ error: 'Cannot modify teams outside your region' });
+    } else if (userRole === 'area_manager') {
+      // Area managers can only add dealers from their area
+      if (dealer.areaId !== req.user.areaId) {
+        return res.status(403).json({ error: 'Cannot add dealers from other areas' });
+      }
+    }
+
+    // Check if dealer is already in another team
+    const existingAssociation = await sequelize.models.SalesGroupMembers.findOne({
+      where: { dealerId },
+      transaction: t
+    });
+
+    if (existingAssociation) {
+      return res.status(400).json({ error: 'Dealer is already in another team' });
+    }
+
+    await team.addDealer(dealerId, { transaction: t });
+    await t.commit();
+
+    res.json({ message: 'Dealer added to team successfully' });
+  } catch (err) {
+    await t.rollback();
+    console.error('addDealerToTeam:', err);
+    res.status(500).json({ error: 'Failed to add dealer to team' });
+  }
+};
+
+// Remove dealer from team
+const removeDealerFromTeam = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const { teamId, dealerId } = req.params;
+
+    const team = await SalesGroup.findByPk(teamId, { transaction: t });
+    if (!team) {
+      return res.status(404).json({ error: 'Team not found' });
+    }
+
+    // Check permissions
+    const userRole = req.user.roleDetails?.name || req.user.role;
+    if (userRole === 'regional_admin' && team.region !== req.user.regionId) {
+      return res.status(403).json({ error: 'Cannot modify teams outside your region' });
+    }
+
+    await team.removeDealer(dealerId, { transaction: t });
+    await t.commit();
+
+    res.json({ message: 'Dealer removed from team successfully' });
+  } catch (err) {
+    await t.rollback();
+    console.error('removeDealerFromTeam:', err);
+    res.status(500).json({ error: 'Failed to remove dealer from team' });
+  }
+};
+
+// Update team
+const updateTeam = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description, metadata } = req.body;
+
+    const team = await SalesGroup.findByPk(id);
+    if (!team) {
+      return res.status(404).json({ error: 'Team not found' });
+    }
+
+    // Check permissions
+    const userRole = req.user.roleDetails?.name || req.user.role;
+    if (userRole === 'regional_admin' && team.region !== req.user.regionId) {
+      return res.status(403).json({ error: 'Cannot modify teams outside your region' });
+    } else if (userRole === 'area_manager') {
+      return res.status(403).json({ error: 'Area managers cannot modify teams' });
+    }
+
+    await team.update({
+      name: name || team.name,
+      description: description || team.description,
+      metadata: metadata || team.metadata
+    });
+
+    res.json({ message: 'Team updated successfully', team });
+  } catch (err) {
+    console.error('updateTeam:', err);
+    res.status(500).json({ error: 'Failed to update team' });
+  }
+};
+
+// Delete team
+const deleteTeam = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const { id } = req.params;
+
+    const team = await SalesGroup.findByPk(id, {
+      include: [{ model: Dealer, as: 'dealers', through: { attributes: [] } }],
+      transaction: t
+    });
+
+    if (!team) {
+      return res.status(404).json({ error: 'Team not found' });
+    }
+
+    // Check permissions
+    const userRole = req.user.roleDetails?.name || req.user.role;
+    if (userRole === 'regional_admin' && team.region !== req.user.regionId) {
+      return res.status(403).json({ error: 'Cannot delete teams outside your region' });
+    }
+
+    // Remove all dealers from team first
+    await team.setDealers([], { transaction: t });
+
+    await team.destroy({ transaction: t });
+    await t.commit();
+
+    res.json({ message: 'Team deleted successfully' });
+  } catch (err) {
+    await t.rollback();
+    console.error('deleteTeam:', err);
+    res.status(500).json({ error: 'Failed to delete team' });
+  }
+};
+
+// Helper function to calculate team performance stats
+const calculateTeamStats = async (teamId) => {
+  const { Order, Invoice, sequelize } = require('../models');
+  const { Op, fn, col, literal } = sequelize;
+
+  // Get team dealers
+  const team = await SalesGroup.findByPk(teamId, {
+    include: [{ model: Dealer, as: 'dealers', attributes: ['id'] }]
+  });
+
+  if (!team || !team.dealers) return { totalDealers: 0, totalOrders: 0, totalRevenue: 0 };
+
+  const dealerIds = team.dealers.map(d => d.id);
+
+  // Calculate stats
+  const [result] = await sequelize.query(`
+    SELECT
+      COUNT(DISTINCT o.id) as totalOrders,
+      COALESCE(SUM(i.totalAmount), 0) as totalRevenue,
+      COUNT(DISTINCT d.id) as totalDealers
+    FROM dealers d
+    LEFT JOIN orders o ON o.dealerId = d.id
+    LEFT JOIN invoices i ON i.dealerId = d.id AND i.invoiceDate >= CURRENT_DATE - INTERVAL '30 days'
+    WHERE d.id IN (?)
+  `, {
+    replacements: [dealerIds]
+  });
+
+  return result[0];
+};
+
+module.exports = {
+  createTeam,
+  getTeams,
+  getTeam,
+  addDealerToTeam,
+  removeDealerFromTeam,
+  updateTeam,
+  deleteTeam
+};
+</file>
+
+<file path="src/controllers/territoryController.js">
+// src/controllers/territoryController.js
+const { Territory, Area, Region, Dealer, User, sequelize } = require('../models');
+
+// Create new territory
+const createTerritory = async (req, res) => {
+  try {
+    const { name, areaId, geojson, centroidLat, centroidLng } = req.body;
+
+    // Validate area exists and check permissions
+    const area = await Area.findByPk(areaId);
+    if (!area) {
+      return res.status(404).json({ error: 'Area not found' });
+    }
+
+    // Check hierarchical permissions
+    const userRole = req.user.roleDetails?.name || req.user.role;
+    if (userRole === 'area_manager' && req.user.areaId !== areaId) {
+      return res.status(403).json({ error: 'Cannot create territories outside your area' });
+    } else if (userRole === 'regional_admin' && area.regionId !== req.user.regionId) {
+      return res.status(403).json({ error: 'Cannot create territories in areas outside your region' });
+    }
+
+    const territory = await Territory.create({
+      name,
+      areaId,
+      geojson,
+      centroidLat,
+      centroidLng
+    });
+
+    res.status(201).json({ message: 'Territory created successfully', territory });
+  } catch (err) {
+    console.error('createTerritory:', err);
+    res.status(500).json({ error: 'Failed to create territory' });
+  }
+};
+
+// Get territories (scoped by user role)
+const getTerritories = async (req, res) => {
+  try {
+    const whereClause = {};
+    const userRole = req.user.roleDetails?.name || req.user.role;
+
+    // Apply scoping
+    if (userRole === 'area_manager') {
+      whereClause.areaId = req.user.areaId;
+    } else if (userRole === 'regional_admin') {
+      // Get areas in user's region, then territories in those areas
+      const areas = await Area.findAll({
+        where: { regionId: req.user.regionId },
+        attributes: ['id']
+      });
+      const areaIds = areas.map(a => a.id);
+      whereClause.areaId = { [require('sequelize').Op.in]: areaIds };
+    }
+
+    const territories = await Territory.findAll({
+      where: whereClause,
+      include: [
+        {
+          model: Area,
+          as: 'area',
+          attributes: ['id', 'name'],
+          include: [{
+            model: Region,
+            as: 'region',
+            attributes: ['id', 'name']
+          }]
+        },
+        {
+          model: Dealer,
+          as: 'dealers',
+          attributes: ['id', 'businessName', 'dealerCode']
+        }
+      ],
+      order: [['name', 'ASC']]
+    });
+
+    res.json({ territories });
+  } catch (err) {
+    console.error('getTerritories:', err);
+    res.status(500).json({ error: 'Failed to fetch territories' });
+  }
+};
+
+// Get single territory
+const getTerritory = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const territory = await Territory.findByPk(id, {
+      include: [
+        {
+          model: Area,
+          as: 'area',
+          include: [{
+            model: Region,
+            as: 'region'
+          }]
+        },
+        {
+          model: Dealer,
+          as: 'dealers',
+          include: [{
+            model: User,
+            as: 'user',
+            attributes: ['id', 'username', 'email']
+          }]
+        }
+      ]
+    });
+
+    if (!territory) {
+      return res.status(404).json({ error: 'Territory not found' });
+    }
+
+    // Check permissions
+    const userRole = req.user.roleDetails?.name || req.user.role;
+    if (userRole === 'area_manager' && territory.areaId !== req.user.areaId) {
+      return res.status(403).json({ error: 'Access denied' });
+    } else if (userRole === 'regional_admin' && territory.area?.regionId !== req.user.regionId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    res.json({ territory });
+  } catch (err) {
+    console.error('getTerritory:', err);
+    res.status(500).json({ error: 'Failed to fetch territory' });
+  }
+};
+
+// Update territory
+const updateTerritory = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, geojson, centroidLat, centroidLng } = req.body;
+
+    const territory = await Territory.findByPk(id);
+    if (!territory) {
+      return res.status(404).json({ error: 'Territory not found' });
+    }
+
+    // Check permissions
+    const userRole = req.user.roleDetails?.name || req.user.role;
+    if (userRole === 'area_manager' && territory.areaId !== req.user.areaId) {
+      return res.status(403).json({ error: 'Cannot modify territories outside your area' });
+    } else if (userRole === 'regional_admin' && territory.area?.regionId !== req.user.regionId) {
+      return res.status(403).json({ error: 'Cannot modify territories outside your region' });
+    }
+
+    await territory.update({
+      name: name || territory.name,
+      geojson: geojson || territory.geojson,
+      centroidLat: centroidLat || territory.centroidLat,
+      centroidLng: centroidLng || territory.centroidLng
+    });
+
+    res.json({ message: 'Territory updated successfully', territory });
+  } catch (err) {
+    console.error('updateTerritory:', err);
+    res.status(500).json({ error: 'Failed to update territory' });
+  }
+};
+
+// Delete territory (with validation)
+const deleteTerritory = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const { id } = req.params;
+
+    const territory = await Territory.findByPk(id, {
+      include: [
+        { model: Dealer, as: 'dealers' },
+        {
+          model: Area,
+          as: 'area',
+          include: [{ model: Region, as: 'region' }]
+        }
+      ],
+      transaction: t
+    });
+
+    if (!territory) {
+      return res.status(404).json({ error: 'Territory not found' });
+    }
+
+    // Check if territory has dealers
+    if (territory.dealers && territory.dealers.length > 0) {
+      return res.status(400).json({
+        error: 'Cannot delete territory that contains dealers. Move dealers first.'
+      });
+    }
+
+    // Check permissions
+    const userRole = req.user.roleDetails?.name || req.user.role;
+    if (userRole === 'area_manager' && territory.areaId !== req.user.areaId) {
+      return res.status(403).json({ error: 'Cannot delete territories outside your area' });
+    } else if (userRole === 'regional_admin' && territory.area?.regionId !== req.user.regionId) {
+      return res.status(403).json({ error: 'Cannot delete territories outside your region' });
+    }
+
+    await territory.destroy({ transaction: t });
+    await t.commit();
+
+    res.json({ message: 'Territory deleted successfully' });
+  } catch (err) {
+    await t.rollback();
+    console.error('deleteTerritory:', err);
+    res.status(500).json({ error: 'Failed to delete territory' });
+  }
+};
+
+module.exports = {
+  createTerritory,
+  getTerritories,
+  getTerritory,
+  updateTerritory,
+  deleteTerritory
+};
+</file>
+
 <file path="src/middleware/auth.js">
 // src/middleware/auth.js
 
@@ -5667,6 +7035,203 @@ module.exports = (requiredRoles) => {
     }
     next();
   };
+};
+</file>
+
+<file path="src/middleware/scoping.js">
+const { Op } = require('sequelize');
+
+const rolesToScope = {
+  'regional_admin': scopeToRegion,
+  'regional_manager': scopeToRegion,
+  'area_manager': scopeToArea,
+  'territory_manager': scopeToTerritory,
+  'dealer_admin': scopeToDealer,
+  'dealer_staff': scopeToDealer,
+};
+
+// Super Admin: No scoping - sees everything
+// Technical Admin: No scoping - but limited by permissions (not by data)
+
+function scopeToRegion(user) {
+  return {
+    regionId: user.regionId
+  };
+}
+
+function scopeToArea(user) {
+  return {
+    areaId: user.areaId
+  };
+}
+
+function scopeToTerritory(user) {
+  return {
+    territoryId: user.territoryId
+  };
+}
+
+function scopeToDealer(user) {
+  return {
+    id: user.dealerId // Dealers only see themselves
+  };
+}
+
+/**
+ * Middleware to apply hierarchical data scoping
+ * @param {string[]} entityTypes - Array of entities like ['Order', 'Dealer', 'Invoice']
+ * @returns Middleware function that adds whereClause to req.scope
+ */
+function applyScoping(entityTypes = []) {
+  return async (req, res, next) => {
+    try {
+      if (!req.user) {
+        return next();
+      }
+
+      const roleName = req.user.roleDetails?.name || req.user.role;
+
+      // Super Admin & Technical Admin see all
+      if (['super_admin', 'technical_admin'].includes(roleName)) {
+        return next();
+      }
+
+      const scopingFn = rolesToScope[roleName];
+      if (!scopingFn) {
+        return next();
+      }
+
+      const scopeWhere = scopingFn(req.user);
+
+      // For different entity types, apply appropriate where clauses
+      req.scope = {};
+
+      for (const entityType of entityTypes) {
+        if (entityType === 'Dealer') {
+          req.scope.dealers = { ...scopeWhere };
+        } else if (entityType === 'Order') {
+          // Orders belong to dealers, so scope by dealer's hierarchy
+          if (scopeWhere.id) {
+            // Dealer level
+            req.scope.orders = { dealerId: req.user.dealerId };
+          } else {
+            // Manager level - need to get dealers under their scope
+            const dealersUnderScope = await getDealersUnderUserScope(req.user);
+            req.scope.orders = { dealerId: { [Op.in]: dealersUnderScope } };
+          }
+        } else if (entityType === 'Invoice') {
+          // Similar to orders
+          if (scopeWhere.id) {
+            req.scope.invoices = { dealerId: req.user.dealerId };
+          } else {
+            const dealersUnderScope = await getDealersUnderUserScope(req.user);
+            req.scope.invoices = { dealerId: { [Op.in]: dealersUnderScope } };
+          }
+        } else if (entityType === 'Campaign') {
+          // Campaigns can target regions/territories, but viewing is scoped
+          // This might need more complex logic
+          req.scope.campaigns = getCampaignScopeForUser(req.user);
+        }
+      }
+
+      next();
+    } catch (err) {
+      console.error('Scoping middleware error:', err);
+      res.status(500).json({ error: 'Scope check failed' });
+    }
+  };
+}
+
+/**
+ * Get all dealer IDs under a user's hierarchical scope
+ */
+async function getDealersUnderUserScope(user) {
+  const { Dealer, Territory, Area, Region } = require('../models');
+  let dealerIds = [];
+
+  const roleName = user.roleDetails?.name || user.role;
+
+  if (roleName === 'regional_admin' || roleName === 'regional_manager') {
+    // Get all dealers in their region
+    const dealers = await Dealer.findAll({
+      where: { regionId: user.regionId },
+      attributes: ['id']
+    });
+    dealerIds = dealers.map(d => d.id);
+  } else if (roleName === 'area_manager') {
+    // Get all dealers in their area
+    const dealers = await Dealer.findAll({
+      where: { areaId: user.areaId },
+      attributes: ['id']
+    });
+    dealerIds = dealers.map(d => d.id);
+  } else if (roleName === 'territory_manager') {
+    // Get all dealers in their territory
+    dealerIds = await Dealer.findAll({
+      where: { territoryId: user.territoryId },
+      attributes: ['id']
+    });
+    dealerIds = dealerIds.map(d => d.id);
+  } else if (roleName === 'dealer_admin') {
+    // Dealers under this dealer admin (might have sub-dealers, but for now just self)
+    dealerIds = [user.dealerId];
+  } else if (roleName === 'dealer_staff') {
+    // Only their own dealer
+    dealerIds = [user.dealerId];
+  }
+
+  return dealerIds;
+}
+
+/**
+ * Get scope for campaigns based on user role
+ */
+function getCampaignScopeForUser(user) {
+  const roleName = user.roleDetails?.name || user.role;
+
+  // For managers, only see campaigns targeted to their scope
+  if (roleName === 'regional_admin' || roleName === 'regional_manager') {
+    return {
+      [Op.or]: [
+        { targetAudience: { [Op.contains]: [{ type: 'region', entityId: user.regionId }] } },
+        { targetAudience: { [Op.contains]: [{ type: 'all' }] } }
+      ]
+    };
+  } else if (roleName === 'area_manager') {
+    return {
+      [Op.or]: [
+        { targetAudience: { [Op.contains]: [{ type: 'area', entityId: user.areaId }] } },
+        { targetAudience: { [Op.contains]: [{ type: 'region', entityId: user.regionId }] } },
+        { targetAudience: { [Op.contains]: [{ type: 'all' }] } }
+      ]
+    };
+  } else if (roleName === 'territory_manager') {
+    return {
+      [Op.or]: [
+        { targetAudience: { [Op.contains]: [{ type: 'territory', entityId: user.territoryId }] } },
+        { targetAudience: { [Op.contains]: [{ type: 'area', entityId: user.areaId }] } },
+        { targetAudience: { [Op.contains]: [{ type: 'region', entityId: user.regionId }] } },
+        { targetAudience: { [Op.contains]: [{ type: 'all' }] } }
+      ]
+    };
+  } else if (roleName.startsWith('dealer_')) {
+    return {
+      [Op.or]: [
+        { targetAudience: { [Op.contains]: [{ type: 'dealer', entityId: user.dealerId }] } },
+        { targetAudience: { [Op.contains]: [{ type: 'territory', entityId: user.territoryId }] } },
+        { targetAudience: { [Op.contains]: [{ type: 'area', entityId: user.areaId }] } },
+        { targetAudience: { [Op.contains]: [{ type: 'region', entityId: user.regionId }] } },
+        { targetAudience: { [Op.contains]: [{ type: 'all' }] } }
+      ]
+    };
+  }
+
+  return {};
+}
+
+module.exports = {
+  applyScoping,
+  getDealersUnderUserScope
 };
 </file>
 
@@ -5840,6 +7405,318 @@ module.exports = {
 };
 </file>
 
+<file path="src/migrations/04-create-areas.js">
+'use strict';
+
+module.exports = {
+  up: async (queryInterface, Sequelize) => {
+    await queryInterface.createTable('areas', {
+      id: {
+        type: Sequelize.UUID,
+        primaryKey: true,
+        defaultValue: Sequelize.UUIDV4,
+      },
+      name: {
+        type: Sequelize.STRING,
+        allowNull: false,
+      },
+      regionId: {
+        type: Sequelize.UUID,
+        allowNull: true,
+      },
+      geojson: {
+        type: Sequelize.JSONB,
+        allowNull: true,
+      },
+      centroidLat: {
+        type: Sequelize.DOUBLE,
+        allowNull: true,
+      },
+      centroidLng: {
+        type: Sequelize.DOUBLE,
+        allowNull: true,
+      },
+      createdAt: {
+        allowNull: false,
+        type: Sequelize.DATE,
+      },
+      updatedAt: {
+        allowNull: false,
+        type: Sequelize.DATE,
+      }
+    });
+
+    // Add foreign key constraint
+    await queryInterface.addConstraint('areas', {
+      fields: ['regionId'],
+      type: 'foreign key',
+      name: 'areas_regionId_fk',
+      references: {
+        table: 'regions',
+        field: 'id'
+      },
+      onDelete: 'SET NULL',
+      onUpdate: 'CASCADE'
+    });
+  },
+
+  down: async (queryInterface, Sequelize) => {
+    await queryInterface.dropTable('areas');
+  }
+};
+</file>
+
+<file path="src/migrations/05-add-areaId-to-territories.js">
+'use strict';
+
+module.exports = {
+  up: async (queryInterface, Sequelize) => {
+    await queryInterface.addColumn('territories', 'areaId', {
+      type: Sequelize.UUID,
+      allowNull: true,
+    });
+
+    await queryInterface.addConstraint('territories', {
+      fields: ['areaId'],
+      type: 'foreign key',
+      name: 'territories_areaId_fk',
+      references: {
+        table: 'areas',
+        field: 'id'
+      },
+      onDelete: 'SET NULL',
+      onUpdate: 'CASCADE'
+    });
+  },
+
+  down: async (queryInterface, Sequelize) => {
+    await queryInterface.removeConstraint('territories', 'territories_areaId_fk');
+    await queryInterface.removeColumn('territories', 'areaId');
+  }
+};
+</file>
+
+<file path="src/migrations/06-add-areaId-to-dealers.js">
+'use strict';
+
+module.exports = {
+  up: async (queryInterface, Sequelize) => {
+    await queryInterface.addColumn('dealers', 'areaId', {
+      type: Sequelize.UUID,
+      allowNull: true,
+    });
+
+    await queryInterface.addConstraint('dealers', {
+      fields: ['areaId'],
+      type: 'foreign key',
+      name: 'dealers_areaId_fk',
+      references: {
+        table: 'areas',
+        field: 'id'
+      },
+      onDelete: 'SET NULL',
+      onUpdate: 'CASCADE'
+    });
+  },
+
+  down: async (queryInterface, Sequelize) => {
+    await queryInterface.removeConstraint('dealers', 'dealers_areaId_fk');
+    await queryInterface.removeColumn('dealers', 'areaId');
+  }
+};
+</file>
+
+<file path="src/migrations/07-add-area-and-territory-to-users.js">
+'use strict';
+
+module.exports = {
+  up: async (queryInterface, Sequelize) => {
+    await queryInterface.addColumn('Users', 'areaId', {
+      type: Sequelize.UUID,
+      allowNull: true,
+    });
+
+    await queryInterface.addColumn('Users', 'territoryId', {
+      type: Sequelize.UUID,
+      allowNull: true,
+    });
+
+    // Add foreign key constraints
+    await queryInterface.addConstraint('Users', {
+      fields: ['areaId'],
+      type: 'foreign key',
+      name: 'users_areaId_fk',
+      references: {
+        table: 'areas',
+        field: 'id'
+      },
+      onDelete: 'SET NULL',
+      onUpdate: 'CASCADE'
+    });
+
+    await queryInterface.addConstraint('Users', {
+      fields: ['territoryId'],
+      type: 'foreign key',
+      name: 'users_territoryId_fk',
+      references: {
+        table: 'territories',
+        field: 'id'
+      },
+      onDelete: 'SET NULL',
+      onUpdate: 'CASCADE'
+    });
+  },
+
+  down: async (queryInterface, Sequelize) => {
+    await queryInterface.removeConstraint('Users', 'users_territoryId_fk');
+    await queryInterface.removeConstraint('Users', 'users_areaId_fk');
+
+    await queryInterface.removeColumn('Users', 'territoryId');
+    await queryInterface.removeColumn('Users', 'areaId');
+  }
+};
+</file>
+
+<file path="src/migrations/20-add-approval-fields.js">
+'use strict';
+
+module.exports = {
+  up: async (queryInterface, Sequelize) => {
+    const safeAdd = async (table, column, props) => {
+      try {
+        await queryInterface.addColumn(table, column, props);
+      } catch (e) {
+        console.log(`⚠️ Skipping existing column ${table}.${column}`);
+      }
+    };
+
+    // -----------------------------
+    // ORDERS
+    // -----------------------------
+    await safeAdd("orders", "approvalStage", {
+      type: Sequelize.STRING,
+      allowNull: true,
+    });
+
+    await safeAdd("orders", "approvalStatus", {
+      type: Sequelize.STRING,
+      allowNull: false,
+      defaultValue: "draft",
+    });
+
+    await safeAdd("orders", "approvedBy", {
+      type: Sequelize.UUID,
+      allowNull: true,
+    });
+
+    await safeAdd("orders", "approvedAt", {
+      type: Sequelize.DATE,
+      allowNull: true,
+    });
+
+    await safeAdd("orders", "rejectionReason", {
+      type: Sequelize.TEXT,
+      allowNull: true,
+    });
+
+    // -----------------------------
+    // DOCUMENTS
+    // -----------------------------
+    await safeAdd("documents", "approvalStage", {
+      type: Sequelize.STRING,
+      allowNull: true,
+    });
+
+    await safeAdd("documents", "approvalStatus", {
+      type: Sequelize.STRING,
+      allowNull: false,
+      defaultValue: "pending",
+    });
+
+    await safeAdd("documents", "approvedBy", {
+      type: Sequelize.UUID,
+      allowNull: true,
+    });
+
+    await safeAdd("documents", "approvedAt", {
+      type: Sequelize.DATE,
+      allowNull: true,
+    });
+
+    await safeAdd("documents", "rejectionReason", {
+      type: Sequelize.TEXT,
+      allowNull: true,
+    });
+
+    // -----------------------------
+    // PAYMENT REQUESTS (2 possible table names)
+    // -----------------------------
+    const payTables = ["payment_requests", "paymen_requests"];
+
+    for (const tbl of payTables) {
+      const exists = await queryInterface.sequelize
+        .query(`SELECT to_regclass('${tbl}')`)
+        .then(r => r[0][0].to_regclass);
+
+      if (!exists) continue;
+
+      await safeAdd(tbl, "approvalStage", {
+        type: Sequelize.STRING,
+        allowNull: true,
+      });
+
+      await safeAdd(tbl, "approvalStatus", {
+        type: Sequelize.STRING,
+        allowNull: false,
+        defaultValue: "submitted",
+      });
+
+      await safeAdd(tbl, "approvedBy", {
+        type: Sequelize.UUID,
+        allowNull: true,
+      });
+
+      await safeAdd(tbl, "approvedAt", {
+        type: Sequelize.DATE,
+        allowNull: true,
+      });
+
+      await safeAdd(tbl, "rejectionReason", {
+        type: Sequelize.TEXT,
+        allowNull: true,
+      });
+
+      break;
+    }
+  },
+
+  down: async (queryInterface) => {
+    const safeRemove = async (table, column) => {
+      try {
+        await queryInterface.removeColumn(table, column);
+      } catch (e) {
+        console.log(`⚠️ Skipping missing column ${table}.${column}`);
+      }
+    };
+
+    const cols = [
+      "approvalStage",
+      "approvalStatus",
+      "approvedBy",
+      "approvedAt",
+      "rejectionReason",
+    ];
+
+    for (const col of cols) {
+      await safeRemove("orders", col);
+      await safeRemove("documents", col);
+      await safeRemove("payment_requests", col);
+      await safeRemove("paymen_requests", col);
+    }
+  },
+};
+</file>
+
 <file path="src/models/AccountStatement.js">
 const { DataTypes } = require('sequelize');
 
@@ -5887,6 +7764,49 @@ module.exports = (sequelize, DataTypes) => {
   });
 
   return AccountStatement;
+};
+</file>
+
+<file path="src/models/Area.js">
+// src/models/Area.js
+module.exports = (sequelize, DataTypes) => {
+  const Area = sequelize.define('Area', {
+    id: {
+      type: DataTypes.UUID,
+      primaryKey: true,
+      defaultValue: DataTypes.UUIDV4
+    },
+    name: {
+      type: DataTypes.STRING,
+      allowNull: false
+    },
+    regionId: {
+      type: DataTypes.UUID,
+      allowNull: true
+    },
+    geojson: {
+      type: DataTypes.JSONB,
+      allowNull: true
+    },
+    centroidLat: {
+      type: DataTypes.DOUBLE,
+      allowNull: true
+    },
+    centroidLng: {
+      type: DataTypes.DOUBLE,
+      allowNull: true
+    }
+  }, {
+    tableName: 'areas'
+  });
+
+  Area.associate = (models) => {
+    Area.belongsTo(models.Region, { foreignKey: 'regionId' });
+    Area.hasMany(models.Territory, { foreignKey: 'areaId' });
+    Area.hasMany(models.User, { foreignKey: 'areaId', as: 'managers' });
+  };
+
+  return Area;
 };
 </file>
 
@@ -6121,6 +8041,11 @@ territoryId: DataTypes.UUID,
         type: DataTypes.UUID,
         allowNull: true,
       },
+
+      areaId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
     },
     {
       timestamps: true,
@@ -6129,7 +8054,7 @@ territoryId: DataTypes.UUID,
     }
   );
 
-  Dealer.associate = (models) => {
+Dealer.associate = (models) => {
     Dealer.hasOne(models.User, {
       foreignKey: "dealerId",
       as: "user",
@@ -6166,6 +8091,11 @@ Dealer.belongsTo(models.Territory, { foreignKey: 'territoryId' });
     Dealer.belongsTo(models.Region, {
       foreignKey: "regionId",
       as: "region",
+    });
+
+    Dealer.belongsTo(models.Area, {
+      foreignKey: "areaId",
+      as: "area",
     });
   };
 
@@ -6271,16 +8201,16 @@ Object.keys(db).forEach((modelName) => {
 db.sequelize = sequelize;
 db.Sequelize = Sequelize;
 
-// ADD THIS ⬇⬇⬇
-db.syncDatabase = async () => {
-  try {
-    await db.sequelize.sync();
+// Removed auto-sync since we use migrations
+// db.syncDatabase = async () => {
+//   try {
+//     await db.sequelize.sync({ alter: false, force: false });
 
-    console.log("✅ Database synchronized successfully.");
-  } catch (error) {
-    console.error("❌ Error synchronizing database:", error);
-  }
-};
+//     console.log("✅ Database synchronized successfully.");
+//   } catch (error) {
+//     console.error("❌ Error synchronizing database:", error);
+//   }
+// };
 
 // EXPORT ALL
 module.exports = db;
@@ -6345,16 +8275,56 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
       },
 
-      invoiceNumber: { type: DataTypes.STRING, allowNull: false, unique: true },
-      invoiceDate: { type: DataTypes.DATE, allowNull: false },
+      invoiceNumber: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        unique: true,
+      },
+
+      invoiceDate: {
+        type: DataTypes.DATE,
+        allowNull: false,
+      },
+
       dueDate: DataTypes.DATE,
 
-      amount: { type: DataTypes.DECIMAL(15, 2), allowNull: false },
-      taxAmount: { type: DataTypes.DECIMAL(15, 2), defaultValue: 0 },
-      totalAmount: { type: DataTypes.DECIMAL(15, 2), allowNull: false },
+      /* ============================================================
+         NEW UNIFIED AMOUNT SYSTEM
+      ============================================================ */
 
-      paidAmount: { type: DataTypes.DECIMAL(15, 2), defaultValue: 0 },
-      balanceAmount: DataTypes.DECIMAL(15, 2),
+      baseAmount: {
+        type: DataTypes.DECIMAL(15, 2),
+        allowNull: false,
+        defaultValue: 0,
+      },
+
+      taxAmount: {
+        type: DataTypes.DECIMAL(15, 2),
+        allowNull: false,
+        defaultValue: 0,
+      },
+
+      totalAmount: {
+        type: DataTypes.DECIMAL(15, 2),
+        allowNull: false,
+        defaultValue: 0,
+      },
+
+      paidAmount: {
+        type: DataTypes.DECIMAL(15, 2),
+        allowNull: false,
+        defaultValue: 0,
+      },
+
+      balanceAmount: {
+        type: DataTypes.DECIMAL(15, 2),
+        allowNull: false,
+        defaultValue: 0,
+      },
+
+      /* ============================================================
+         STATUS + META
+      ============================================================ */
 
       status: {
         type: DataTypes.ENUM("paid", "unpaid", "partial", "overdue"),
@@ -6378,6 +8348,12 @@ module.exports = (sequelize, DataTypes) => {
       foreignKey: "dealerId",
       as: "dealer",
       onDelete: "CASCADE",
+    });
+
+    Invoice.belongsTo(models.Order, {
+      foreignKey: "orderId",
+      as: "order",
+      onDelete: "SET NULL"
     });
   };
 
@@ -6568,53 +8544,94 @@ module.exports = (sequelize, DataTypes) => {
 <file path="src/models/Order.js">
 // src/models/Order.js
 module.exports = (sequelize, DataTypes) => {
-  const Order = sequelize.define('Order', {
-    id: {
-      type: DataTypes.UUID,
-      defaultValue: DataTypes.UUIDV4,
-      primaryKey: true
+  const Order = sequelize.define(
+    "Order",
+    {
+      id: {
+        type: DataTypes.UUID,
+        defaultValue: DataTypes.UUIDV4,
+        primaryKey: true,
+      },
+
+      dealerId: {
+        type: DataTypes.UUID,
+        allowNull: false,
+      },
+
+      orderNumber: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        unique: true,
+      },
+
+      status: {
+        type: DataTypes.ENUM(
+          "Pending",
+          "Approved",
+          "Rejected",
+          "Pending Approval",
+          "Processing",
+          "Shipped",
+          "Delivered",
+          "Cancelled"
+        ),
+        defaultValue: "Pending",
+      },
+
+      totalAmount: {
+        type: DataTypes.DECIMAL(12, 2),
+        defaultValue: 0,
+      },
+
+      notes: {
+        type: DataTypes.TEXT,
+      },
+
+      // ----------------------------------------
+      // MULTI-STAGE APPROVAL WORKFLOW FIELDS
+      // ----------------------------------------
+
+      approvalStage: {
+        type: DataTypes.STRING, // dealer_admin, regional_manager, etc.
+        allowNull: true,
+        defaultValue: "stage1",
+      },
+
+      approvalStatus: {
+        type: DataTypes.ENUM("pending", "approved", "rejected"),
+        defaultValue: "pending",
+      },
+
+      approvedBy: {
+        type: DataTypes.UUID,
+        allowNull: true, // who approved/rejected the LAST stage
+      },
+
+      approvedAt: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+
+      rejectionReason: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
     },
-    dealerId: {
-      type: DataTypes.UUID,   // FIXED HERE
-      allowNull: false
-    },
-    orderNumber: {
-      type: DataTypes.STRING,
-      allowNull: false,
-      unique: true
-    },
-    status: {
-      type: DataTypes.ENUM(
-        'Pending',
-        'Approved',
-        'Rejected',
-        'Processing',
-        'Shipped',
-        'Delivered',
-        'Cancelled'
-      ),
-      defaultValue: 'Pending'
-    },
-    totalAmount: {
-      type: DataTypes.DECIMAL(12, 2),
-      defaultValue: 0
-    },
-    notes: {
-      type: DataTypes.TEXT
+    {
+      tableName: "orders",
+      timestamps: true,
     }
-  }, {
-    tableName: 'orders',
-    timestamps: true
-  });
+  );
 
   Order.associate = (models) => {
     Order.belongsTo(models.Dealer, {
-      as: 'dealer',
-      foreignKey: 'dealerId'
+      as: "dealer",
+      foreignKey: "dealerId",
     });
+
     Order.hasMany(models.OrderItem, {
-      as: 'items',
-      foreignKey: 'orderId'
+      as: "items",
+      foreignKey: "orderId",
     });
   };
 
@@ -6668,7 +8685,7 @@ module.exports = (sequelize, DataTypes) => {
 };
 </file>
 
-<file path="src/models/PaymenRequest.js">
+<file path="src/models/PaymentRequest.js">
 module.exports = (sequelize, DataTypes) => {
   const PaymentRequest = sequelize.define("PaymentRequest", {
     id: {
@@ -6970,6 +8987,7 @@ module.exports = (sequelize, DataTypes) => {
     },
     name: DataTypes.STRING,
     regionId: DataTypes.UUID,
+    areaId: DataTypes.UUID,
 
     // ADD THESE FIELDS
     geojson: {
@@ -6988,6 +9006,7 @@ module.exports = (sequelize, DataTypes) => {
 
   Territory.associate = models => {
     Territory.belongsTo(models.Region, { foreignKey: 'regionId' });
+    Territory.belongsTo(models.Area, { foreignKey: 'areaId' });
     Territory.hasMany(models.Dealer, { foreignKey: 'territoryId' });
   };
 
@@ -7034,6 +9053,20 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.UUID,
         allowNull: true,
         references: { model: "Regions", key: "id" },
+      },
+
+      // 🔥 Link to Areas table
+      areaId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: { model: "Areas", key: "id" },
+      },
+
+      // 🔥 Link to Territories table
+      territoryId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: { model: "Territories", key: "id" },
       },
 
       // (Old ENUM – we can remove later)
@@ -7132,6 +9165,18 @@ module.exports = (sequelize, DataTypes) => {
     User.belongsTo(models.Region, {
       foreignKey: "regionId",
       as: "region",
+    });
+
+    // Area
+    User.belongsTo(models.Area, {
+      foreignKey: "areaId",
+      as: "area",
+    });
+
+    // Territory
+    User.belongsTo(models.Territory, {
+      foreignKey: "territoryId",
+      as: "territory",
     });
 
     // Chat
@@ -7297,6 +9342,33 @@ router.get('/reports', authorize('super_admin'), adminController.getAdminReport)
 module.exports = router;
 </file>
 
+<file path="src/routes/areaRoutes.js">
+// src/routes/areaRoutes.js
+const express = require('express');
+const router = express.Router();
+const { authenticate } = require('../middleware/auth');
+const checkPermission = require('../middleware/checkPermission');
+
+const {
+  createArea,
+  getAreas,
+  getArea,
+  updateArea,
+  deleteArea
+} = require('../controllers/areaController');
+
+// Public routes (with authentication)
+router.get('/', authenticate, getAreas);
+
+// Require permissions for write operations
+router.post('/', authenticate, checkPermission('areas.manage'), createArea);
+router.get('/:id', authenticate, checkPermission('areas.view'), getArea);
+router.put('/:id', authenticate, checkPermission('areas.manage'), updateArea);
+router.delete('/:id', authenticate, checkPermission('areas.manage'), deleteArea);
+
+module.exports = router;
+</file>
+
 <file path="src/routes/authRoutes.js">
 const express = require('express');
 const router = express.Router();
@@ -7424,17 +9496,72 @@ module.exports = router;
 <file path="src/routes/documentRoutes.js">
 const express = require('express');
 const router = express.Router();
+
 const documentController = require('../controllers/documentController');
+const upload = documentController.upload;   // ← FIX: import Multer upload properly
+
 const { authenticate, authorize } = require('../middleware/auth');
 
-router.get('/', authenticate, documentController.getAllDocuments);
-router.post('/', authenticate, documentController.upload.single('file'), documentController.uploadDocument);
-router.get('/:id/download', authenticate, documentController.downloadDocument);
-router.delete('/:id', authenticate, documentController.deleteDocument);
-router.patch('/:id/status', authenticate, authorize('super_admin','tm','am'), documentController.approveDocument);
-router.get("/manager",authenticate,authorize("tm", "am", "sm"),documentController.getManagerDocuments);
+// ---------------------------------------------------
+// GET ALL DOCUMENTS (admin + dealer restricted view)
+// ---------------------------------------------------
+router.get(
+  '/',
+  authenticate,
+  documentController.getAllDocuments
+);
 
+// ---------------------------------------------------
+// UPLOAD DOCUMENT
+// ---------------------------------------------------
+router.post(
+  '/',
+  authenticate,
+  upload.single('file'),
+  documentController.uploadDocument
+);
 
+// ---------------------------------------------------
+// DOWNLOAD DOCUMENT
+// ---------------------------------------------------
+router.get(
+  '/:id/download',
+  authenticate,
+  documentController.downloadDocument
+);
+
+// ---------------------------------------------------
+// DELETE DOCUMENT
+// ---------------------------------------------------
+router.delete(
+  '/:id',
+  authenticate,
+  documentController.deleteDocument
+);
+
+// ---------------------------------------------------
+// APPROVE / REJECT DOCUMENT
+// Only super_admin, tm, am can approve/reject
+// ---------------------------------------------------
+router.patch(
+  '/:id/status',
+  authenticate,
+  authorize('super_admin', 'tm', 'am'),
+  documentController.approveDocument
+);
+
+// ---------------------------------------------------
+// MANAGER DOCUMENT VIEW
+// tm = Territory Manager
+// am = Area Manager
+// sm = Sales Manager ??
+// ---------------------------------------------------
+router.get(
+  '/manager',
+  authenticate,
+  authorize('tm', 'am', 'sm'),
+  documentController.getManagerDocuments
+);
 
 module.exports = router;
 </file>
@@ -7449,7 +9576,7 @@ const inventoryController = require("../controllers/inventoryController");
 router.get(
   "/summary",
   authenticate,
-  authorize("inventory", "super_admin", "key_user","dealer_admin", "tm"),
+  authorize("inventory_user", "super_admin", "key_user","dealer_admin", "tm"),
   inventoryController.getInventorySummary
 );
 
@@ -7457,7 +9584,7 @@ router.get(
 router.get(
   "/details",
   authenticate,
-  authorize("inventory", "super_admin"),
+  authorize("inventory_user", "super_admin"),
   inventoryController.getInventoryDetails
 );
 
@@ -7465,7 +9592,7 @@ router.get(
 router.post(
   "/",
   authenticate,
-  authorize("inventory", "super_admin"),
+  authorize("inventory_user", "super_admin"),
   inventoryController.addItem
 );
 
@@ -7473,7 +9600,7 @@ router.post(
 router.put(
   "/:id",
   authenticate,
-  authorize("inventory", "super_admin"),
+  authorize("inventory_user", "super_admin"),
   inventoryController.updateItem
 );
 
@@ -7481,7 +9608,7 @@ router.put(
 router.delete(
   "/:id",
   authenticate,
-  authorize("inventory", "super_admin"),
+  authorize("inventory_user", "super_admin"),
   inventoryController.deleteItem
 );
 
@@ -7489,7 +9616,7 @@ router.delete(
 router.get(
   "/export",
   authenticate,
-  authorize("inventory", "super_admin", "key_user"),
+  authorize("inventory_user", "super_admin", "key_user"),
   inventoryController.exportInventory
 );
 
@@ -7619,14 +9746,14 @@ router.get(
 router.post(
   "/",
   authenticate,
-  authorize("super_admin", "technical_admin", "inventory"),
+  authorize("super_admin", "technical_admin", "inventory_user"),
   materialController.createMaterial
 );
 
 router.post(
   "/import",
   authenticate,
-   authorize("super_admin", "technical_admin", "inventory"),
+   authorize("super_admin", "technical_admin", "inventory_user"),
   upload.single("file"),
   materialController.importMaterials
 );
@@ -7634,14 +9761,14 @@ router.post(
 router.put(
   "/:id",
   authenticate,
-  authorize("super_admin", "technical_admin", "inventory"),
+  authorize("super_admin", "technical_admin", "inventory_user"),
   materialController.updateMaterial
 );
 
 router.delete(
   "/:id",
   authenticate,
-  authorize("super_admin", "technical_admin", "inventory"),
+  authorize("super_admin", "technical_admin", "inventory_user"),
   materialController.deleteMaterial
 );
 // upload + preview validation
@@ -7692,19 +9819,37 @@ module.exports = router;
 </file>
 
 <file path="src/routes/notificationRoutes.js">
-// src/routes/notificationRoutes.js
 const express = require('express');
 const router = express.Router();
+const { authenticate } = require('../middleware/auth');
+const checkPermission = require('../middleware/checkPermission');
+
 const {
-  getManagerNotifications,
+  createNotification,
   getUserNotifications,
   markAsRead,
-} = require('../controllers/notificationsController');
-const { authenticate, authorize } = require('../middleware/auth');
+  markAllAsRead,
+  deleteNotification,
+  getUnreadCount
+} = require('../controllers/notificationController');
 
-router.get('/manager', authenticate, authorize('tm', 'am'), getManagerNotifications);
-router.get('/', authenticate, getUserNotifications);
+// Admin: Create notifications
+router.post('/', authenticate, checkPermission('notifications.send'), createNotification);
+
+// User: Get own notifications
+router.get('/', authenticate, checkPermission('notifications.view'), getUserNotifications);
+
+// User: Mark as read
 router.put('/:id/read', authenticate, markAsRead);
+
+// User: Mark all as read
+router.put('/read-all', authenticate, markAllAsRead);
+
+// User: Delete notification
+router.delete('/:id', authenticate, deleteNotification);
+
+// User: Get unread count
+router.get('/unread/count', authenticate, getUnreadCount);
 
 module.exports = router;
 </file>
@@ -7712,10 +9857,13 @@ module.exports = router;
 <file path="src/routes/orderRoutes.js">
 const express = require("express");
 const router = express.Router();
+
 const orderController = require("../controllers/orderController");
 const { authenticate, authorize } = require("../middleware/auth");
 
-
+// ---------------------------
+// DEALER / STAFF CREATE ORDER
+// ---------------------------
 router.post(
   "/",
   authenticate,
@@ -7723,6 +9871,9 @@ router.post(
   orderController.placeOrder
 );
 
+// ---------------------------
+// DEALER VIEW OWN ORDERS
+// ---------------------------
 router.get(
   "/my",
   authenticate,
@@ -7730,17 +9881,42 @@ router.get(
   orderController.getMyOrders
 );
 
-// Admin / Manager view ALL orders
-router.get("/", authenticate, authorize("dealer_admin","admin", "manager"), orderController.getAllOrders);
+// ---------------------------
+// ADMIN / MANAGER VIEW ALL
+// ---------------------------
+router.get(
+  "/",
+  authenticate,
+  authorize("dealer_admin", "regional_manager", "regional_admin", "super_admin"),
+  orderController.getAllOrders
+);
 
-// Admin / Manager update status
-router.patch("/:id/status", authenticate, authorize("dealer_admin","admin", "manager"), orderController.updateOrderStatus);
+// ---------------------------
+// STATUS UPDATE
+// ---------------------------
+router.patch(
+  "/:id/status",
+  authenticate,
+  authorize("dealer_admin", "regional_manager", "regional_admin", "super_admin"),
+  orderController.updateOrderStatus
+);
 
-// Admin / Manager approve
-router.patch("/:id/approve", authenticate, authorize("dealer_admin","admin", "manager"), orderController.approveOrder);
+// ---------------------------
+// MULTI-STAGE APPROVAL
+// ---------------------------
+router.patch(
+  "/:id/approve",
+  authenticate,
+  authorize("dealer_admin", "regional_manager", "regional_admin", "super_admin"),
+  orderController.approveOrder
+);
 
-// Admin / Manager reject
-router.patch("/:id/reject", authenticate, authorize("dealer_admin","admin", "manager"), orderController.rejectOrder);
+router.patch(
+  "/:id/reject",
+  authenticate,
+  authorize("dealer_admin", "regional_manager", "regional_admin", "super_admin"),
+  orderController.rejectOrder
+);
 
 module.exports = router;
 </file>
@@ -7753,11 +9929,20 @@ const {
   createPaymentRequest,
   getDealerPayments,
   getDealerAdminPending,
-  reviewPaymentByDealerAdmin,
   getPendingPayments,
-  reviewPayment,
-  autoReconcile
+  approvePayment,
+  rejectPayment,
+  autoReconcile,
 } = require("../controllers/paymentController");
+console.log({
+  createPaymentRequest,
+  getDealerPayments,
+  getDealerAdminPending,
+  getPendingPayments,
+  approvePayment,
+  rejectPayment,
+  autoReconcile,
+});
 
 // -----------------------
 // DEALER STAFF ROUTES
@@ -7775,14 +9960,16 @@ router.get("/mine", getDealerPayments);
 // -----------------------
 router.get("/dealer/pending", getDealerAdminPending);
 
-router.post("/dealer/:id/review", reviewPaymentByDealerAdmin);
+router.post("/dealer/:id/approve", approvePayment);
+router.post("/dealer/:id/reject", rejectPayment);
 
 // -----------------------
 // FINANCE ADMIN ROUTES
 // -----------------------
 router.get("/pending", getPendingPayments);
 
-router.post("/:id/review", reviewPayment);
+router.post("/:id/approve", approvePayment);
+router.post("/:id/reject", rejectPayment);
 
 // -----------------------
 // AUTO-RECONCILIATION
@@ -7935,6 +10122,62 @@ router.post('/sync-invoices/:dealerId', authenticate, authorize('admin'), sapCon
 module.exports = router;
 </file>
 
+<file path="src/routes/teamRoutes.js">
+// src/routes/teamRoutes.js
+const express = require('express');
+const router = express.Router();
+const { authenticate } = require('../middleware/auth');
+const checkPermission = require('../middleware/checkPermission');
+
+const {
+  createTeam,
+  getTeams,
+  getTeam,
+  addDealerToTeam,
+  removeDealerFromTeam,
+  updateTeam,
+  deleteTeam
+} = require('../controllers/teamController');
+
+// Team CRUD routes
+router.get('/', authenticate, getTeams);
+router.post('/', authenticate, checkPermission('teams.manage'), createTeam);
+router.get('/:id', authenticate, checkPermission('teams.view'), getTeam);
+router.put('/:id', authenticate, checkPermission('teams.manage'), updateTeam);
+router.delete('/:id', authenticate, checkPermission('teams.manage'), deleteTeam);
+
+// Team member management
+router.post('/:teamId/dealers', authenticate, checkPermission('teams.manage'), addDealerToTeam);
+router.delete('/:teamId/dealers/:dealerId', authenticate, checkPermission('teams.manage'), removeDealerFromTeam);
+
+module.exports = router;
+</file>
+
+<file path="src/routes/territoryRoutes.js">
+// src/routes/territoryRoutes.js
+const express = require('express');
+const router = express.Router();
+const { authenticate } = require('../middleware/auth');
+const checkPermission = require('../middleware/checkPermission');
+
+const {
+  createTerritory,
+  getTerritories,
+  getTerritory,
+  updateTerritory,
+  deleteTerritory
+} = require('../controllers/territoryController');
+
+// Protected routes
+router.get('/', authenticate, getTerritories);
+router.post('/', authenticate, checkPermission('territories.manage'), createTerritory);
+router.get('/:id', authenticate, checkPermission('territories.view'), getTerritory);
+router.put('/:id', authenticate, checkPermission('territories.manage'), updateTerritory);
+router.delete('/:id', authenticate, checkPermission('territories.manage'), deleteTerritory);
+
+module.exports = router;
+</file>
+
 <file path="src/server.js">
 // src/server.js
 const express = require('express');
@@ -7947,7 +10190,7 @@ const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
-const { syncDatabase, sequelize } = require('./models');
+const { sequelize } = require('./models');
 
 // --- Import routes (keep the same as your repo) ---
 const authRoutes = require('./routes/authRoutes');
@@ -7972,6 +10215,9 @@ const materialRoutes = require('./routes/materialRoutes');
 const orderRoutes = require('./routes/orderRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const chatRoutes = require('./routes/chatRoutes'); // new chat endpoints
+const areaRoutes = require('./routes/areaRoutes');
+const territoryRoutes = require('./routes/territoryRoutes');
+const teamRoutes = require('./routes/teamRoutes');
 
 // --- Express app setup ---
 const app = express();
@@ -8028,6 +10274,9 @@ app.use('/api/materials', materialRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/chat', chatRoutes); // role-filtered chat REST endpoints
+app.use('/api/areas', areaRoutes);
+app.use('/api/territories', territoryRoutes);
+app.use('/api/teams', teamRoutes);
 
 // --- Error handling (keep your behavior) ---
 app.use((err, req, res, next) => {
@@ -8250,6 +10499,71 @@ process.on('SIGINT', async () => {
 });
 
 module.exports = app;
+</file>
+
+<file path="src/utils/approvalEngine.js">
+// src/utils/approvalEngine.js
+
+// Define multi-stage flows based on hierarchy
+const FLOWS = {
+  order: ["territory_manager", "area_manager", "regional_manager"],
+  payment: ["dealer_admin", "territory_manager", "area_manager", "regional_manager", "regional_admin"],
+  document: ["dealer_admin", "territory_manager", "area_manager", "regional_manager"],
+  pricing: ["area_manager", "regional_admin", "super_admin"], // For pricing approvals
+};
+
+// Map stage → allowed roles (can be same as stage or include higher roles)
+const STAGE_APPROVERS = {
+  order: {
+    territory_manager: ["territory_manager", "area_manager", "regional_manager", "regional_admin", "super_admin"],
+    area_manager: ["area_manager", "regional_manager", "regional_admin", "super_admin"],
+    regional_manager: ["regional_manager", "regional_admin", "super_admin"],
+  },
+  payment: {
+    dealer_admin: ["dealer_admin", "territory_manager", "area_manager", "super_admin"],
+    territory_manager: ["territory_manager", "area_manager", "regional_manager", "regional_admin", "super_admin"],
+    area_manager: ["area_manager", "regional_manager", "regional_admin", "super_admin"],
+    regional_manager: ["regional_manager", "regional_admin", "super_admin"],
+    regional_admin: ["regional_admin", "super_admin"],
+  },
+  document: {
+    dealer_admin: ["dealer_admin", "territory_manager", "area_manager", "super_admin"],
+    territory_manager: ["territory_manager", "area_manager", "regional_manager", "regional_admin", "super_admin"],
+    area_manager: ["area_manager", "regional_manager", "regional_admin", "super_admin"],
+    regional_manager: ["regional_manager", "regional_admin", "super_admin"],
+  },
+  pricing: {
+    area_manager: ["area_manager", "regional_admin", "super_admin"],
+    regional_admin: ["regional_admin", "super_admin"],
+    super_admin: ["super_admin"],
+  },
+};
+
+// Get next stage in flow
+function nextStage(current, type) {
+  const flow = FLOWS[type];
+  if (!flow) return null;
+  if (!current) return flow[0];
+
+  const idx = flow.indexOf(current);
+  if (idx === -1) return flow[0];
+
+  return flow[idx + 1] || null;
+}
+
+// Check if role can approve a stage
+function isApproverForStage(roleName, stage, type = "order") {
+  if (!stage || !roleName) return false;
+  const allowed = STAGE_APPROVERS[type]?.[stage] || [];
+  return allowed.includes(roleName);
+}
+
+module.exports = {
+  FLOWS,
+  STAGE_APPROVERS,
+  nextStage,
+  isApproverForStage,
+};
 </file>
 
 <file path="src/utils/jwt.js">
@@ -8674,24 +10988,9 @@ module.exports = { seedData };
 const { sequelize, Role, Permission } = require("../models");
 
 const PERMISSIONS = [
-  // Dealer Module
-  { key: "dealer.view", description: "View dealers" },
-  { key: "dealer.create", description: "Create dealers" },
-  { key: "dealer.update", description: "Update dealers" },
-  { key: "dealer.delete", description: "Delete dealers" },
-
-  // Documents
-  { key: "document.upload", description: "Upload documents" },
-  { key: "document.verify", description: "Verify documents" },
-  { key: "document.approve", description: "Approve documents" },
-
-  // Pricing
-  { key: "pricing.view", description: "View pricing" },
-  { key: "pricing.request", description: "Request pricing change" },
-  { key: "pricing.approve", description: "Approve pricing" },
-
-  // Users / Roles / Permissions
+  // ===== USER MANAGEMENT =====
   { key: "users.view", description: "View user list" },
+  { key: "users.create", description: "Create users" },
   { key: "users.edit", description: "Edit user" },
   { key: "users.suspend", description: "Suspend user" },
 
@@ -8701,15 +11000,97 @@ const PERMISSIONS = [
   { key: "roles.assign.permissions", description: "Assign permissions to roles" },
 
   { key: "permissions.view", description: "View permissions" },
-  { key: "permissions.assign", description: "Assign permissions (matrix) to roles" },
+  { key: "permissions.assign", description: "Assign permissions to roles" },
 
-  // Dashboard access
-  { key: "dashboard.view.superadmin", description: "View superadmin dashboard" },
-  { key: "dashboard.view.manager", description: "View manager dashboard" },
+  // ===== DEALER MANAGEMENT =====
+  { key: "dealer.view", description: "View dealers" },
+  { key: "dealer.create", description: "Create dealers" },
+  { key: "dealer.update", description: "Update dealers" },
+  { key: "dealer.delete", description: "Delete dealers" },
 
-  // Other
+  // ===== GEOGRAPHICAL MANAGEMENT =====
+  { key: "regions.view", description: "View regions" },
+  { key: "regions.manage", description: "Manage regions" },
+  { key: "areas.view", description: "View areas" },
+  { key: "areas.manage", description: "Manage areas" },
+  { key: "territories.view", description: "View territories" },
+  { key: "territories.manage", description: "Manage territories" },
+
+  // ===== ORDERS & APPROVALS =====
+  { key: "orders.view", description: "View orders" },
+  { key: "orders.create", description: "Create orders" },
+  { key: "orders.approve", description: "Approve orders" },
+  { key: "orders.reject", description: "Reject orders" },
+  { key: "orders.edit", description: "Edit orders" },
+
+  // ===== INVOICES =====
   { key: "invoices.view", description: "View invoices" },
   { key: "invoices.create", description: "Create invoices" },
+  { key: "invoices.edit", description: "Edit invoices" },
+
+  // ===== PAYMENTS =====
+  { key: "payments.view", description: "View payments" },
+  { key: "payments.create", description: "Create payments" },
+  { key: "payments.approve", description: "Approve payments" },
+  { key: "payments.edit", description: "Edit payments" },
+
+  // ===== INVENTORY =====
+  { key: "inventory.view", description: "View inventory" },
+  { key: "inventory.manage", description: "Manage inventory" },
+  { key: "inventory.adjust", description: "Adjust inventory levels" },
+
+  // ===== DOCUMENTS =====
+  { key: "documents.upload", description: "Upload documents" },
+  { key: "documents.view", description: "View documents" },
+  { key: "documents.verify", description: "Verify documents" },
+  { key: "documents.approve", description: "Approve documents" },
+
+  // ===== PRICING =====
+  { key: "pricing.view", description: "View pricing" },
+  { key: "pricing.request", description: "Request pricing change" },
+  { key: "pricing.approve", description: "Approve pricing" },
+  { key: "pricing.manage", description: "Manage pricing" },
+
+  // ===== CAMPAIGNS =====
+  { key: "campaigns.view", description: "View campaigns" },
+  { key: "campaigns.create", description: "Create campaigns" },
+  { key: "campaigns.edit", description: "Edit campaigns" },
+  { key: "campaigns.delete", description: "Delete campaigns" },
+  { key: "campaigns.approve", description: "Approve campaigns" },
+
+  // ===== MAPS =====
+  { key: "maps.view", description: "View maps" },
+  { key: "maps.heatmap", description: "View heatmaps" },
+  { key: "maps.regions", description: "View regional data on maps" },
+  { key: "maps.global", description: "View global map data" },
+
+  // ===== REPORTS =====
+  { key: "reports.view", description: "View reports" },
+  { key: "reports.create", description: "Create custom reports" },
+  { key: "reports.export", description: "Export reports" },
+
+  // ===== MESSAGING =====
+  { key: "messages.view", description: "View messages" },
+  { key: "messages.send", description: "Send messages" },
+
+  // ===== NOTIFICATIONS =====
+  { key: "notifications.view", description: "View notifications" },
+  { key: "notifications.send", description: "Send notifications" },
+
+  // ===== DASHBOARDS =====
+  { key: "dashboard.view.superadmin", description: "View superadmin dashboard" },
+  { key: "dashboard.view.regional", description: "View regional dashboard" },
+  { key: "dashboard.view.manager", description: "View manager dashboard" },
+  { key: "dashboard.view.dealer", description: "View dealer dashboard" },
+
+  // ===== SALES TEAMS =====
+  { key: "teams.view", description: "View sales teams" },
+  { key: "teams.manage", description: "Manage sales teams" },
+
+  // ===== SYSTEM ADMIN =====
+  { key: "system.logs", description: "View system logs" },
+  { key: "system.config", description: "Manage system configuration" },
+  { key: "system.backup", description: "System backup and restore" },
 ];
 
 const ROLES = [
@@ -8728,25 +11109,94 @@ const ROLES = [
 
 const ROLE_TO_PERMS = {
   super_admin: PERMISSIONS.map((p) => p.key), // all permissions
+
   technical_admin: [
-    "permissions.view",
-    "permissions.assign",
-    "roles.view",
-    "roles.assign.permissions",
-    "users.view", // maybe they want to view users for audit
+    "permissions.view", "permissions.assign",
+    "roles.view", "roles.assign.permissions",
+    "users.view", "users.edit",
+    "system.logs", "system.config"
   ],
+
   regional_admin: [
-    "dealer.view",
-    "dealer.update",
-    "document.verify",
-    "roles.view",
+    "dealer.view", "dealer.create", "dealer.update",
+    "users.view", "users.create", "users.edit",
+    "regions.view", "areas.view", "territories.view",
+    "orders.view", "orders.approve",
+    "invoices.view", "payments.view", "payments.approve",
+    "documents.view", "documents.verify",
+    "campaigns.view", "campaigns.create",
+    "maps.view", "maps.regions", "maps.heatmap",
+    "reports.view", "reports.export",
+    "dashboard.view.regional"
   ],
-  regional_manager: ["dashboard.view.manager", "dealer.view"],
-  finance_admin: ["invoices.view", "invoices.create", "pricing.view", "pricing.approve"],
-  dealer_admin: ["dealer.view", "document.upload", "document.verify"],
-  dealer_staff: ["dealer.view", "document.upload"],
-  inventory_user: ["dealer.view", "pricing.view"],
-  accounts_user: ["invoices.view", "dashboard.view.manager"],
+
+  regional_manager: [
+    "dealer.view", "dealer.update",
+    "users.view", "areas.view", "territories.view",
+    "orders.view", "orders.approve", "orders.reject",
+    "invoices.view", "payments.view",
+    "documents.view", "documents.verify",
+    "campaigns.view",
+    "maps.view", "maps.regions", "maps.heatmap",
+    "dashboard.view.manager",
+    "teams.view"
+  ],
+
+  area_manager: [
+    "dealer.view", "dealer.update",
+    "orders.view", "orders.approve", "orders.reject",
+    "invoices.view", "payments.view", "payments.approve",
+    "documents.view", "documents.verify",
+    "pricing.view", "pricing.approve",
+    "campaigns.view",
+    "maps.view", "maps.heatmap",
+    "dashboard.view.manager"
+  ],
+
+  territory_manager: [
+    "dealer.view", "dealer.update",
+    "orders.view", "orders.approve", "orders.reject",
+    "invoices.view", "payments.view",
+    "documents.view", "documents.verify",
+    "campaigns.view",
+    "maps.view", "maps.heatmap",
+    "dashboard.view.manager"
+  ],
+
+  finance_admin: [
+    "invoices.view", "invoices.create", "invoices.edit",
+    "payments.view", "payments.create", "payments.edit", "payments.approve",
+    "pricing.view", "pricing.manage",
+    "reports.view", "reports.export"
+  ],
+
+  dealer_admin: [
+    "dealer.view", // only their own dealer
+    "users.create", "users.edit", // manage staff
+    "orders.create", "orders.view",
+    "invoices.view", "payments.create", "payments.view",
+    "documents.upload", "documents.view", "documents.verify",
+    "maps.view",
+    "dashboard.view.dealer"
+  ],
+
+  dealer_staff: [
+    "orders.create", "orders.view",
+    "invoices.view", "payments.create", "payments.view",
+    "documents.upload", "documents.view",
+    "maps.view",
+    "dashboard.view.dealer"
+  ],
+
+  inventory_user: [
+    "inventory.view", "inventory.manage", "inventory.adjust",
+    "pricing.view"
+  ],
+
+  accounts_user: [
+    "invoices.view", "invoices.edit",
+    "payments.view", "payments.edit"
+  ]
 };
 
 async function seed() {

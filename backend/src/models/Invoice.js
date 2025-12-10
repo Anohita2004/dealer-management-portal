@@ -13,16 +13,56 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
       },
 
-      invoiceNumber: { type: DataTypes.STRING, allowNull: false, unique: true },
-      invoiceDate: { type: DataTypes.DATE, allowNull: false },
+      invoiceNumber: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        unique: true,
+      },
+
+      invoiceDate: {
+        type: DataTypes.DATE,
+        allowNull: false,
+      },
+
       dueDate: DataTypes.DATE,
 
-      amount: { type: DataTypes.DECIMAL(15, 2), allowNull: false },
-      taxAmount: { type: DataTypes.DECIMAL(15, 2), defaultValue: 0 },
-      totalAmount: { type: DataTypes.DECIMAL(15, 2), allowNull: false },
+      /* ============================================================
+         NEW UNIFIED AMOUNT SYSTEM
+      ============================================================ */
 
-      paidAmount: { type: DataTypes.DECIMAL(15, 2), defaultValue: 0 },
-      balanceAmount: DataTypes.DECIMAL(15, 2),
+      baseAmount: {
+        type: DataTypes.DECIMAL(15, 2),
+        allowNull: false,
+        defaultValue: 0,
+      },
+
+      taxAmount: {
+        type: DataTypes.DECIMAL(15, 2),
+        allowNull: false,
+        defaultValue: 0,
+      },
+
+      totalAmount: {
+        type: DataTypes.DECIMAL(15, 2),
+        allowNull: false,
+        defaultValue: 0,
+      },
+
+      paidAmount: {
+        type: DataTypes.DECIMAL(15, 2),
+        allowNull: false,
+        defaultValue: 0,
+      },
+
+      balanceAmount: {
+        type: DataTypes.DECIMAL(15, 2),
+        allowNull: false,
+        defaultValue: 0,
+      },
+
+      /* ============================================================
+         STATUS + META
+      ============================================================ */
 
       status: {
         type: DataTypes.ENUM("paid", "unpaid", "partial", "overdue"),
@@ -46,6 +86,12 @@ module.exports = (sequelize, DataTypes) => {
       foreignKey: "dealerId",
       as: "dealer",
       onDelete: "CASCADE",
+    });
+
+    Invoice.belongsTo(models.Order, {
+      foreignKey: "orderId",
+      as: "order",
+      onDelete: "SET NULL"
     });
   };
 

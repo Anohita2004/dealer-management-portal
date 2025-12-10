@@ -69,6 +69,11 @@ territoryId: DataTypes.UUID,
         type: DataTypes.UUID,
         allowNull: true,
       },
+
+      areaId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
     },
     {
       timestamps: true,
@@ -77,7 +82,7 @@ territoryId: DataTypes.UUID,
     }
   );
 
-  Dealer.associate = (models) => {
+Dealer.associate = (models) => {
     Dealer.hasOne(models.User, {
       foreignKey: "dealerId",
       as: "user",
@@ -114,6 +119,11 @@ Dealer.belongsTo(models.Territory, { foreignKey: 'territoryId' });
     Dealer.belongsTo(models.Region, {
       foreignKey: "regionId",
       as: "region",
+    });
+
+    Dealer.belongsTo(models.Area, {
+      foreignKey: "areaId",
+      as: "area",
     });
   };
 

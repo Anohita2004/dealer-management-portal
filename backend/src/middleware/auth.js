@@ -47,15 +47,20 @@ const authenticate = async (req, res, next) => {
     if (!user) return res.status(401).json({ error: "User not found" });
 
     req.user = {
-      id: user.id,
-      username: user.username,
-      email: user.email,
-      roleId: user.roleId,
-      role: user.roleDetails?.name || null,
-      dealerId: user.dealerId || user.dealer?.id || null,
-      isActive: user.isActive,
-      isBlocked: user.isBlocked,
-    };
+  id: user.id,
+  username: user.username,
+  email: user.email,
+  roleId: user.roleId,
+  role: user.roleDetails?.name || null,
+  dealerId: user.dealerId || user.dealer?.id || null,
+  isActive: user.isActive,
+  isBlocked: user.isBlocked,
+
+  regionId: user.regionId || null,
+  areaId: user.areaId || null,
+  territoryId: user.territoryId || null
+};
+
 
     return next();
   } catch (err) {

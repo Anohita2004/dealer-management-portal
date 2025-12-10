@@ -161,22 +161,77 @@ const getAllUsers = async (req, res) => {
   }
 };
 const createUser = async (req, res) => {
+  const t = await sequelize.transaction();
   try {
-    const { username, email, password, roleId, dealerId, regionId, isActive } = req.body;
+    const {
+      username,
+      email,
+      password,
+      roleId,
+      dealerId,
+      regionId,
+      areaId,
+      territoryId,
+      isActive
+    } = req.body;
 
     // Check for duplicate email
-    const existing = await User.findOne({ where: { email } });
+    const existing = await User.findOne({ where: { email }, transaction: t });
     if (existing) return res.status(400).json({ error: "Email already exists" });
+
+    // Get the role being assigned
+    const targetRole = await Role.findByPk(roleId, { transaction: t });
+    if (!targetRole) return res.status(400).json({ error: "Invalid role" });
+
+    const creatorRole = req.user.roleDetails?.name || req.user.role;
+
+    // Hierarchical constraints based on creator's role
+    let validatedRegionId = regionId;
+    let validatedAreaId = areaId;
+    let validatedTerritoryId = territoryId;
+    let validatedDealerId = dealerId;
+
+    if (creatorRole === 'regional_admin') {
+      // Regional admin can only create users in their region
+      validatedRegionId = req.user.regionId;
+      if (targetRole.name === 'regional_admin' || targetRole.name === 'regional_manager') {
+        // Only create other regional roles if same region
+      } else if (targetRole.name === 'area_manager') {
+        validatedAreaId = areaId; // Must be an area in their region
+      } else if (targetRole.name === 'territory_manager') {
+        validatedTerritoryId = territoryId; // Must be territory in their region
+      }
+    } else if (creatorRole === 'area_manager') {
+      // Area manager can only create users in their area
+      validatedAreaId = req.user.areaId;
+      if (targetRole.name === 'area_manager' || targetRole.name === 'regional_admin') {
+        return res.status(403).json({ error: "Cannot create higher-level admin" });
+      }
+    } else if (creatorRole === 'territory_manager') {
+      // Territory manager can only create territory and dealer staff
+      validatedTerritoryId = req.user.territoryId;
+      if (!['territory_manager', 'dealer_admin', 'dealer_staff'].includes(targetRole.name)) {
+        return res.status(403).json({ error: "Cannot create users above your level" });
+      }
+    } else if (creatorRole !== 'super_admin') {
+      // Dealer admins can only create dealer staff
+      if (targetRole.name !== 'dealer_staff') {
+        return res.status(403).json({ error: "Dealer admin can only create dealer staff" });
+      }
+      validatedDealerId = req.user.dealerId;
+    }
 
     const user = await User.create({
       username,
       email,
       password, // assuming hooks handle hashing
       roleId,
-      dealerId: dealerId || null,
-      regionId: regionId || null,
+      dealerId: dealerId || validatedDealerId || null,
+      regionId: validatedRegionId || null,
+      areaId: validatedAreaId || null,
+      territoryId: validatedTerritoryId || null,
       isActive
-    });
+    }, { transaction: t });
 
     await AuditLog.create({
       userId: req.user.id,
@@ -185,10 +240,12 @@ const createUser = async (req, res) => {
       entityId: user.id,
       changes: req.body,
       ipAddress: req.ip
-    });
+    }, { transaction: t });
 
+    await t.commit();
     res.json({ message: "User created", user });
   } catch (err) {
+    await t.rollback();
     console.error("createUser:", err);
     res.status(500).json({ error: "Failed to create user" });
   }

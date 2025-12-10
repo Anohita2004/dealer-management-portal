@@ -10,6 +10,15 @@ const {
   rejectPayment,
   autoReconcile,
 } = require("../controllers/paymentController");
+console.log({
+  createPaymentRequest,
+  getDealerPayments,
+  getDealerAdminPending,
+  getPendingPayments,
+  approvePayment,
+  rejectPayment,
+  autoReconcile,
+});
 
 // -----------------------
 // DEALER STAFF ROUTES

@@ -38,6 +38,20 @@ module.exports = (sequelize, DataTypes) => {
         references: { model: "Regions", key: "id" },
       },
 
+      // 🔥 Link to Areas table
+      areaId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: { model: "Areas", key: "id" },
+      },
+
+      // 🔥 Link to Territories table
+      territoryId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: { model: "Territories", key: "id" },
+      },
+
       // (Old ENUM – we can remove later)
       role: {
         type: DataTypes.ENUM(
@@ -134,6 +148,18 @@ module.exports = (sequelize, DataTypes) => {
     User.belongsTo(models.Region, {
       foreignKey: "regionId",
       as: "region",
+    });
+
+    // Area
+    User.belongsTo(models.Area, {
+      foreignKey: "areaId",
+      as: "area",
+    });
+
+    // Territory
+    User.belongsTo(models.Territory, {
+      foreignKey: "territoryId",
+      as: "territory",
     });
 
     // Chat
