@@ -8,7 +8,7 @@ const { authenticate, authorize } = require("../middleware/auth");
 router.get(
   "/",
   authenticate,
-  authorize("tm", "am", "super_admin", "dealer"),
+  authorize("territory_manager", "area_manager", "super_admin", "dealer_admin", "dealer_staff", "regional_manager", "regional_admin"),
   messageController.getMessages
 );
 
@@ -16,7 +16,7 @@ router.get(
 router.get(
   "/conversation/:partnerId",
   authenticate,
-  authorize("tm", "am", "super_admin", "dealer"), // both sides can access
+  authorize("territory_manager", "area_manager", "super_admin", "dealer_admin", "dealer_staff", "regional_manager", "regional_admin"), // both sides can access
   messageController.getConversation // ✅ fixed name (was messageCtrl)
 );
 
@@ -24,7 +24,7 @@ router.get(
 router.post(
   "/",
   authenticate,
-  authorize("tm", "am", "super_admin", "dealer"),
+  authorize("territory_manager", "area_manager", "super_admin", "dealer_admin", "dealer_staff", "regional_manager", "regional_admin"),
   messageController.sendMessage
 );
 
@@ -32,7 +32,7 @@ router.post(
 router.patch(
   "/:id/read",
   authenticate,
-  authorize("tm", "am", "super_admin", "dealer"),
+  authorize("territory_manager", "area_manager", "super_admin", "dealer_admin", "dealer_staff", "regional_manager", "regional_admin"),
   messageController.markAsRead
 );
 

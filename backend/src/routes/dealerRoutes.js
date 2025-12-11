@@ -8,10 +8,10 @@ const { Dealer, User } = require('../models'); // ✅ needed
 router.get('/', authenticate, dealerController.getAllDealers);
 
 // 🧩 Dealer profile
-router.get('/profile', authenticate, authorize('dealer'), dealerController.getDealerProfile);
+router.get('/profile', authenticate, authorize("dealer_admin","dealer_staff"), dealerController.getDealerProfile);
 
 // ✅ FIX: Place this BEFORE "/:id"
-router.get("/my-manager", authenticate, authorize("dealer"), async (req, res) => {
+router.get("/my-manager", authenticate, authorize("dealer_admin","dealer_staff"), async (req, res) => {
   try {
     console.log("🟢 req.user:", req.user);
 

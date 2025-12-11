@@ -45,25 +45,25 @@ router.delete(
 
 // ---------------------------------------------------
 // APPROVE / REJECT DOCUMENT
-// Only super_admin, tm, am can approve/reject
+// Only super_admin, territory_manager, area_manager can approve/reject
 // ---------------------------------------------------
 router.patch(
   '/:id/status',
   authenticate,
-  authorize('super_admin', 'tm', 'am'),
+  authorize('super_admin', 'territory_manager', 'area_manager'),
   documentController.approveDocument
 );
 
 // ---------------------------------------------------
 // MANAGER DOCUMENT VIEW
-// tm = Territory Manager
-// am = Area Manager
-// sm = Sales Manager ??
+// territory_manager = Territory Manager
+// area_manager = Area Manager
+// regional_manager = Sales Manager ??
 // ---------------------------------------------------
 router.get(
   '/manager',
   authenticate,
-  authorize('tm', 'am', 'sm'),
+  authorize('territory_manager', 'area_manager', 'regional_manager'),
   documentController.getManagerDocuments
 );
 

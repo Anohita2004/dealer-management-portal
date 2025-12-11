@@ -1,47 +1,55 @@
+// src/routes/adminRoutes.js
 const express = require('express');
 const router = express.Router();
 
-// ✅ Import the *right* controller (adminController, not authController)
 const adminController = require('../controllers/adminController');
-
-// ✅ Destructure authenticate and authorize from your middleware
-const { authenticate, authorize } = require('../middleware/auth');
 const pricingController = require('../controllers/pricingController');
+const { authenticate, authorize } = require('../middleware/auth');
 
-router.get('/pricing-updates', authenticate, authorize('super_admin'), pricingController.getPricingUpdates);
-router.patch('/pricing-updates/:id/review', authenticate, authorize('super_admin'), adminController.reviewPricingUpdate);
-
-
-
-// ✅ Apply authentication for all admin routes
+// ---------------------------------------------
+// AUTHENTICATION REQUIRED FOR ALL ADMIN ROUTES
+// ---------------------------------------------
 router.use(authenticate);
 
-// ---------------- Dealer Management ----------------
-router.put('/dealers/:id/block', authorize('super_admin'), adminController.blockDealer);
-router.put('/dealers/:id/verify', authorize('super_admin'), adminController.verifyDealer);
+// FULL ACCESS ROLES
+const fullAccess = authorize('super_admin', 'technical_admin');
 
-// ---------------- Sales Groups ----------------
-router.post('/sales-groups/merge', authorize('super_admin'), adminController.mergeSalesGroups);
+// ---------------------------------------------------------
+// USER MANAGEMENT
+// ---------------------------------------------------------
+router.get('/users',          fullAccess, adminController.getAllUsers);
+router.get('/users/:id',      fullAccess, adminController.getUserById);
+router.post('/users',         fullAccess, adminController.createUser);
+router.put('/users/:id',      fullAccess, adminController.updateUser);
+router.patch('/users/:id/role', fullAccess, adminController.updateUserRole);
+router.delete('/users/:id',   fullAccess, adminController.deleteUser);
 
-// ---------------- Documents ----------------
-router.put('/documents/:id/review', authorize('super_admin'), adminController.reviewDocument);
+// ---------------------------------------------------------
+// DEALER MANAGEMENT
+// ---------------------------------------------------------
+router.put('/dealers/:id/block',        fullAccess, adminController.blockDealer);
+router.put('/dealers/:id/verify',       fullAccess, adminController.verifyDealer);
+router.put('/dealers/:id/assign-region', fullAccess, adminController.assignRegion);
 
-// ---------------- Pricing ----------------
-router.put('/pricing/:id/review', authorize('super_admin'), adminController.reviewPricingUpdate);
+// ---------------------------------------------------------
+// SALES GROUP MERGING
+// ---------------------------------------------------------
+router.post('/sales-groups/merge', fullAccess, adminController.mergeSalesGroups);
 
-// ---------------- User Management ----------------
-router.get('/users', authorize('super_admin'), adminController.getAllUsers);
-router.post('/users', authorize('super_admin'), adminController.createUser);   // ✅ ADD
-router.put('/users/:id', authorize('super_admin'), adminController.updateUser);  // ✅ ADD
-router.put('/users/:id/role', authorize('super_admin'), adminController.updateUserRole);
-router.delete('/users/:id', authorize('super_admin'), adminController.deleteUser);
-router.put('/dealers/:id/assign-region', authorize('super_admin'), adminController.assignRegion);
-router.put('/users/:id', authorize('super_admin'), adminController.updateUser);
+// ---------------------------------------------------------
+// DOCUMENT REVIEW
+// ---------------------------------------------------------
+router.put('/documents/:id/review', fullAccess, adminController.reviewDocument);
 
+// ---------------------------------------------------------
+// PRICING REVIEW
+// ---------------------------------------------------------
+router.get('/pricing-updates',           fullAccess, pricingController.getPricingUpdates);
+router.patch('/pricing-updates/:id/review', fullAccess, adminController.reviewPricingUpdate);
 
-
-
-// ---------------- Reports ----------------
-router.get('/reports', authorize('super_admin'), adminController.getAdminReport);
+// ---------------------------------------------------------
+// ADMIN REPORTS / DASHBOARD
+// ---------------------------------------------------------
+router.get('/reports', fullAccess, adminController.getAdminReport);
 
 module.exports = router;

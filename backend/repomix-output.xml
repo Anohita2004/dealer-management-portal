@@ -91,6 +91,8 @@ src/migrations/05-add-areaId-to-territories.js
 src/migrations/06-add-areaId-to-dealers.js
 src/migrations/07-add-area-and-territory-to-users.js
 src/migrations/20-add-approval-fields.js
+src/migrations/20251210093440-add-salesGroupId-to-users.js
+src/migrations/20251210095123-add-approval-fields-to-invoices.js
 src/models/AccountStatement.js
 src/models/Area.js
 src/models/AuditLog.js
@@ -1264,6 +1266,9 @@ const { generateToken } = require("../utils/jwt");
 // -------------------------------
 // LOGIN (Step 1 → Generate OTP)
 // -------------------------------
+// -------------------------------
+// LOGIN (Step 1 → Generate OTP)
+// -------------------------------
 const login = async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -1282,6 +1287,7 @@ const login = async (req, res) => {
 
     // Generate OTP
     const otp = user.generateOTP();
+    console.log("LOGIN OTP for user:", user.username, "=>", otp); // <-- log here
     await user.save();
 
     await AuditLog.create({
@@ -1293,7 +1299,12 @@ const login = async (req, res) => {
       userAgent: req.headers["user-agent"],
     });
 
-    return res.json({ message: "OTP sent", userId: user.id, otpSent: true });
+    return res.json({
+      message: "OTP generated",
+      userId: user.id,
+      otpSent: true,
+      otp: process.env.NODE_ENV === "development" ? otp : undefined,
+    });
   } catch (err) {
     console.error("Login error:", err);
     return res.status(500).json({ error: "Login failed" });
@@ -2840,15 +2851,16 @@ exports.exportInventory = async (req, res) => {
 </file>
 
 <file path="src/controllers/invoiceController.js">
-const { Invoice, Dealer, AuditLog, Order } = require("../models");
+const { Invoice, Dealer, AuditLog, Order, Notification } = require("../models");
 const { Op } = require("sequelize");
 const PDFDocument = require("pdfkit");
 const fs = require("fs");
 const path = require("path");
+const { nextStage, isApproverForStage } = require("../utils/approvalEngine");
 
 /* ============================================================
    Utility Functions
-============================================================ */
+=========================================================== */
 
 const computeAmounts = (data = {}) => {
   const base = Number(data.baseAmount || data.amount || 0);
@@ -2875,7 +2887,7 @@ const ensureDirectory = (dirPath) => {
 
 /* ============================================================
    GET ALL INVOICES (with advanced filtering)
-============================================================ */
+=========================================================== */
 
 const getAllInvoices = async (req, res) => {
   try {
@@ -2935,7 +2947,7 @@ const getAllInvoices = async (req, res) => {
 
 /* ============================================================
    GET SINGLE INVOICE
-============================================================ */
+=========================================================== */
 
 const getInvoiceById = async (req, res) => {
   try {
@@ -2965,7 +2977,7 @@ const getInvoiceById = async (req, res) => {
 
 /* ============================================================
    CREATE INVOICE (Dealer Staff & Admin)
-============================================================ */
+=========================================================== */
 
 const createInvoice = async (req, res) => {
   try {
@@ -3002,6 +3014,11 @@ const createInvoice = async (req, res) => {
       data.paidAmount = 0;
     }
 
+    // Initialize approval workflow for invoices
+    const firstStage = nextStage(null, "invoice");
+    data.approvalStage = firstStage;
+    data.approvalStatus = "pending";
+
     const amounts = computeAmounts(data);
     const invoiceData = { ...data, ...amounts };
 
@@ -3017,6 +3034,21 @@ const createInvoice = async (req, res) => {
       userAgent: req.headers["user-agent"],
     });
 
+    // Notify dealer admins for approval
+    const io = req.app.get("io");
+    if (io) {
+      io.to("role:dealer_admin").emit("invoice:new", { invoiceId: invoice.id });
+    }
+
+    await Notification.create({
+      senderId: req.user.id,
+      recipientRole: "dealer_admin",
+      title: "New Invoice Created",
+      message: `${req.user.username} created a new invoice "${invoice.invoiceNumber}" requiring approval.`,
+      type: "invoice",
+      relatedId: invoice.id,
+    });
+
     res.status(201).json(invoice);
   } catch (error) {
     console.error("Create invoice error:", error);
@@ -3026,7 +3058,7 @@ const createInvoice = async (req, res) => {
 
 /* ============================================================
    UPDATE INVOICE (Admins only)
-============================================================ */
+=========================================================== */
 
 const updateInvoice = async (req, res) => {
   try {
@@ -3064,8 +3096,152 @@ const updateInvoice = async (req, res) => {
 };
 
 /* ============================================================
+   APPROVE / REJECT INVOICE (Multi-Stage)
+=========================================================== */
+
+const approveInvoice = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { action, reason } = req.body;
+
+    if (!["approve", "reject"].includes(action))
+      return res.status(400).json({ error: "Invalid action" });
+
+    const invoice = await Invoice.findByPk(id, {
+      include: [{ model: Dealer, as: "dealer" }]
+    });
+    if (!invoice) return res.status(404).json({ error: "Invoice not found" });
+
+    const role = req.user.roleDetails?.name || req.user.role;
+    const stage = invoice.approvalStage || "dealer_admin";
+
+    // Permission check
+    if (!isApproverForStage(role, stage, "invoice")) {
+      return res.status(403).json({
+        error: `You are not authorized to approve/reject this invoice at stage: ${stage}`,
+      });
+    }
+
+    if (action === "reject") {
+      invoice.approvalStatus = "rejected";
+      invoice.status = "rejected";
+      invoice.rejectionReason = reason || "Rejected by approver";
+      invoice.approvalStage = null;
+    } else {
+      const next = nextStage(stage, "invoice");
+
+      if (!next) {
+        // Final approval - mark as approved
+        invoice.approvalStage = null;
+        invoice.approvalStatus = "approved";
+        invoice.status = "approved";
+      } else {
+        invoice.approvalStage = next;
+        invoice.approvalStatus = "pending";
+      }
+    }
+
+    invoice.approvedBy = req.user.id;
+    invoice.approvedAt = new Date();
+
+    await invoice.save();
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: action === "approve" ? "APPROVE_INVOICE" : "REJECT_INVOICE",
+      entity: "Invoice",
+      entityId: invoice.id,
+      changes: { action, reason },
+      ipAddress: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+
+    // Notify dealer
+    const io = req.app.get("io");
+
+    await Notification.create({
+      senderId: req.user.id,
+      recipientId: invoice.dealerId,
+      title: `Invoice ${invoice.approvalStatus}`,
+      message:
+        invoice.approvalStatus === "approved"
+          ? `✅ Your invoice "${invoice.invoiceNumber}" was approved.`
+          : `❌ Your invoice "${invoice.invoiceNumber}" was rejected. Reason: ${invoice.rejectionReason}`,
+      type: "invoice",
+      relatedId: invoice.id,
+    });
+
+    if (io) {
+      io.to(`user:${invoice.dealerId}`).emit("notification", {
+        title: `Invoice ${invoice.approvalStatus}`,
+        message:
+          invoice.approvalStatus === "approved"
+            ? `✅ "${invoice.invoiceNumber}" approved`
+            : `❌ "${invoice.invoiceNumber}" rejected`,
+        type: "invoice",
+      });
+
+      // Notify next approvers if moved to next stage
+      if (invoice.approvalStage) {
+        const nextRole = invoice.approvalStage;
+        io.to(`role:${nextRole}`).emit("invoice:pending:update");
+      }
+    }
+
+    res.json({
+      message: `Invoice ${invoice.approvalStatus}`,
+      invoice,
+    });
+  } catch (err) {
+    console.error("Approve invoice error:", err);
+    res.status(500).json({ error: "Failed to update invoice status" });
+  }
+};
+
+/* ============================================================
+   GET PENDING INVOICES FOR APPROVAL
+=========================================================== */
+
+const getPendingInvoices = async (req, res) => {
+  try {
+    const role = req.user.roleDetails?.name || req.user.role;
+
+    // Determine approval stage based on role
+    let approvalStage;
+    if (role === 'dealer_admin') approvalStage = 'dealer_admin';
+    else if (role === 'territory_manager') approvalStage = 'territory_manager';
+    else if (role === 'area_manager') approvalStage = 'area_manager';
+    else if (role === 'regional_manager') approvalStage = 'regional_manager';
+    else if (role === 'regional_admin') approvalStage = 'regional_admin';
+    else {
+      return res.status(403).json({ error: "Role not authorized for invoice approvals" });
+    }
+
+    const invoices = await Invoice.findAll({
+      where: {
+        approvalStage,
+        approvalStatus: "pending"
+      },
+      include: [
+        {
+          model: Dealer,
+          as: "dealer",
+          attributes: ["id", "businessName", "dealerCode"]
+        }
+      ],
+      order: [["createdAt", "DESC"]],
+    });
+
+    res.json({ invoices });
+  } catch (err) {
+    console.error("getPendingInvoices:", err);
+    res.status(500).json({ error: "Failed to fetch pending invoices" });
+  }
+};
+
+/* ============================================================
    GENERATE PDF WITH SAFE PATHS
-============================================================ */
+=========================================================== */
 
 const generateInvoicePDF = async (req, res) => {
   try {
@@ -3132,6 +3308,8 @@ module.exports = {
   getInvoiceById,
   createInvoice,
   updateInvoice,
+  approveInvoice,
+  getPendingInvoices,
   generateInvoicePDF,
 };
 </file>
@@ -4211,14 +4389,14 @@ const createNotification = async (req, res) => {
     if (userId) {
       // Single user notification
       const notification = await Notification.create({
-        userId,
+        recipientId: userId,
         title,
         message,
         type,
         priority,
         actionUrl,
         data: data || {},
-        read: false
+        isRead: false
       });
       notifications.push(notification);
 
@@ -4244,14 +4422,14 @@ const createNotification = async (req, res) => {
 
       const notificationPromises = users.map(user =>
         Notification.create({
-          userId: user.id,
+          recipientId: user.id,
           title,
           message,
           type,
           priority,
           actionUrl,
           data: data || {},
-          read: false
+          isRead: false
         })
       );
 
@@ -4261,7 +4439,7 @@ const createNotification = async (req, res) => {
       const io = req.app.get('io');
       if (io) {
         users.forEach(user => {
-          const userNotifications = notifications.filter(n => n.userId === user.id);
+          const userNotifications = notifications.filter(n => n.recipientId === user.id);
           io.to(`user:${user.id}`).emit('notifications', userNotifications.map(n => ({
             id: n.id,
             title: n.title,
@@ -4293,9 +4471,9 @@ const getUserNotifications = async (req, res) => {
     const offset = (page - 1) * limit;
     const userId = req.user.id;
 
-    const where = { userId };
+    const where = { recipientId: userId };
     if (unreadOnly === 'true') {
-      where.read = false;
+      where.isRead = false;
     }
 
     const notifications = await Notification.findAll({
@@ -4329,14 +4507,14 @@ const markAsRead = async (req, res) => {
     const userId = req.user.id;
 
     const notification = await Notification.findOne({
-      where: { id, userId }
+      where: { id, recipientId: userId }
     });
 
     if (!notification) {
       return res.status(404).json({ error: 'Notification not found' });
     }
 
-    await notification.update({ read: true, readAt: new Date() });
+    await notification.update({ isRead: true, readAt: new Date() });
 
     res.json({ message: 'Notification marked as read', notification });
   } catch (err) {
@@ -4351,8 +4529,8 @@ const markAllAsRead = async (req, res) => {
     const userId = req.user.id;
 
     const updated = await Notification.update(
-      { read: true, readAt: new Date() },
-      { where: { userId, read: false } }
+      { isRead: true, readAt: new Date() },
+      { where: { recipientId: userId, isRead: false } }
     );
 
     res.json({ message: `${updated[0]} notifications marked as read` });
@@ -4369,7 +4547,7 @@ const deleteNotification = async (req, res) => {
     const userId = req.user.id;
 
     const deleted = await Notification.destroy({
-      where: { id, userId }
+      where: { id, recipientId: userId }
     });
 
     if (deleted === 0) {
@@ -4389,7 +4567,7 @@ const getUnreadCount = async (req, res) => {
     const userId = req.user.id;
 
     const count = await Notification.count({
-      where: { userId, read: false }
+      where: { recipientId: userId, isRead: false }
     });
 
     res.json({ unreadCount: count });
@@ -4420,7 +4598,7 @@ const sendApprovalNotification = async (userId, entityType, entityId, action, ap
   const message = messages[entityType]?.[action] || `${entityType} #${entityId} has been ${action}d`;
 
   await Notification.create({
-    userId,
+    recipientId: userId,
     title,
     message,
     type: action === 'approve' ? 'success' : 'warning',
@@ -4438,7 +4616,7 @@ const sendEscalationNotification = async (userId, entityType, entityId, slaDays)
   const message = `${entityType} #${entityId} has exceeded ${slaDays} days SLA. Immediate attention required.`;
 
   await Notification.create({
-    userId,
+    recipientId: userId,
     title,
     message,
     type: 'error',
@@ -5542,21 +5720,225 @@ exports.getProducts = async (req, res) => {
 </file>
 
 <file path="src/controllers/regionController.js">
-const { Region } = require("../models");
+const { Region, Area, Territory, Dealer, Document, PricingUpdate, Campaign, sequelize } = require("../models");
+
+// =========================================================
+// CREATE REGION
+// =========================================================
+const createRegion = async (req, res) => {
+  try {
+    const { name, geojson, centroidLat, centroidLng } = req.body;
+
+    // Only super_admin can create regions
+    if (req.user.role !== "super_admin") {
+      return res.status(403).json({ error: "Only super admin can create regions" });
+    }
+
+    const region = await Region.create({ name, geojson, centroidLat, centroidLng });
+
+    return res.status(201).json({ message: "Region created successfully", region });
+  } catch (err) {
+    console.error("createRegion:", err);
+    return res.status(500).json({ error: "Failed to create region" });
+  }
+};
+
+// =========================================================
+// GET REGIONS LIST
+// =========================================================
+const getRegions = async (req, res) => {
+  try {
+    const regions = await Region.findAll({
+      include: [
+        { model: Area, as: "areas", attributes: ["id", "name"] },
+        { model: Dealer, as: "dealers", attributes: ["id", "businessName", "dealerCode"] }
+      ],
+      order: [["name", "ASC"]],
+    });
+
+    res.json({ regions });
+  } catch (err) {
+    console.error("getRegions:", err);
+    res.status(500).json({ error: "Failed to fetch regions" });
+  }
+};
+
+// =========================================================
+// GET SINGLE REGION
+// =========================================================
+const getRegion = async (req, res) => {
+  try {
+    const region = await Region.findByPk(req.params.id, {
+      include: [
+        {
+          model: Area,
+          as: "areas",
+          include: [
+            { model: Territory, as: "territories", attributes: ["id", "name"] }
+          ]
+        },
+        { model: Dealer, as: "dealers", attributes: ["id", "businessName", "dealerCode", "lat", "lng"] }
+      ]
+    });
+
+    if (!region) return res.status(404).json({ error: "Region not found" });
+
+    // Regional admin can only view their own region
+    if (req.user.role === "regional_admin" && req.user.regionId !== region.id) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    res.json({ region });
+  } catch (err) {
+    console.error("getRegion:", err);
+    res.status(500).json({ error: "Failed to fetch region" });
+  }
+};
+
+// =========================================================
+// UPDATE REGION
+// =========================================================
+const updateRegion = async (req, res) => {
+  try {
+    const region = await Region.findByPk(req.params.id);
+    if (!region) return res.status(404).json({ error: "Region not found" });
+
+    // Only super_admin can update regions
+    if (req.user.role !== "super_admin") {
+      return res.status(403).json({ error: "Only super admin can update regions" });
+    }
+
+    await region.update(req.body);
+    return res.json({ message: "Region updated", region });
+
+  } catch (err) {
+    console.error("updateRegion:", err);
+    return res.status(500).json({ error: "Failed to update" });
+  }
+};
+
+// =========================================================
+// DELETE REGION
+// =========================================================
+const deleteRegion = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const region = await Region.findByPk(req.params.id, {
+      include: [
+        { model: Area, as: "areas", include: [{ model: Territory, as: "territories" }] },
+        { model: Dealer, as: "dealers" }
+      ],
+      transaction: t
+    });
+
+    if (!region) return res.status(404).json({ error: "Region not found" });
+    if (region.areas?.length) return res.status(400).json({ error: "Move areas first" });
+    if (region.dealers?.length) return res.status(400).json({ error: "Reassign dealers first" });
+
+    // Only super_admin can delete regions
+    if (req.user.role !== "super_admin") {
+      return res.status(403).json({ error: "Only super admin can delete regions" });
+    }
+
+    await region.destroy({ transaction: t });
+    await t.commit();
+    return res.json({ message: "Region deleted successfully" });
+
+  } catch (err) {
+    await t.rollback();
+    console.error("deleteRegion:", err);
+    return res.status(500).json({ error: "Failed to delete" });
+  }
+};
+
+// =========================================================
+// DASHBOARD SUMMARY
+// =========================================================
+const getRegionDashboardSummary = async (req, res) => {
+  try {
+    const regionId = req.user.regionId;
+    if (!regionId) return res.status(400).json({ error: "No assigned regionId found" });
+
+    const dealers = await Dealer.count({ where: { regionId } });
+    const areas = await Area.count({ where: { regionId } });
+    const territories = await Territory.count({
+      include: [{ model: Area, as: "area", where: { regionId } }]
+    });
+
+    const pendingDocs = await Document.count({
+      include: [{ model: Dealer, as: "dealer", where: { regionId } }],
+      where: { status: "pending" }
+    });
+
+    const pendingPricing = await PricingUpdate.count({
+      include: [{ model: Dealer, as: "dealer", where: { regionId } }],
+      where: { status: "pending" }
+    });
+
+    const activeCampaigns = await Campaign.count({ where: { regionId, isActive: true } });
+
+    return res.json({
+      dealers,
+      areas,
+      territories,
+      approvalsPending: pendingDocs + pendingPricing,
+      activeCampaigns
+    });
+
+  } catch (err) {
+    console.error("🔴 REGION SUMMARY ERROR:", err);
+    return res.status(500).json({ error: "Failed to load dashboard summary" });
+  }
+};
+
+// =========================================================
+// REGION AREAS LIST
+// =========================================================
+const getRegionAreas = async (req, res) => {
+  try {
+    const areas = await Area.findAll({
+      where: { regionId: req.user.regionId },
+      attributes: ["id", "name", "centroidLat", "centroidLng"]
+    });
+
+    return res.json(areas);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Failed to load areas" });
+  }
+};
+
+// =========================================================
+// APPROVALS LIST
+// =========================================================
+const getRegionApprovals = async (req, res) => {
+  try {
+    const approvals = await Document.findAll({
+      include: [{
+        model: Dealer,
+        as: "dealer",
+        where: { regionId: req.user.regionId }
+      }],
+      where: { status: "pending" }
+    });
+
+    return res.json(approvals);
+
+  } catch (err) {
+    console.error("Region approvals error:", err);
+    return res.status(500).json({ error: "Failed to load approvals" });
+  }
+};
 
 module.exports = {
-  getRegions: async (req, res) => {
-    try {
-      const regions = await Region.findAll({
-        order: [["name", "ASC"]],
-      });
-
-      res.json(regions);
-    } catch (err) {
-      console.error("Error fetching regions:", err);
-      res.status(500).json({ error: "Failed to fetch regions" });
-    }
-  },
+  createRegion,
+  getRegions,
+  getRegion,
+  updateRegion,
+  deleteRegion,
+  getRegionDashboardSummary,
+  getRegionAreas,
+  getRegionApprovals
 };
 </file>
 
@@ -7736,6 +8118,73 @@ module.exports = {
 };
 </file>
 
+<file path="src/migrations/20251210093440-add-salesGroupId-to-users.js">
+'use strict';
+
+/** @type {import('sequelize-cli').Migration} */
+module.exports = {
+  async up (queryInterface, Sequelize) {
+    await queryInterface.addColumn('Users', 'salesGroupId', {
+      type: Sequelize.INTEGER,
+      allowNull: true,
+      references: {
+        model: 'sales_groups',
+        key: 'id'
+      },
+      onUpdate: 'CASCADE',
+      onDelete: 'SET NULL'
+    });
+  },
+
+  async down (queryInterface, Sequelize) {
+    await queryInterface.removeColumn('Users', 'salesGroupId');
+  }
+};
+</file>
+
+<file path="src/migrations/20251210095123-add-approval-fields-to-invoices.js">
+'use strict';
+
+/** @type {import('sequelize-cli').Migration} */
+module.exports = {
+  async up (queryInterface, Sequelize) {
+    await queryInterface.addColumn('invoices', 'approvalStage', {
+      type: Sequelize.ENUM('dealer_admin', 'territory_manager', 'area_manager', 'regional_manager', 'regional_admin'),
+      allowNull: true,
+    });
+
+    await queryInterface.addColumn('invoices', 'approvalStatus', {
+      type: Sequelize.ENUM('pending', 'approved', 'rejected'),
+      allowNull: false,
+      defaultValue: 'pending',
+    });
+
+    await queryInterface.addColumn('invoices', 'approvedBy', {
+      type: Sequelize.STRING,
+      allowNull: true,
+    });
+
+    await queryInterface.addColumn('invoices', 'approvedAt', {
+      type: Sequelize.DATE,
+      allowNull: true,
+    });
+
+    await queryInterface.addColumn('invoices', 'rejectionReason', {
+      type: Sequelize.TEXT,
+      allowNull: true,
+    });
+  },
+
+  async down (queryInterface, Sequelize) {
+    await queryInterface.removeColumn('invoices', 'approvalStage');
+    await queryInterface.removeColumn('invoices', 'approvalStatus');
+    await queryInterface.removeColumn('invoices', 'approvedBy');
+    await queryInterface.removeColumn('invoices', 'approvedAt');
+    await queryInterface.removeColumn('invoices', 'rejectionReason');
+  }
+};
+</file>
+
 <file path="src/models/AccountStatement.js">
 const { DataTypes } = require('sequelize');
 
@@ -7874,7 +8323,7 @@ module.exports = (sequelize, DataTypes) => {
     },
 
     campaignName: { type: DataTypes.STRING, allowNull:false },
-    campaignType: { 
+    campaignType: {
       type: DataTypes.ENUM('promotion','sales_scheme','seasonal_offer'),
       allowNull:false
     },
@@ -7897,7 +8346,20 @@ module.exports = (sequelize, DataTypes) => {
     terms: DataTypes.TEXT,
     bannerImage: DataTypes.STRING,
 
-    areaId: { type: DataTypes.UUID, allowNull:true }
+    areaId: { type: DataTypes.UUID, allowNull:true },
+
+    // Approval workflow fields
+    approvalStage: {
+      type: DataTypes.ENUM('area_manager', 'regional_admin', 'super_admin'),
+      allowNull: true
+    },
+    approvalStatus: {
+      type: DataTypes.ENUM('pending', 'approved', 'rejected'),
+      defaultValue: 'pending'
+    },
+    approvedBy: DataTypes.STRING,
+    approvedAt: DataTypes.DATE,
+    rejectionReason: DataTypes.TEXT
   }, {
     timestamps:true,
     tableName:"Campaigns"
@@ -8337,6 +8799,19 @@ module.exports = (sequelize, DataTypes) => {
       pdfPath: DataTypes.STRING,
       sapDocumentNumber: DataTypes.STRING,
       paymentDate: DataTypes.DATE,
+
+      // Approval workflow fields
+      approvalStage: {
+        type: DataTypes.ENUM('dealer_admin', 'territory_manager', 'area_manager', 'regional_manager', 'regional_admin'),
+        allowNull: true
+      },
+      approvalStatus: {
+        type: DataTypes.ENUM('pending', 'approved', 'rejected'),
+        defaultValue: 'pending'
+      },
+      approvedBy: DataTypes.STRING,
+      approvedAt: DataTypes.DATE,
+      rejectionReason: DataTypes.TEXT
     },
     {
       timestamps: true,
@@ -8868,8 +9343,8 @@ module.exports = (sequelize, DataTypes) => {
       },
       name: { type: DataTypes.STRING, allowNull: false, unique: true },
       geojson: DataTypes.JSON,
-centroidLat: DataTypes.FLOAT,
-centroidLng: DataTypes.FLOAT,
+      centroidLat: DataTypes.FLOAT,
+      centroidLng: DataTypes.FLOAT,
 
     },
     {
@@ -8888,6 +9363,12 @@ centroidLng: DataTypes.FLOAT,
     Region.hasMany(models.Dealer, {
       foreignKey: "regionId",
       as: "dealers",
+    });
+
+    // ✅ Add area association
+    Region.hasMany(models.Area, {
+      foreignKey: "regionId",
+      as: "areas",
     });
   };
 
@@ -9039,7 +9520,7 @@ const bcrypt = require("bcryptjs");
 
 module.exports = (sequelize, DataTypes) => {
 
- const User = sequelize.define(
+  const User = sequelize.define(
     "User",
     {
       id: {
@@ -9063,6 +9544,9 @@ module.exports = (sequelize, DataTypes) => {
 
       // 🔥 NEW → who this user reports to
       managerId:  { type: DataTypes.UUID, allowNull:true, references:{ model:"Users", key:"id" }},
+
+      // 🔥 Sales team assignment for Sales Managers
+      salesGroupId: { type: DataTypes.INTEGER, allowNull:true, references:{ model:"sales_groups", key:"id" }},
 
       phoneNumber: DataTypes.STRING,
       isActive: { type: DataTypes.BOOLEAN, defaultValue:true },
@@ -9109,6 +9593,9 @@ module.exports = (sequelize, DataTypes) => {
     User.belongsTo(models.Region,{ foreignKey:"regionId", as:"region" });
     User.belongsTo(models.Area,{ foreignKey:"areaId", as:"area" });
     User.belongsTo(models.Territory,{ foreignKey:"territoryId", as:"territory" });
+
+    // Sales team
+    User.belongsTo(models.SalesGroup,{ foreignKey:"salesGroupId", as:"salesGroup" });
 
     // Chat/messages
     User.hasMany(models.Message,{ foreignKey:"senderId", as:"sentMessages" });
@@ -9356,19 +9843,29 @@ router.get('/', authenticate, campaignController.getAllCampaigns);
 router.get(
   "/active",
   authenticate,
-  authorize("dealer_admin", "tm", "am", "super_admin"),
+  authorize("dealer_admin", "territory_manager", "area_manager", "super_admin"),
   campaignController.getActiveCampaigns
 );
 //router.get('/:id', authenticate, campaignController.getCampaignById);
 router.get(
   "/:id",
   authenticate,
-  authorize("dealer_admin", "tm", "am", "super_admin"),
+  authorize("dealer_admin", "territory_manager", "area_manager", "super_admin"),
   campaignController.getCampaignById
 );
 router.post('/', authenticate, authorize('super_admin', 'key_user'), campaignController.createCampaign);
 router.put('/:id', authenticate, authorize('super_admin', 'key_user'), campaignController.updateCampaign);
 router.delete('/:id', authenticate, authorize('super_admin', 'key_user'), campaignController.deleteCampaign);
+
+// Approval routes
+// router.post('/:id/approve', authenticate, authorize('area_manager', 'regional_admin', 'super_admin'), campaignController.approveCampaign);
+// router.get('/pending/approvals', authenticate, authorize('area_manager', 'regional_admin', 'super_admin'), campaignController.getPendingCampaigns);
+
+// Targeting and analytics routes
+// router.get('/dealer/me', authenticate, authorize('dealer_admin', 'dealer_staff'), campaignController.getDealerCampaigns);
+// router.get('/area/:areaId', authenticate, campaignController.getCampaignsByArea);
+// router.get('/:id/analytics', authenticate, authorize('super_admin', 'regional_admin', 'area_manager'), campaignController.getCampaignAnalytics);
+// router.get('/summary/stats', authenticate, authorize('super_admin', 'regional_admin'), campaignController.getCampaignSummary);
 
 module.exports = router;
 </file>
@@ -9409,10 +9906,10 @@ const { Dealer, User } = require('../models'); // ✅ needed
 router.get('/', authenticate, dealerController.getAllDealers);
 
 // 🧩 Dealer profile
-router.get('/profile', authenticate, authorize('dealer'), dealerController.getDealerProfile);
+router.get('/profile', authenticate, authorize("dealer_admin","dealer_staff"), dealerController.getDealerProfile);
 
 // ✅ FIX: Place this BEFORE "/:id"
-router.get("/my-manager", authenticate, authorize("dealer"), async (req, res) => {
+router.get("/my-manager", authenticate, authorize("dealer_admin","dealer_staff"), async (req, res) => {
   try {
     console.log("🟢 req.user:", req.user);
 
@@ -9505,25 +10002,25 @@ router.delete(
 
 // ---------------------------------------------------
 // APPROVE / REJECT DOCUMENT
-// Only super_admin, tm, am can approve/reject
+// Only super_admin, territory_manager, area_manager can approve/reject
 // ---------------------------------------------------
 router.patch(
   '/:id/status',
   authenticate,
-  authorize('super_admin', 'tm', 'am'),
+  authorize('super_admin', 'territory_manager', 'area_manager'),
   documentController.approveDocument
 );
 
 // ---------------------------------------------------
 // MANAGER DOCUMENT VIEW
-// tm = Territory Manager
-// am = Area Manager
-// sm = Sales Manager ??
+// territory_manager = Territory Manager
+// area_manager = Area Manager
+// regional_manager = Sales Manager ??
 // ---------------------------------------------------
 router.get(
   '/manager',
   authenticate,
-  authorize('tm', 'am', 'sm'),
+  authorize('territory_manager', 'area_manager', 'regional_manager'),
   documentController.getManagerDocuments
 );
 
@@ -9601,6 +10098,10 @@ router.get('/:id/pdf', authenticate, invoiceController.generateInvoicePDF);
 router.post('/', authenticate, authorize('super_admin', 'key_user', 'dealer_staff'), invoiceController.createInvoice);
 router.put('/:id', authenticate, authorize('super_admin', 'key_user'), invoiceController.updateInvoice);
 
+// Approval routes
+router.post('/:id/approve', authenticate, authorize('dealer_admin', 'territory_manager', 'area_manager', 'regional_manager', 'regional_admin'), invoiceController.approveInvoice);
+router.get('/pending/approvals', authenticate, authorize('dealer_admin', 'territory_manager', 'area_manager', 'regional_manager', 'regional_admin'), invoiceController.getPendingInvoices);
+
 module.exports = router;
 </file>
 
@@ -9611,13 +10112,13 @@ const managerCtrl = require('../controllers/managerController');
 const { authenticate, authorize } = require('../middleware/auth');
 
 // Manager summary & dealers
-router.get('/summary', authenticate, authorize('tm','am','sm'), managerCtrl.getSummary);
-router.get('/dealers', authenticate, authorize('tm','am','sm'), managerCtrl.getDealers);
-router.get('/dealers/:id', authenticate, authorize('tm','am','sm'), managerCtrl.getDealerById);
+router.get('/summary', authenticate, authorize('territory_manager','area_manager','regional_manager'), managerCtrl.getSummary);
+router.get('/dealers', authenticate, authorize('territory_manager','area_manager','regional_manager'), managerCtrl.getDealers);
+router.get('/dealers/:id', authenticate, authorize('territory_manager','area_manager','regional_manager'), managerCtrl.getDealerById);
 
 // Pricing triage
-router.get('/pricing', authenticate, authorize('tm','am','sm'), managerCtrl.getPricingRequests);
-router.patch('/pricing/:id/forward', authenticate, authorize('tm','am','sm'), managerCtrl.forwardPricingToAdmin);
+router.get('/pricing', authenticate, authorize('territory_manager','area_manager','regional_manager'), managerCtrl.getPricingRequests);
+router.patch('/pricing/:id/forward', authenticate, authorize('territory_manager','area_manager','regional_manager'), managerCtrl.forwardPricingToAdmin);
 
 // Assign (admin or key_user)
 router.post('/assign-dealer', authenticate, authorize('super_admin','key_user'), managerCtrl.assignDealerToManager);
@@ -9751,7 +10252,7 @@ const { authenticate, authorize } = require("../middleware/auth");
 router.get(
   "/",
   authenticate,
-  authorize("tm", "am", "super_admin", "dealer"),
+  authorize("territory_manager", "area_manager", "super_admin", "dealer_admin", "dealer_staff", "regional_manager", "regional_admin"),
   messageController.getMessages
 );
 
@@ -9759,7 +10260,7 @@ router.get(
 router.get(
   "/conversation/:partnerId",
   authenticate,
-  authorize("tm", "am", "super_admin", "dealer"), // both sides can access
+  authorize("territory_manager", "area_manager", "super_admin", "dealer_admin", "dealer_staff", "regional_manager", "regional_admin"), // both sides can access
   messageController.getConversation // ✅ fixed name (was messageCtrl)
 );
 
@@ -9767,7 +10268,7 @@ router.get(
 router.post(
   "/",
   authenticate,
-  authorize("tm", "am", "super_admin", "dealer"),
+  authorize("territory_manager", "area_manager", "super_admin", "dealer_admin", "dealer_staff", "regional_manager", "regional_admin"),
   messageController.sendMessage
 );
 
@@ -9775,7 +10276,7 @@ router.post(
 router.patch(
   "/:id/read",
   authenticate,
-  authorize("tm", "am", "super_admin", "dealer"),
+  authorize("territory_manager", "area_manager", "super_admin", "dealer_admin", "dealer_staff", "regional_manager", "regional_admin"),
   messageController.markAsRead
 );
 
@@ -9831,7 +10332,7 @@ const { authenticate, authorize } = require("../middleware/auth");
 router.post(
   "/",
   authenticate,
-  authorize("dealer", "dealer_admin", "dealer_staff"),
+  authorize("dealer_admin", "dealer_staff"),
   orderController.placeOrder
 );
 
@@ -9841,7 +10342,7 @@ router.post(
 router.get(
   "/my",
   authenticate,
-  authorize("dealer", "dealer_admin", "dealer_staff"),
+  authorize("dealer_admin", "dealer_staff"),
   orderController.getMyOrders
 );
 
@@ -9967,7 +10468,7 @@ const { authenticate, authorize } = require("../middleware/auth");
 router.post(
   "/request",
   authenticate,
-  authorize("dealer", "am", "tm"),
+  authorize("dealer_staff","dealer_admin", "area_manager", "territory_manager", "regional_manager"),
   pricingController.requestPricingChange
 );
 
@@ -9975,7 +10476,7 @@ router.post(
 router.get(
   "/",
   authenticate,
-  authorize("admin", "am", "tm", "dealer_admin"),
+  authorize("dealer_staff","dealer_admin", "area_manager", "territory_manager", "regional_manager"),
   pricingController.getPricingUpdates
 );
 
@@ -9983,14 +10484,14 @@ router.get(
 router.get(
   "/summary",
   authenticate,
-  authorize("admin"),
+  authorize("super_admin"),
   pricingController.getPricingSummary
 );
-router.patch("/:id", authenticate, authorize("admin","tm","am"), pricingController.updatePricingStatus);
+router.patch("/:id", authenticate, authorize("dealer_staff","dealer_admin", "area_manager", "territory_manager", "regional_manager"), pricingController.updatePricingStatus);
 router.get(
   "/manager",
   authenticate,
-  authorize("tm", "am", "sm"),
+  authorize("area_manager", "territory_manager", "regional_manager"),
   pricingController.getManagerPricingRequests
 );
 
@@ -10009,13 +10510,51 @@ module.exports = router;
 </file>
 
 <file path="src/routes/regionRoutes.js">
-const express = require("express");
+// src/routes/regionRoutes.js
+const express = require('express');
 const router = express.Router();
+const { authenticate } = require('../middleware/auth');
+const checkPermission = require('../middleware/checkPermission');
 
-const regionController = require("../controllers/regionController");
+const {
+  createRegion,
+  getRegions,
+  getRegion,
+  updateRegion,
+  deleteRegion
+} = require('../controllers/regionController');
 
-// GET /api/regions
-router.get("/regions", regionController.getRegions);
+// Public routes (with authentication)
+router.get("/regions", authenticate, getRegions);
+
+// Require permissions for write operations
+router.post("/regions", authenticate, checkPermission('regions.manage'), createRegion);
+router.get("/regions/:id", authenticate, checkPermission('regions.view'), getRegion);
+router.put("/regions/:id", authenticate, checkPermission('regions.manage'), updateRegion);
+router.delete("/regions/:id", authenticate, checkPermission('regions.manage'), deleteRegion);
+
+// 📌 REGIONAL ADMIN DASHBOARD ROUTES (ADD BELOW CRUD ROUTES)
+
+router.get(
+  "/regions/dashboard/summary",
+  authenticate,
+  checkPermission("dashboard.view.regional"),   // or create new: dashboard.view.regional
+  require("../controllers/regionController").getRegionDashboardSummary
+);
+
+router.get(
+  "/regions/dashboard/areas",
+  authenticate,
+  checkPermission("areas.view"),
+  require("../controllers/regionController").getRegionAreas
+);
+
+router.get(
+  "/regions/dashboard/approvals",
+  authenticate,
+  checkPermission("documents.view"),
+  require("../controllers/regionController").getRegionApprovals
+);
 
 module.exports = router;
 </file>
@@ -10040,13 +10579,13 @@ router.get("/admin-summary",
 router.get(
   "/pending-approvals",
   authenticate,
-  authorize("tm", "am", "super_admin"),
+  authorize("super_admin", "area_manager", "territory_manager", "regional_manager", "regional_admin"),
   reportController.getPendingApprovals
 );
 router.get(
   "/regional-sales-summary",
   authenticate,
-  authorize("super_admin", "am", "tm"),
+  authorize("super_admin", "area_manager", "territory_manager", "regional_manager", "regional_admin"),
   reportController.getRegionalSalesSummary
 );
 
@@ -10474,6 +11013,8 @@ const FLOWS = {
   payment: ["dealer_admin", "territory_manager", "area_manager", "regional_manager", "regional_admin"],
   document: ["dealer_admin", "territory_manager", "area_manager", "regional_manager"],
   pricing: ["area_manager", "regional_admin", "super_admin"], // For pricing approvals
+  campaign: ["area_manager", "regional_admin", "super_admin"], // For campaign approvals
+  invoice: ["dealer_admin", "territory_manager", "area_manager", "regional_manager", "regional_admin"], // For invoice approvals
 };
 
 // Map stage → allowed roles (can be same as stage or include higher roles)
@@ -10500,6 +11041,18 @@ const STAGE_APPROVERS = {
     area_manager: ["area_manager", "regional_admin", "super_admin"],
     regional_admin: ["regional_admin", "super_admin"],
     super_admin: ["super_admin"],
+  },
+  campaign: {
+    area_manager: ["area_manager", "regional_admin", "super_admin"],
+    regional_admin: ["regional_admin", "super_admin"],
+    super_admin: ["super_admin"],
+  },
+  invoice: {
+    dealer_admin: ["dealer_admin", "territory_manager", "area_manager", "super_admin"],
+    territory_manager: ["territory_manager", "area_manager", "regional_manager", "regional_admin", "super_admin"],
+    area_manager: ["area_manager", "regional_manager", "regional_admin", "super_admin"],
+    regional_manager: ["regional_manager", "regional_admin", "super_admin"],
+    regional_admin: ["regional_admin", "super_admin"],
   },
 };
 

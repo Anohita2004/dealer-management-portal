@@ -10,7 +10,7 @@ const { authenticate, authorize } = require("../middleware/auth");
 router.post(
   "/",
   authenticate,
-  authorize("dealer", "dealer_admin", "dealer_staff"),
+  authorize("dealer_admin", "dealer_staff"),
   orderController.placeOrder
 );
 
@@ -20,7 +20,7 @@ router.post(
 router.get(
   "/my",
   authenticate,
-  authorize("dealer", "dealer_admin", "dealer_staff"),
+  authorize("dealer_admin", "dealer_staff"),
   orderController.getMyOrders
 );
 

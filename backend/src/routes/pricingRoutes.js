@@ -11,7 +11,7 @@ const { authenticate, authorize } = require("../middleware/auth");
 router.post(
   "/request",
   authenticate,
-  authorize("dealer", "am", "tm"),
+  authorize("dealer_staff","dealer_admin", "area_manager", "territory_manager", "regional_manager"),
   pricingController.requestPricingChange
 );
 
@@ -19,7 +19,7 @@ router.post(
 router.get(
   "/",
   authenticate,
-  authorize("admin", "am", "tm", "dealer_admin"),
+  authorize("dealer_staff","dealer_admin", "area_manager", "territory_manager", "regional_manager"),
   pricingController.getPricingUpdates
 );
 
@@ -27,14 +27,14 @@ router.get(
 router.get(
   "/summary",
   authenticate,
-  authorize("admin"),
+  authorize("super_admin"),
   pricingController.getPricingSummary
 );
-router.patch("/:id", authenticate, authorize("admin","tm","am"), pricingController.updatePricingStatus);
+router.patch("/:id", authenticate, authorize("dealer_staff","dealer_admin", "area_manager", "territory_manager", "regional_manager"), pricingController.updatePricingStatus);
 router.get(
   "/manager",
   authenticate,
-  authorize("tm", "am", "sm"),
+  authorize("area_manager", "territory_manager", "regional_manager"),
   pricingController.getManagerPricingRequests
 );
 

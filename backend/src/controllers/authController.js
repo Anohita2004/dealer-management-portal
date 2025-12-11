@@ -5,6 +5,9 @@ const { generateToken } = require("../utils/jwt");
 // -------------------------------
 // LOGIN (Step 1 → Generate OTP)
 // -------------------------------
+// -------------------------------
+// LOGIN (Step 1 → Generate OTP)
+// -------------------------------
 const login = async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -23,6 +26,7 @@ const login = async (req, res) => {
 
     // Generate OTP
     const otp = user.generateOTP();
+    console.log("LOGIN OTP for user:", user.username, "=>", otp); // <-- log here
     await user.save();
 
     await AuditLog.create({
@@ -35,11 +39,10 @@ const login = async (req, res) => {
     });
 
     return res.json({
-      message: "OTP generated (check console)",
+      message: "OTP generated",
       userId: user.id,
       otpSent: true,
-      // For development only - remove in production
-      otp: process.env.NODE_ENV === 'development' ? otp : undefined
+      otp: process.env.NODE_ENV === "development" ? otp : undefined,
     });
   } catch (err) {
     console.error("Login error:", err);

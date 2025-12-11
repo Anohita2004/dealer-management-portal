@@ -60,6 +60,16 @@ const authenticate = async (req, res, next) => {
   areaId: user.areaId || null,
   territoryId: user.territoryId || null
 };
+console.log("AUTH USER DEBUG:", {
+  id: req.user.id,
+  username: req.user.username,
+  role: req.user.role,
+  roleDetails: req.user.roleDetails,
+  regionId: req.user.regionId,
+  areaId: req.user.areaId,
+  territoryId: req.user.territoryId,
+  dealerId: req.user.dealerId
+});
 
 
     return next();
