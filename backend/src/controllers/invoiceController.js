@@ -38,6 +38,7 @@ const ensureDirectory = (dirPath) => {
 
 const getAllInvoices = async (req, res) => {
   try {
+    const role = req.user.roleDetails?.name || req.user.role;
     const {
       page = 1,
       limit = 10,
@@ -68,7 +69,9 @@ const getAllInvoices = async (req, res) => {
       ];
     }
 
-    if (req.user.role === "dealer") {
+    if (req.scope?.invoices) {
+      Object.assign(where, req.scope.invoices);
+    } else if (["dealer_admin", "dealer_staff", "dealer"].includes(role)) {
       where.dealerId = req.user.dealerId;
     }
 
@@ -98,11 +101,14 @@ const getAllInvoices = async (req, res) => {
 
 const getInvoiceById = async (req, res) => {
   try {
+    const role = req.user.roleDetails?.name || req.user.role;
     const { id } = req.params;
 
     const where = { id };
 
-    if (req.user.role === "dealer") {
+    if (req.scope?.invoices) {
+      Object.assign(where, req.scope.invoices);
+    } else if (["dealer_admin", "dealer_staff", "dealer"].includes(role)) {
       where.dealerId = req.user.dealerId;
     }
 
@@ -128,9 +134,10 @@ const getInvoiceById = async (req, res) => {
 
 const createInvoice = async (req, res) => {
   try {
+    const role = req.user.roleDetails?.name || req.user.role;
     let data = { ...req.body };
 
-    if (req.user.role === "dealer_staff") {
+    if (role === "dealer_staff") {
       const { orderId } = data;
 
       if (!orderId) {
@@ -278,10 +285,28 @@ const approveInvoice = async (req, res) => {
       const next = nextStage(stage, "invoice");
 
       if (!next) {
-        // Final approval - mark as approved
+        // Final approval - mark as approved and reduce stock if linked to order
         invoice.approvalStage = null;
         invoice.approvalStatus = "approved";
         invoice.status = "approved";
+
+        // If invoice is linked to an order, ensure stock is reduced
+        if (invoice.orderId) {
+          const { Order, OrderItem, Material } = require("../models");
+          const linkedOrder = await Order.findByPk(invoice.orderId, {
+            include: [{ model: OrderItem, as: "items" }]
+          });
+          if (linkedOrder && linkedOrder.items) {
+            for (const item of linkedOrder.items) {
+              const mat = await Material.findByPk(item.materialId);
+              if (mat) {
+                const currentStock = mat.stock || 0;
+                const newStock = Math.max(0, currentStock - item.qty);
+                await mat.update({ stock: newStock });
+              }
+            }
+          }
+        }
       } else {
         invoice.approvalStage = next;
         invoice.approvalStatus = "pending";
@@ -364,11 +389,17 @@ const getPendingInvoices = async (req, res) => {
       return res.status(403).json({ error: "Role not authorized for invoice approvals" });
     }
 
+    const baseWhere = {
+      approvalStage,
+      approvalStatus: "pending"
+    };
+
+    // Apply scope if available
+    const where =
+      req.scope?.invoices ? { ...baseWhere, ...req.scope.invoices } : baseWhere;
+
     const invoices = await Invoice.findAll({
-      where: {
-        approvalStage,
-        approvalStatus: "pending"
-      },
+      where,
       include: [
         {
           model: Dealer,

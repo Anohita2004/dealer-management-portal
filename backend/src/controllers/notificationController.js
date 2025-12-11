@@ -1,5 +1,5 @@
 // src/controllers/notificationController.js
-const { Notification, User, sequelize } = require('../models');
+const { Notification, User, Role, sequelize } = require('../models');
 const { Op } = require('sequelize');
 
 // Create notification for a user or role
@@ -47,10 +47,13 @@ const createNotification = async (req, res) => {
       }
     } else if (roleName) {
       // Role-based notification - send to all users with this role
-      const users = await User.findAll({
-        where: { roleId: roleName }, // Assuming roleId is used as role name
-        attributes: ['id']
-      });
+      const role = await Role.findOne({ where: { name: roleName } });
+      const users = role
+        ? await User.findAll({
+            where: { roleId: role.id },
+            attributes: ['id']
+          })
+        : [];
 
       const notificationPromises = users.map(user =>
         Notification.create({

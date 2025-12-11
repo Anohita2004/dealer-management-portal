@@ -107,8 +107,11 @@ exports.getAllOrders = async (req, res) => {
     const roleName = req.user.roleDetails?.name || req.user.role;
     let whereClause = {};
 
-    // Apply scoping for non-super-admin roles
-    if (!['super_admin', 'technical_admin'].includes(roleName)) {
+    // If scoping middleware populated a scope, honor it
+    if (req.scope?.orders) {
+      whereClause = { ...req.scope.orders };
+    } else if (!['super_admin', 'technical_admin'].includes(roleName)) {
+      // Fallback: compute scoped dealerIds
       const dealersUnderScope = await getDealersUnderUserScope(req.user);
       whereClause.dealerId = { [require('sequelize').Op.in]: dealersUnderScope };
     }
@@ -167,14 +170,23 @@ exports.updateOrderStatus = async (req, res) => {
 // APPROVE ORDER (Multi-stage)
 // --------------------------------------
 exports.approveOrder = async (req, res) => {
+  const t = await sequelize.transaction();
   try {
-    const order = await Order.findByPk(req.params.id);
-    if (!order) return res.status(404).json({ error: "Order not found" });
+    const { OrderItem, Material } = require("../models");
+    const order = await Order.findByPk(req.params.id, {
+      include: [{ model: OrderItem, as: "items" }],
+      transaction: t
+    });
+    if (!order) {
+      await t.rollback();
+      return res.status(404).json({ error: "Order not found" });
+    }
 
     const role = req.user.roleDetails?.name || req.user.role;
     const currentStage = order.approvalStage;
 
     if (!isApproverForStage(role, currentStage, "order")) {
+      await t.rollback();
       return res.status(403).json({
         error: `You are not authorized to approve at this stage (${currentStage}).`,
       });
@@ -183,10 +195,19 @@ exports.approveOrder = async (req, res) => {
     const next = nextStage(currentStage, "order");
 
     if (!next) {
-      // Final approval
+      // Final approval - reserve/reduce stock
       order.approvalStage = null;
       order.approvalStatus = "approved";
       order.status = "Approved";
+
+      // Reserve/reduce stock for approved order
+      for (const item of order.items) {
+        const mat = await Material.findByPk(item.materialId, { transaction: t });
+        if (mat) {
+          const newStock = Math.max(0, (mat.stock || 0) - item.qty);
+          await mat.update({ stock: newStock }, { transaction: t });
+        }
+      }
     } else {
       // Move to next stage
       order.approvalStage = next;
@@ -196,13 +217,15 @@ exports.approveOrder = async (req, res) => {
     order.approvedBy = req.user.id;
     order.approvedAt = new Date();
 
-    await order.save();
+    await order.save({ transaction: t });
+    await t.commit();
 
     return res.json({
       message: next ? `Order moved to next stage: ${next}` : "Order fully approved",
       order,
     });
   } catch (err) {
+    await t.rollback();
     console.error("approveOrder:", err);
     res.status(500).json({ error: "Failed to approve order" });
   }

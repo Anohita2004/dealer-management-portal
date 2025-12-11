@@ -19,15 +19,15 @@ router.post('/', authenticate, checkPermission('notifications.send'), createNoti
 router.get('/', authenticate, checkPermission('notifications.view'), getUserNotifications);
 
 // User: Mark as read
-router.put('/:id/read', authenticate, markAsRead);
+router.put('/:id/read', authenticate, checkPermission('notifications.view'), markAsRead);
 
 // User: Mark all as read
-router.put('/read-all', authenticate, markAllAsRead);
+router.put('/read-all', authenticate, checkPermission('notifications.view'), markAllAsRead);
 
 // User: Delete notification
-router.delete('/:id', authenticate, deleteNotification);
+router.delete('/:id', authenticate, checkPermission('notifications.view'), deleteNotification);
 
 // User: Get unread count
-router.get('/unread/count', authenticate, getUnreadCount);
+router.get('/unread/count', authenticate, checkPermission('notifications.view'), getUnreadCount);
 
 module.exports = router;

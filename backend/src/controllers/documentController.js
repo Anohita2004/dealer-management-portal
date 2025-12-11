@@ -50,8 +50,10 @@ const getAllDocuments = async (req, res) => {
     if (dealerId) where.dealerId = dealerId;
     if (documentType) where.documentType = documentType;
 
-    // Dealer role restriction
-    if (req.user.role === "dealer") {
+    // Apply scoping first
+    if (req.scope?.dealers) {
+      Object.assign(where, req.scope.dealers);
+    } else if (["dealer_admin","dealer_staff","dealer"].includes(req.user.role)) {
       where.dealerId = req.user.dealerId;
     }
 
@@ -141,7 +143,11 @@ const downloadDocument = async (req, res) => {
     const { id } = req.params;
 
     const where = { id };
-    if (req.user.role === "dealer") where.dealerId = req.user.dealerId;
+    if (req.scope?.dealers) {
+      Object.assign(where, req.scope.dealers);
+    } else if (["dealer_admin","dealer_staff","dealer"].includes(req.user.role)) {
+      where.dealerId = req.user.dealerId;
+    }
 
     const document = await Document.findOne({ where });
     if (!document) return res.status(404).json({ error: "Document not found" });

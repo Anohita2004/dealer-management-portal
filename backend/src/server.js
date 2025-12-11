@@ -37,6 +37,8 @@ const chatRoutes = require('./routes/chatRoutes'); // new chat endpoints
 const areaRoutes = require('./routes/areaRoutes');
 const territoryRoutes = require('./routes/territoryRoutes');
 const teamRoutes = require('./routes/teamRoutes');
+const featureToggleRoutes = require('./routes/featureToggleRoutes');
+const taskRoutes = require('./routes/taskRoutes');
 
 // --- Express app setup ---
 const app = express();
@@ -96,6 +98,8 @@ app.use('/api/chat', chatRoutes); // role-filtered chat REST endpoints
 app.use('/api/areas', areaRoutes);
 app.use('/api/territories', territoryRoutes);
 app.use('/api/teams', teamRoutes);
+app.use('/api/feature-toggles', featureToggleRoutes);
+app.use('/api/tasks', taskRoutes);
 
 // --- Error handling (keep your behavior) ---
 app.use((err, req, res, next) => {
@@ -128,6 +132,24 @@ const io = new Server(server, {
 // expose io & models to controllers
 app.set('io', io);
 app.set('models', require('./models'));
+
+// Scheduled SLA job - runs every hour
+const runSLAJob = async () => {
+  try {
+    const { checkSLA } = require('./utils/sla');
+    await checkSLA();
+    console.log('✅ SLA check completed at', new Date().toISOString());
+  } catch (error) {
+    console.error('❌ SLA job error:', error);
+  }
+};
+
+// Run immediately on startup, then every hour
+if (process.env.ENABLE_SLA_JOB !== 'false') {
+  runSLAJob();
+  setInterval(runSLAJob, 60 * 60 * 1000); // Every hour
+  console.log('✅ Scheduled SLA job enabled (runs every hour)');
+}
 
 // Helper: deterministic room id for 1-1 chats
 const createRoomId = (a, b) => `chat:${[String(a), String(b)].sort().join('-')}`;

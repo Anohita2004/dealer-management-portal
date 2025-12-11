@@ -3,12 +3,14 @@ const express = require("express");
 const router = express.Router();
 const messageController = require("../controllers/messageController");
 const { authenticate, authorize } = require("../middleware/auth");
+const checkPermission = require("../middleware/checkPermission");
 
 // 📨 Fetch all messages (visible to TM/AM/Admin/Dealer)
 router.get(
   "/",
   authenticate,
   authorize("territory_manager", "area_manager", "super_admin", "dealer_admin", "dealer_staff", "regional_manager", "regional_admin"),
+  checkPermission("messages.view"),
   messageController.getMessages
 );
 
@@ -17,6 +19,7 @@ router.get(
   "/conversation/:partnerId",
   authenticate,
   authorize("territory_manager", "area_manager", "super_admin", "dealer_admin", "dealer_staff", "regional_manager", "regional_admin"), // both sides can access
+  checkPermission("messages.view"),
   messageController.getConversation // ✅ fixed name (was messageCtrl)
 );
 
@@ -25,6 +28,7 @@ router.post(
   "/",
   authenticate,
   authorize("territory_manager", "area_manager", "super_admin", "dealer_admin", "dealer_staff", "regional_manager", "regional_admin"),
+  checkPermission("messages.send"),
   messageController.sendMessage
 );
 
@@ -33,6 +37,7 @@ router.patch(
   "/:id/read",
   authenticate,
   authorize("territory_manager", "area_manager", "super_admin", "dealer_admin", "dealer_staff", "regional_manager", "regional_admin"),
+  checkPermission("messages.view"),
   messageController.markAsRead
 );
 

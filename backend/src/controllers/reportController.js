@@ -12,6 +12,7 @@ const {
   Campaign,
   PricingUpdate,   // ✅ The correct model
   Order,
+  sequelize,
 } = require("../models");
 
 const { Op } = require("sequelize");
@@ -20,13 +21,139 @@ const ExcelJS = require("exceljs");
 const fs = require("fs");
 const path = require("path");
 
+// -------------------------------------------------
+// Helpers for dashboards
+// -------------------------------------------------
+const buildDealerWhere = (req) => {
+  const role = req.user.roleDetails?.name || req.user.role;
+
+  if (req.scope?.dealers) {
+    return { ...req.scope.dealers };
+  }
+
+  if (role === "regional_admin" || role === "regional_manager") {
+    return { regionId: req.user.regionId };
+  }
+  if (role === "area_manager") {
+    return { areaId: req.user.areaId };
+  }
+  if (role === "territory_manager") {
+    return { territoryId: req.user.territoryId };
+  }
+  if (role && role.startsWith("dealer_")) {
+    return { id: req.user.dealerId };
+  }
+  return {};
+};
+
+const dashboardSummary = async (dealerWhere = {}) => {
+  const dealers = await Dealer.findAll({
+    where: dealerWhere,
+    attributes: ["id"],
+  });
+  const dealerIds = dealers.map((d) => d.id);
+
+  const [invoiceAgg] = await Invoice.findAll({
+    where: dealerIds.length ? { dealerId: { [Op.in]: dealerIds } } : {},
+    attributes: [
+      [sequelize.fn("COUNT", sequelize.col("id")), "totalInvoices"],
+      [sequelize.fn("SUM", sequelize.col("balanceAmount")), "outstanding"],
+    ],
+    raw: true,
+  });
+
+  const outstanding = Number(invoiceAgg?.outstanding || 0);
+  const totalInvoices = Number(invoiceAgg?.totalInvoices || 0);
+
+  const pendingDocs = await Document.count({
+    include: dealerIds.length
+      ? [{ model: Dealer, as: "dealer", where: { id: { [Op.in]: dealerIds } } }]
+      : [{ model: Dealer, as: "dealer" }],
+    where: { status: "pending" },
+  });
+
+  const pendingPricing = await PricingUpdate.count({
+    include: dealerIds.length
+      ? [{ model: Dealer, as: "dealer", where: { id: { [Op.in]: dealerIds } } }]
+      : [{ model: Dealer, as: "dealer" }],
+    where: { status: "pending" },
+  });
+
+  const activeCampaigns = await Campaign.count({
+    where: {
+      isActive: true,
+      ...(dealerWhere.regionId ? { regionId: dealerWhere.regionId } : {}),
+      ...(dealerWhere.areaId ? { areaId: dealerWhere.areaId } : {}),
+      ...(dealerWhere.territoryId ? { territoryId: dealerWhere.territoryId } : {}),
+    },
+  });
+
+  return {
+    dealers: dealerIds.length,
+    totalInvoices,
+    totalOutstanding: outstanding,
+    approvalsPending: pendingDocs + pendingPricing,
+    activeCampaigns,
+  };
+};
+
+const getSuperDashboard = async (req, res) => {
+  try {
+    const summary = await dashboardSummary({});
+    res.json(summary);
+  } catch (err) {
+    console.error("Super dashboard error:", err);
+    res.status(500).json({ error: "Failed to load dashboard" });
+  }
+};
+
+const getRegionalDashboard = async (req, res) => {
+  try {
+    if (!req.user.regionId) return res.status(400).json({ error: "regionId missing" });
+    const summary = await dashboardSummary({ regionId: req.user.regionId });
+    res.json(summary);
+  } catch (err) {
+    console.error("Regional dashboard error:", err);
+    res.status(500).json({ error: "Failed to load dashboard" });
+  }
+};
+
+const getManagerDashboard = async (req, res) => {
+  try {
+    const role = req.user.roleDetails?.name || req.user.role;
+    const where = buildDealerWhere(req);
+    if (
+      ["territory_manager", "area_manager", "regional_manager"].includes(role) &&
+      !Object.keys(where).length
+    ) {
+      return res.status(400).json({ error: "Missing scoped ids for manager" });
+    }
+    const summary = await dashboardSummary(where);
+    res.json(summary);
+  } catch (err) {
+    console.error("Manager dashboard error:", err);
+    res.status(500).json({ error: "Failed to load dashboard" });
+  }
+};
+
+const getDealerDashboard = async (req, res) => {
+  try {
+    if (!req.user.dealerId) return res.status(400).json({ error: "dealerId missing" });
+    const summary = await dashboardSummary({ id: req.user.dealerId });
+    res.json(summary);
+  } catch (err) {
+    console.error("Dealer dashboard error:", err);
+    res.status(500).json({ error: "Failed to load dashboard" });
+  }
+};
+
 // =======================================================
 // ✅ DEALER PERFORMANCE REPORT
 // =======================================================
 const getDealerPerformanceReport = async (req, res) => {
   try {
     // ✅ If the logged-in user is a dealer → return THEIR OWN dashboard summary
-    if (req.user.role === "dealer") {
+    if (["dealer_admin", "dealer_staff", "dealer"].includes(req.user.role)) {
       const dealerId = req.user.dealerId;
 
       const dealer = await Dealer.findByPk(dealerId);
@@ -207,7 +334,7 @@ const getAccountStatementReport = async (req, res) => {
       };
     }
 
-    if (req.user.role === "dealer") {
+    if (["dealer_admin", "dealer_staff", "dealer"].includes(req.user.role)) {
       where.dealerId = req.user.dealerId;
     }
 
@@ -254,7 +381,7 @@ const getInvoiceRegisterReport = async (req, res) => {
       where.invoiceDate = { [Op.between]: [startDate, endDate] };
     }
 
-    if (req.user.role === "dealer") {
+    if (["dealer_admin", "dealer_staff", "dealer"].includes(req.user.role)) {
       where.dealerId = req.user.dealerId;
     }
 
@@ -286,7 +413,7 @@ const getCreditDebitNoteReport = async (req, res) => {
       where.noteDate = { [Op.between]: [startDate, endDate] };
     }
 
-    if (req.user.role === "dealer") {
+    if (["dealer_admin", "dealer_staff", "dealer"].includes(req.user.role)) {
       where.dealerId = req.user.dealerId;
     }
 
@@ -362,6 +489,8 @@ const getOutstandingReceivablesReport = async (req, res) => {
 // =======================================================
 const getPendingApprovals = async (req, res) => {
   try {
+    const whereDealer = buildDealerWhere(req);
+
     const pendingDocs = await Document.findAll({
       where: { status: "pending" },
       include: [
@@ -369,6 +498,7 @@ const getPendingApprovals = async (req, res) => {
           model: Dealer,
           as: "dealer",
           attributes: ["id", "businessName"],
+          where: Object.keys(whereDealer).length ? whereDealer : undefined,
         },
       ],
     });
@@ -567,4 +697,8 @@ module.exports = {
   getTerritoryReport,
   getPendingApprovals,
   getRegionalSalesSummary,
+  getSuperDashboard,
+  getRegionalDashboard,
+  getManagerDashboard,
+  getDealerDashboard,
 };

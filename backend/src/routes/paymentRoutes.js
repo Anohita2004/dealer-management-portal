@@ -1,5 +1,8 @@
 const router = require("express").Router();
 const upload = require("../middleware/upload");
+const { authenticate, authorize } = require("../middleware/auth");
+const checkPermission = require("../middleware/checkPermission");
+const { applyScoping } = require("../middleware/scoping");
 
 const {
   createPaymentRequest,
@@ -25,31 +28,34 @@ console.log({
 // -----------------------
 router.post(
   "/request",
+  authenticate,
+  authorize("dealer_staff"),
+  checkPermission("payments.create"),
   upload.single("proofFile"),
   createPaymentRequest
 );
 
-router.get("/mine", getDealerPayments);
+router.get("/mine", authenticate, authorize("dealer_admin", "dealer_staff"), checkPermission("payments.view"), applyScoping(["Invoice"]), getDealerPayments);
 
 // -----------------------
 // DEALER ADMIN ROUTES
 // -----------------------
-router.get("/dealer/pending", getDealerAdminPending);
+router.get("/dealer/pending", authenticate, authorize("dealer_admin"), checkPermission("payments.view"), getDealerAdminPending);
 
-router.post("/dealer/:id/approve", approvePayment);
-router.post("/dealer/:id/reject", rejectPayment);
+router.post("/dealer/:id/approve", authenticate, authorize("dealer_admin"), checkPermission("payments.approve"), approvePayment);
+router.post("/dealer/:id/reject", authenticate, authorize("dealer_admin"), checkPermission("payments.approve"), rejectPayment);
 
 // -----------------------
 // FINANCE ADMIN ROUTES
 // -----------------------
-router.get("/pending", getPendingPayments);
+router.get("/pending", authenticate, authorize("dealer_admin", "finance_admin"), checkPermission("payments.view"), getPendingPayments);
 
-router.post("/:id/approve", approvePayment);
-router.post("/:id/reject", rejectPayment);
+router.post("/:id/approve", authenticate, authorize("dealer_admin", "finance_admin"), checkPermission("payments.approve"), approvePayment);
+router.post("/:id/reject", authenticate, authorize("dealer_admin", "finance_admin"), checkPermission("payments.approve"), rejectPayment);
 
 // -----------------------
 // AUTO-RECONCILIATION
 // -----------------------
-router.get("/reconcile", autoReconcile);
+router.get("/reconcile", authenticate, authorize("finance_admin", "super_admin"), checkPermission("payments.approve"), autoReconcile);
 
 module.exports = router;

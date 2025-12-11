@@ -21,6 +21,17 @@ exports.getDealerPins = async (req, res) => {
     if (territoryId) whereDealer.territoryId = territoryId;
     if (regionId) whereDealer.regionId = regionId;
 
+    // Apply hierarchical scoping
+    if (req.scope?.dealers) {
+      Object.assign(whereDealer, req.scope.dealers);
+    } else {
+      const role = req.user?.role;
+      if (role === 'regional_admin' || role === 'regional_manager') whereDealer.regionId = req.user.regionId;
+      if (role === 'area_manager') whereDealer.areaId = req.user.areaId;
+      if (role === 'territory_manager') whereDealer.territoryId = req.user.territoryId;
+      if (role && role.startsWith('dealer_')) whereDealer.id = req.user.dealerId;
+    }
+
     const dealers = await Dealer.findAll({
       where: whereDealer,
       attributes: [
@@ -76,6 +87,13 @@ exports.getHeatmap = async (req, res) => {
     const granularity = req.query.granularity || 'dealer';
     const { start, end } = parseDates(req.query);
 
+    // scoped filters
+    const regionFilter = req.scope?.dealers?.regionId ? `AND d."regionId" = '${req.scope.dealers.regionId}'` : '';
+    const areaFilter = req.scope?.dealers?.areaId ? `AND d."areaId" = '${req.scope.dealers.areaId}'` : '';
+    const territoryFilter = req.scope?.dealers?.territoryId ? `AND d."territoryId" = '${req.scope.dealers.territoryId}'` : '';
+    const dealerFilter = req.scope?.dealers?.id ? `AND d.id = '${req.scope.dealers.id}'` : '';
+    const scopedWhere = `${regionFilter} ${areaFilter} ${territoryFilter} ${dealerFilter}`;
+
     /* ------------------ REGION HEATMAP ------------------ */
     if (granularity === 'region') {
       const rows = await sequelize.query(
@@ -85,6 +103,7 @@ exports.getHeatmap = async (req, res) => {
          LEFT JOIN dealers d ON d."regionId" = r.id
          LEFT JOIN invoices i ON i."dealerId" = d.id 
            AND i."invoiceDate" BETWEEN :start AND :end
+         WHERE 1=1 ${regionFilter} ${areaFilter} ${territoryFilter} ${dealerFilter}
          GROUP BY r.id, r."centroidLat", r."centroidLng"
          HAVING r."centroidLat" IS NOT NULL AND r."centroidLng" IS NOT NULL`,
         { replacements: { start, end }, type: sequelize.QueryTypes.SELECT }
@@ -110,6 +129,7 @@ exports.getHeatmap = async (req, res) => {
          LEFT JOIN dealers d ON d."territoryId" = t.id
          LEFT JOIN invoices i ON i."dealerId" = d.id 
             AND i."invoiceDate" BETWEEN :start AND :end
+         WHERE 1=1 ${regionFilter} ${areaFilter} ${territoryFilter} ${dealerFilter}
          GROUP BY t.id
          HAVING AVG(d.lat) IS NOT NULL AND AVG(d.lng) IS NOT NULL`,
         { replacements: { start, end }, type: sequelize.QueryTypes.SELECT }
@@ -131,7 +151,7 @@ exports.getHeatmap = async (req, res) => {
        FROM dealers d
        LEFT JOIN invoices i ON i."dealerId" = d.id
          AND i."invoiceDate" BETWEEN :start AND :end
-       WHERE d.lat IS NOT NULL AND d.lng IS NOT NULL
+       WHERE d.lat IS NOT NULL AND d.lng IS NOT NULL ${scopedWhere}
        GROUP BY d.id, d.lat, d.lng`,
       { replacements: { start, end }, type: sequelize.QueryTypes.SELECT }
     );
@@ -190,6 +210,8 @@ exports.getTerritoriesGeo = async (req, res) => {
   try {
     const where = {};
     if (req.query.regionId) where.regionId = req.query.regionId;
+
+    if (req.scope?.territories) Object.assign(where, req.scope.territories);
 
     const territories = await Territory.findAll({
       where,

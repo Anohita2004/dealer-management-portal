@@ -68,6 +68,13 @@ function applyScoping(entityTypes = []) {
       for (const entityType of entityTypes) {
         if (entityType === 'Dealer') {
           req.scope.dealers = { ...scopeWhere };
+    } else if (entityType === 'Territory') {
+      // Territory scoping: convert territoryId to primary key id
+      if (scopeWhere.territoryId) {
+        req.scope.territories = { id: scopeWhere.territoryId };
+      } else {
+        req.scope.territories = { ...scopeWhere };
+      }
         } else if (entityType === 'Order') {
           // Orders belong to dealers, so scope by dealer's hierarchy
           if (scopeWhere.id) {

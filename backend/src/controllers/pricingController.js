@@ -77,14 +77,20 @@ exports.requestPricingChange = async (req, res) => {
 // ----------------------------
 exports.getPricingUpdates = async (req, res) => {
   try {
+    const role = req.user.roleDetails?.name || req.user.role;
     const { mine, page = 1, limit = 50 } = req.query;
     const offset = (page - 1) * limit;
 
     const where = {};
 
     // Dealers see their requests only
-    if (mine === "true" || req.user.role === "dealer") {
+    if (mine === "true" || ["dealer_admin","dealer_staff","dealer"].includes(role)) {
       where.requestedByUserId = req.user.id;
+    }
+
+    // Apply scoped dealer filter if provided
+    if (req.scope?.dealers) {
+      where.dealerId = { [Op.in]: Object.values(req.scope.dealers).length ? Object.values(req.scope.dealers) : req.scope.dealers.id ? [req.scope.dealers.id] : [] };
     }
 
     const { count, rows } = await PricingUpdate.findAndCountAll({
@@ -123,13 +129,16 @@ exports.getPricingSummary = async (req, res) => {
 exports.getManagerPricingRequests = async (req, res) => {
   try {
     const managerId = req.user.id;
+    const dealerWhere = { managerId };
+
+    if (req.scope?.dealers) Object.assign(dealerWhere, req.scope.dealers);
 
     const updates = await PricingUpdate.findAll({
       include: [
         {
           model: Dealer,
           as: "dealer",
-          where: { managerId },
+          where: dealerWhere,
         },
       ],
       order: [["createdAt", "DESC"]],

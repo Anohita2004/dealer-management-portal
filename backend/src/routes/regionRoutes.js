@@ -13,7 +13,7 @@ const {
 } = require('../controllers/regionController');
 
 // Public routes (with authentication)
-router.get("/regions", authenticate, getRegions);
+router.get("/", authenticate, getRegions);
 
 // Require permissions for write operations
 router.post("/regions", authenticate, checkPermission('regions.manage'), createRegion);

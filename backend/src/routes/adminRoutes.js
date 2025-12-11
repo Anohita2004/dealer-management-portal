@@ -5,6 +5,7 @@ const router = express.Router();
 const adminController = require('../controllers/adminController');
 const pricingController = require('../controllers/pricingController');
 const { authenticate, authorize } = require('../middleware/auth');
+const { triggerSla } = require('../controllers/slaController');
 
 // ---------------------------------------------
 // AUTHENTICATION REQUIRED FOR ALL ADMIN ROUTES
@@ -51,5 +52,10 @@ router.patch('/pricing-updates/:id/review', fullAccess, adminController.reviewPr
 // ADMIN REPORTS / DASHBOARD
 // ---------------------------------------------------------
 router.get('/reports', fullAccess, adminController.getAdminReport);
+
+// ---------------------------------------------------------
+// SLA / ESCALATION CHECK (manual trigger or cron)
+// ---------------------------------------------------------
+router.post('/sla/run', fullAccess, triggerSla);
 
 module.exports = router;

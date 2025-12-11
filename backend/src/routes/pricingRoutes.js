@@ -6,12 +6,15 @@ const express = require("express");
 const router = express.Router();
 const pricingController = require("../controllers/pricingController");
 const { authenticate, authorize } = require("../middleware/auth");
+const checkPermission = require("../middleware/checkPermission");
+const { applyScoping } = require("../middleware/scoping");
 
 // ✅ Dealers & Managers can request price change
 router.post(
   "/request",
   authenticate,
   authorize("dealer_staff","dealer_admin", "area_manager", "territory_manager", "regional_manager"),
+  checkPermission("pricing.request"),
   pricingController.requestPricingChange
 );
 
@@ -20,6 +23,8 @@ router.get(
   "/",
   authenticate,
   authorize("dealer_staff","dealer_admin", "area_manager", "territory_manager", "regional_manager"),
+  checkPermission("pricing.view"),
+  applyScoping(["Dealer"]),
   pricingController.getPricingUpdates
 );
 
@@ -28,13 +33,16 @@ router.get(
   "/summary",
   authenticate,
   authorize("super_admin"),
+  checkPermission("pricing.view"),
   pricingController.getPricingSummary
 );
-router.patch("/:id", authenticate, authorize("dealer_staff","dealer_admin", "area_manager", "territory_manager", "regional_manager"), pricingController.updatePricingStatus);
+router.patch("/:id", authenticate, authorize("dealer_staff","dealer_admin", "area_manager", "territory_manager", "regional_manager"), checkPermission("pricing.manage"), pricingController.updatePricingStatus);
 router.get(
   "/manager",
   authenticate,
   authorize("area_manager", "territory_manager", "regional_manager"),
+  checkPermission("pricing.view"),
+  applyScoping(["Dealer"]),
   pricingController.getManagerPricingRequests
 );
 

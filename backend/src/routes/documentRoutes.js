@@ -5,6 +5,8 @@ const documentController = require('../controllers/documentController');
 const upload = documentController.upload;   // ← FIX: import Multer upload properly
 
 const { authenticate, authorize } = require('../middleware/auth');
+const checkPermission = require('../middleware/checkPermission');
+const { applyScoping } = require('../middleware/scoping');
 
 // ---------------------------------------------------
 // GET ALL DOCUMENTS (admin + dealer restricted view)
@@ -12,6 +14,8 @@ const { authenticate, authorize } = require('../middleware/auth');
 router.get(
   '/',
   authenticate,
+  checkPermission('documents.view'),
+  applyScoping(['Dealer']),
   documentController.getAllDocuments
 );
 
@@ -21,6 +25,7 @@ router.get(
 router.post(
   '/',
   authenticate,
+  checkPermission('documents.upload'),
   upload.single('file'),
   documentController.uploadDocument
 );
@@ -31,6 +36,8 @@ router.post(
 router.get(
   '/:id/download',
   authenticate,
+  checkPermission('documents.view'),
+  applyScoping(['Dealer']),
   documentController.downloadDocument
 );
 
@@ -40,6 +47,7 @@ router.get(
 router.delete(
   '/:id',
   authenticate,
+  checkPermission('documents.delete'),
   documentController.deleteDocument
 );
 
@@ -51,6 +59,7 @@ router.patch(
   '/:id/status',
   authenticate,
   authorize('super_admin', 'territory_manager', 'area_manager'),
+  checkPermission('documents.approve'),
   documentController.approveDocument
 );
 
@@ -64,6 +73,8 @@ router.get(
   '/manager',
   authenticate,
   authorize('territory_manager', 'area_manager', 'regional_manager'),
+  checkPermission('documents.view'),
+  applyScoping(['Dealer']),
   documentController.getManagerDocuments
 );
 
