@@ -284,14 +284,35 @@ const reviewPricingUpdate = async (req, res) => {
    ------------------------- */
 
 /**
- * Get all users (paginated optional)
+ * Get all users (paginated optional, scoped by region for regional_admin)
  */
 const getAllUsers = async (req, res) => {
   try {
     const { page = 1, limit = 100 } = req.query;
     const offset = (page - 1) * limit;
 
+    const creatorRole = req.user.roleDetails?.name || req.user.role;
+    
+    // Build where clause - regional_admin only sees users in their region
+    const whereClause = {};
+    if (creatorRole === 'regional_admin' && req.user.regionId) {
+      // Regional admin sees users in their region, or users associated with dealers in their region
+      const { Dealer } = require('../models');
+      const dealersInRegion = await Dealer.findAll({
+        where: { regionId: req.user.regionId },
+        attributes: ['id']
+      });
+      const dealerIds = dealersInRegion.map(d => d.id);
+      
+      whereClause[Op.or] = [
+        { regionId: req.user.regionId },
+        ...(dealerIds.length > 0 ? [{ dealerId: { [Op.in]: dealerIds } }] : [])
+      ];
+    }
+    // super_admin and technical_admin see all (no where clause)
+
     const { count, rows } = await User.findAndCountAll({
+      where: whereClause,
       include: [{ model: Role, as: 'roleDetails' }, { model: Dealer, as: 'dealer' }],
       order: [['createdAt', 'DESC']],
       limit: parseInt(limit, 10),
@@ -311,7 +332,7 @@ const getAllUsers = async (req, res) => {
 };
 
 /**
- * Get single user by id
+ * Get single user by id (scoped by region for regional_admin)
  */
 const getUserById = async (req, res) => {
   try {
@@ -319,6 +340,28 @@ const getUserById = async (req, res) => {
       include: [{ model: Role, as: 'roleDetails' }, { model: Dealer, as: 'dealer' }],
     });
     if (!user) return res.status(404).json({ error: 'User not found' });
+    
+    // Check if regional_admin can access this user
+    const creatorRole = req.user.roleDetails?.name || req.user.role;
+    if (creatorRole === 'regional_admin' && req.user.regionId) {
+      // Check if user belongs to regional admin's region
+      const userInRegion = user.regionId === req.user.regionId;
+      
+      // Also check if user is associated with a dealer in the region
+      let userDealerInRegion = false;
+      if (user.dealerId) {
+        const { Dealer } = require('../models');
+        const dealer = await Dealer.findByPk(user.dealerId);
+        if (dealer && dealer.regionId === req.user.regionId) {
+          userDealerInRegion = true;
+        }
+      }
+      
+      if (!userInRegion && !userDealerInRegion) {
+        return res.status(403).json({ error: 'Access denied - User not in your region' });
+      }
+    }
+    
     return res.json({ user });
   } catch (err) {
     console.error('getUserById:', err);
@@ -537,6 +580,23 @@ const updateUser = async (req, res) => {
     }
 
     const creatorRole = req.user.roleDetails?.name || req.user.role;
+    
+    // Check if regional_admin can update this user
+    if (creatorRole === 'regional_admin' && req.user.regionId) {
+      const userInRegion = user.regionId === req.user.regionId;
+      let userDealerInRegion = false;
+      if (user.dealerId) {
+        const DealerModel = require('../models').Dealer;
+        const dealer = await DealerModel.findByPk(user.dealerId, { transaction: t });
+        if (dealer && dealer.regionId === req.user.regionId) {
+          userDealerInRegion = true;
+        }
+      }
+      if (!userInRegion && !userDealerInRegion) {
+        await t.rollback();
+        return res.status(403).json({ error: 'Access denied - User not in your region' });
+      }
+    }
 
     // Start with what is provided (do not blindly override if admin is super_admin)
     let finalRegionId = regionId === undefined ? user.regionId : regionId;
@@ -646,7 +706,7 @@ const updateUser = async (req, res) => {
 };
 
 /**
- * Update user role (lightweight)
+ * Update user role (lightweight, scoped by region for regional_admin)
  */
 const updateUserRole = async (req, res) => {
   try {
@@ -658,6 +718,23 @@ const updateUserRole = async (req, res) => {
 
     const user = await User.findByPk(id);
     if (!user) return res.status(404).json({ error: 'User not found' });
+    
+    // Check if regional_admin can update this user
+    const creatorRole = req.user.roleDetails?.name || req.user.role;
+    if (creatorRole === 'regional_admin' && req.user.regionId) {
+      const userInRegion = user.regionId === req.user.regionId;
+      let userDealerInRegion = false;
+      if (user.dealerId) {
+        const { Dealer } = require('../models');
+        const dealer = await Dealer.findByPk(user.dealerId);
+        if (dealer && dealer.regionId === req.user.regionId) {
+          userDealerInRegion = true;
+        }
+      }
+      if (!userInRegion && !userDealerInRegion) {
+        return res.status(403).json({ error: 'Access denied - User not in your region' });
+      }
+    }
 
     await user.update({ roleId });
 
@@ -678,11 +755,36 @@ const updateUserRole = async (req, res) => {
 };
 
 /**
- * Delete user
+ * Delete user (scoped by region for regional_admin)
  */
 const deleteUser = async (req, res) => {
   try {
     const { id } = req.params;
+    
+    // Check if user exists and regional_admin can access it
+    const user = await User.findByPk(id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    
+    const creatorRole = req.user.roleDetails?.name || req.user.role;
+    if (creatorRole === 'regional_admin' && req.user.regionId) {
+      // Check if user belongs to regional admin's region
+      const userInRegion = user.regionId === req.user.regionId;
+      
+      // Also check if user is associated with a dealer in the region
+      let userDealerInRegion = false;
+      if (user.dealerId) {
+        const { Dealer } = require('../models');
+        const dealer = await Dealer.findByPk(user.dealerId);
+        if (dealer && dealer.regionId === req.user.regionId) {
+          userDealerInRegion = true;
+        }
+      }
+      
+      if (!userInRegion && !userDealerInRegion) {
+        return res.status(403).json({ error: 'Access denied - User not in your region' });
+      }
+    }
+    
     await User.destroy({ where: { id } });
 
     await AuditLog.create({

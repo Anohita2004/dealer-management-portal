@@ -3,9 +3,9 @@
 // Define multi-stage flows based on hierarchy
 const FLOWS = {
   order: ["territory_manager", "area_manager", "regional_manager"],
-  payment: ["dealer_admin", "territory_manager", "area_manager", "regional_manager", "regional_admin"],
+  payment: ["dealer_admin", "territory_manager", "area_manager", "regional_manager", "regional_admin", "finance_admin"],
   document: ["dealer_admin", "territory_manager", "area_manager", "regional_manager"],
-  pricing: ["area_manager", "regional_admin", "super_admin"], // For pricing approvals
+  pricing: ["territory_manager", "area_manager", "regional_admin", "super_admin"], // For pricing approvals
   campaign: ["area_manager", "regional_admin", "super_admin"], // For campaign approvals
   invoice: ["dealer_admin", "territory_manager", "area_manager", "regional_manager", "regional_admin"], // For invoice approvals
 };
@@ -22,7 +22,8 @@ const STAGE_APPROVERS = {
     territory_manager: ["territory_manager", "area_manager", "regional_manager", "regional_admin", "super_admin"],
     area_manager: ["area_manager", "regional_manager", "regional_admin", "super_admin"],
     regional_manager: ["regional_manager", "regional_admin", "super_admin"],
-    regional_admin: ["regional_admin", "super_admin"],
+    regional_admin: ["regional_admin", "finance_admin", "super_admin"],
+    finance_admin: ["finance_admin", "super_admin"],
   },
   document: {
     dealer_admin: ["dealer_admin", "territory_manager", "area_manager", "super_admin"],
@@ -31,6 +32,7 @@ const STAGE_APPROVERS = {
     regional_manager: ["regional_manager", "regional_admin", "super_admin"],
   },
   pricing: {
+    territory_manager: ["territory_manager", "area_manager", "regional_admin", "super_admin"],
     area_manager: ["area_manager", "regional_admin", "super_admin"],
     regional_admin: ["regional_admin", "super_admin"],
     super_admin: ["super_admin"],

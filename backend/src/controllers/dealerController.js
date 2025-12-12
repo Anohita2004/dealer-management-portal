@@ -1,5 +1,6 @@
 const { Dealer, User, AuditLog } = require('../models');
 const { Op } = require('sequelize');
+const RBACEngine = require('../services/rbacEngine');
 
 /* ============================================================
    GET ALL DEALERS (Admin / Territory Manager / Area Manager)
@@ -27,10 +28,12 @@ const getAllDealers = async (req, res) => {
       where.isActive = isActive === "true";
     }
 
-    // 🧑‍💼 Role-based restrictions for managers
-    if (["territory_manager", "area_manager"].includes(req.user.role)) {
-      if (req.user.region) where.region = req.user.region;
-      if (req.user.territory) where.territory = req.user.territory;
+    // Use RBAC engine for scoping
+    if (req.scope?.dealer) {
+      Object.assign(where, req.scope.dealer);
+    } else {
+      const scopeWhere = await RBACEngine.buildScopeWhereClause(req.user, 'Dealer');
+      Object.assign(where, scopeWhere);
     }
 
     const { count, rows } = await Dealer.findAndCountAll({
@@ -62,6 +65,12 @@ const getDealerById = async (req, res) => {
 
     if (!dealer) {
       return res.status(404).json({ error: "Dealer not found" });
+    }
+
+    // Check if user can access this dealer
+    const canAccess = await RBACEngine.canAccessResource(req.user, dealer);
+    if (!canAccess) {
+      return res.status(403).json({ error: "Access denied" });
     }
 
     res.json(dealer);

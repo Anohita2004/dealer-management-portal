@@ -35,7 +35,7 @@ module.exports = (sequelize, DataTypes) => {
 
     // Approval workflow fields
     approvalStage: {
-      type: DataTypes.ENUM('area_manager', 'regional_admin', 'super_admin'),
+      type: DataTypes.STRING,
       allowNull: true
     },
     approvalStatus: {
@@ -44,7 +44,8 @@ module.exports = (sequelize, DataTypes) => {
     },
     approvedBy: DataTypes.STRING,
     approvedAt: DataTypes.DATE,
-    rejectionReason: DataTypes.TEXT
+    rejectionReason: DataTypes.TEXT,
+    currentSlaExpiresAt: DataTypes.DATE
   }, {
     timestamps:true,
     tableName:"Campaigns"

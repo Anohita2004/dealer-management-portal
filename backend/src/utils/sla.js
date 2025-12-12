@@ -21,22 +21,27 @@ const now = () => new Date();
 const cutoff = (hours) => new Date(Date.now() - hours * 60 * 60 * 1000);
 
 async function notify(recipientRole, title, message, relatedId, type) {
+  // relatedId might be integer (for PricingUpdate) or UUID, convert to string or null
+  const relatedIdValue = relatedId ? String(relatedId) : null;
+  
   await Notification.create({
     recipientRole,
     title,
     message,
     type: type || "sla",
-    relatedId,
-    priority: "urgent",
+    relatedId: relatedIdValue && relatedIdValue.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i) 
+      ? relatedIdValue 
+      : null, // Only set if it's a valid UUID, otherwise null
   });
 }
 
-async function checkPending(model, wherePending, thresholdHours, recipientRole, entityName) {
+async function checkPending(model, wherePending, thresholdHours, recipientRole, entityName, attributes = null) {
   const stale = await model.findAll({
     where: {
       ...wherePending,
       createdAt: { [Op.lt]: cutoff(thresholdHours) },
     },
+    attributes: attributes, // Only select specified attributes if provided
     order: [["createdAt", "ASC"]],
   });
 
@@ -72,28 +77,32 @@ async function runSlaChecks() {
     "invoice"
   );
 
+  // Payment requests - specify attributes to avoid selecting workflow columns that might cause issues
   results.payments = await checkPending(
     PaymentRequest,
-    { approvalStatus: "pending" },
+    { status: "dealer_pending", dealerApprovalStatus: "pending" },
     THRESHOLDS.payment,
     "finance_admin",
-    "payment"
+    "payment",
+    ["id", "invoiceId", "dealerId", "amount", "status", "dealerApprovalStatus", "createdAt"] // Only select needed columns
   );
 
   results.documents = await checkPending(
     Document,
-    { approvalStatus: "pending" },
+    { status: "pending" },
     THRESHOLDS.document,
     "area_manager",
     "document"
   );
 
+  // Pricing updates - specify attributes to avoid selecting workflow columns
   results.pricing = await checkPending(
     PricingUpdate,
-    { approvalStatus: "pending" },
+    { status: "pending" },
     THRESHOLDS.pricing,
     "regional_admin",
-    "pricing"
+    "pricing",
+    ["id", "productId", "dealerId", "oldPrice", "newPrice", "status", "createdAt"] // Only select needed columns
   );
 
   return { results, ranAt: now() };
@@ -101,5 +110,6 @@ async function runSlaChecks() {
 
 module.exports = {
   runSlaChecks,
+  checkSLA: runSlaChecks, // Alias for consistency
 };
 

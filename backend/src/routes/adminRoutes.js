@@ -14,16 +14,18 @@ router.use(authenticate);
 
 // FULL ACCESS ROLES
 const fullAccess = authorize('super_admin', 'technical_admin');
+// REGIONAL ADMIN ACCESS (for user management in their region)
+const regionalAdminAccess = authorize('super_admin', 'technical_admin', 'regional_admin');
 
 // ---------------------------------------------------------
 // USER MANAGEMENT
 // ---------------------------------------------------------
-router.get('/users',          fullAccess, adminController.getAllUsers);
-router.get('/users/:id',      fullAccess, adminController.getUserById);
-router.post('/users',         fullAccess, adminController.createUser);
-router.put('/users/:id',      fullAccess, adminController.updateUser);
-router.patch('/users/:id/role', fullAccess, adminController.updateUserRole);
-router.delete('/users/:id',   fullAccess, adminController.deleteUser);
+router.get('/users',          regionalAdminAccess, adminController.getAllUsers);
+router.get('/users/:id',      regionalAdminAccess, adminController.getUserById);
+router.post('/users',         regionalAdminAccess, adminController.createUser);
+router.put('/users/:id',      regionalAdminAccess, adminController.updateUser);
+router.patch('/users/:id/role', regionalAdminAccess, adminController.updateUserRole);
+router.delete('/users/:id',   regionalAdminAccess, adminController.deleteUser);
 
 // ---------------------------------------------------------
 // DEALER MANAGEMENT

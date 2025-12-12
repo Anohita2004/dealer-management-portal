@@ -1,5 +1,6 @@
-const { Dealer, Invoice, Region, Territory, sequelize } = require('../models');
+const { Dealer, Invoice, Region, Territory, Area, sequelize } = require('../models');
 const { Op } = require('sequelize');
+const RBACEngine = require('../services/rbacEngine');
 
 /* ---------------------- DATE PARSER ---------------------- */
 const parseDates = (qs) => {
@@ -21,15 +22,12 @@ exports.getDealerPins = async (req, res) => {
     if (territoryId) whereDealer.territoryId = territoryId;
     if (regionId) whereDealer.regionId = regionId;
 
-    // Apply hierarchical scoping
-    if (req.scope?.dealers) {
-      Object.assign(whereDealer, req.scope.dealers);
-    } else {
-      const role = req.user?.role;
-      if (role === 'regional_admin' || role === 'regional_manager') whereDealer.regionId = req.user.regionId;
-      if (role === 'area_manager') whereDealer.areaId = req.user.areaId;
-      if (role === 'territory_manager') whereDealer.territoryId = req.user.territoryId;
-      if (role && role.startsWith('dealer_')) whereDealer.id = req.user.dealerId;
+    // Use RBAC engine for scoping
+    if (req.scope?.dealer) {
+      Object.assign(whereDealer, req.scope.dealer);
+    } else if (req.user) {
+      const scopeWhere = await RBACEngine.buildScopeWhereClause(req.user, 'Dealer');
+      Object.assign(whereDealer, scopeWhere);
     }
 
     const dealers = await Dealer.findAll({
@@ -87,12 +85,15 @@ exports.getHeatmap = async (req, res) => {
     const granularity = req.query.granularity || 'dealer';
     const { start, end } = parseDates(req.query);
 
-    // scoped filters
-    const regionFilter = req.scope?.dealers?.regionId ? `AND d."regionId" = '${req.scope.dealers.regionId}'` : '';
-    const areaFilter = req.scope?.dealers?.areaId ? `AND d."areaId" = '${req.scope.dealers.areaId}'` : '';
-    const territoryFilter = req.scope?.dealers?.territoryId ? `AND d."territoryId" = '${req.scope.dealers.territoryId}'` : '';
-    const dealerFilter = req.scope?.dealers?.id ? `AND d.id = '${req.scope.dealers.id}'` : '';
-    const scopedWhere = `${regionFilter} ${areaFilter} ${territoryFilter} ${dealerFilter}`;
+    // Build scoped filters using RBAC engine
+    let scopedWhere = '';
+    if (req.user) {
+      const scope = RBACEngine.getUserScope(req.user);
+      if (scope.regionId) scopedWhere += `AND d."regionId" = '${scope.regionId}'`;
+      if (scope.areaId) scopedWhere += `AND d."areaId" = '${scope.areaId}'`;
+      if (scope.territoryId) scopedWhere += `AND d."territoryId" = '${scope.territoryId}'`;
+      if (scope.dealerId) scopedWhere += `AND d.id = '${scope.dealerId}'`;
+    }
 
     /* ------------------ REGION HEATMAP ------------------ */
     if (granularity === 'region') {
@@ -103,7 +104,7 @@ exports.getHeatmap = async (req, res) => {
          LEFT JOIN dealers d ON d."regionId" = r.id
          LEFT JOIN invoices i ON i."dealerId" = d.id 
            AND i."invoiceDate" BETWEEN :start AND :end
-         WHERE 1=1 ${regionFilter} ${areaFilter} ${territoryFilter} ${dealerFilter}
+         WHERE 1=1 ${scopedWhere}
          GROUP BY r.id, r."centroidLat", r."centroidLng"
          HAVING r."centroidLat" IS NOT NULL AND r."centroidLng" IS NOT NULL`,
         { replacements: { start, end }, type: sequelize.QueryTypes.SELECT }
@@ -129,7 +130,7 @@ exports.getHeatmap = async (req, res) => {
          LEFT JOIN dealers d ON d."territoryId" = t.id
          LEFT JOIN invoices i ON i."dealerId" = d.id 
             AND i."invoiceDate" BETWEEN :start AND :end
-         WHERE 1=1 ${regionFilter} ${areaFilter} ${territoryFilter} ${dealerFilter}
+         WHERE 1=1 ${scopedWhere}
          GROUP BY t.id
          HAVING AVG(d.lat) IS NOT NULL AND AVG(d.lng) IS NOT NULL`,
         { replacements: { start, end }, type: sequelize.QueryTypes.SELECT }
@@ -175,7 +176,15 @@ exports.getHeatmap = async (req, res) => {
 ============================================================== */
 exports.getRegionsGeo = async (req, res) => {
   try {
+    // Apply RBAC scoping for regions
+    let where = {};
+    if (req.user) {
+      const scope = RBACEngine.getUserScope(req.user);
+      if (scope.regionId) where.id = scope.regionId;
+    }
+
     const regions = await Region.findAll({
+      where,
       attributes: ['id', 'name', 'geojson', 'centroidLat', 'centroidLng']
     });
 
@@ -211,7 +220,13 @@ exports.getTerritoriesGeo = async (req, res) => {
     const where = {};
     if (req.query.regionId) where.regionId = req.query.regionId;
 
-    if (req.scope?.territories) Object.assign(where, req.scope.territories);
+    // Use RBAC engine for scoping
+    if (req.scope?.territory) {
+      Object.assign(where, req.scope.territory);
+    } else if (req.user) {
+      const scopeWhere = await RBACEngine.buildScopeWhereClause(req.user, 'Territory');
+      Object.assign(where, scopeWhere);
+    }
 
     const territories = await Territory.findAll({
       where,

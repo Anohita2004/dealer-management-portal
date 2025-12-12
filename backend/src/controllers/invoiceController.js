@@ -1,9 +1,13 @@
-const { Invoice, Dealer, AuditLog, Order, Notification } = require("../models");
+const { Invoice, Dealer, AuditLog, Order, Notification, sequelize } = require("../models");
 const { Op } = require("sequelize");
 const PDFDocument = require("pdfkit");
 const fs = require("fs");
 const path = require("path");
 const { nextStage, isApproverForStage } = require("../utils/approvalEngine");
+const RBACEngine = require("../services/rbacEngine");
+const { WorkflowService } = require("../services/workflow");
+const eventBus = require("../services/eventBus");
+const notificationService = require("../services/notificationService");
 
 /* ============================================================
    Utility Functions
@@ -188,20 +192,15 @@ const createInvoice = async (req, res) => {
       userAgent: req.headers["user-agent"],
     });
 
-    // Notify dealer admins for approval
-    const io = req.app.get("io");
-    if (io) {
-      io.to("role:dealer_admin").emit("invoice:new", { invoiceId: invoice.id });
-    }
-
-    await Notification.create({
-      senderId: req.user.id,
-      recipientRole: "dealer_admin",
-      title: "New Invoice Created",
-      message: `${req.user.username} created a new invoice "${invoice.invoiceNumber}" requiring approval.`,
-      type: "invoice",
-      relatedId: invoice.id,
+    // Emit event for automation
+    await eventBus.emit('invoice:created', {
+      invoiceId: invoice.id,
+      dealerId: invoice.dealerId,
+      invoiceNumber: invoice.invoiceNumber
     });
+
+    // Use notification service
+    await notificationService.notifyInvoiceCreated(invoice);
 
     res.status(201).json(invoice);
   } catch (error) {
@@ -254,69 +253,40 @@ const updateInvoice = async (req, res) => {
 =========================================================== */
 
 const approveInvoice = async (req, res) => {
+  const t = await sequelize.transaction();
   try {
     const { id } = req.params;
-    const { action, reason } = req.body;
+    const { action, reason, notes } = req.body;
 
     if (!["approve", "reject"].includes(action))
       return res.status(400).json({ error: "Invalid action" });
 
     const invoice = await Invoice.findByPk(id, {
-      include: [{ model: Dealer, as: "dealer" }]
+      include: [{ model: Dealer, as: "dealer" }],
+      transaction: t
     });
-    if (!invoice) return res.status(404).json({ error: "Invoice not found" });
-
-    const role = req.user.roleDetails?.name || req.user.role;
-    const stage = invoice.approvalStage || "dealer_admin";
-
-    // Permission check
-    if (!isApproverForStage(role, stage, "invoice")) {
-      return res.status(403).json({
-        error: `You are not authorized to approve/reject this invoice at stage: ${stage}`,
-      });
+    if (!invoice) {
+      await t.rollback();
+      return res.status(404).json({ error: "Invoice not found" });
     }
 
+    // Use workflow service
+    let result;
     if (action === "reject") {
-      invoice.approvalStatus = "rejected";
-      invoice.status = "rejected";
-      invoice.rejectionReason = reason || "Rejected by approver";
-      invoice.approvalStage = null;
+      result = await WorkflowService.reject(
+        "invoice",
+        invoice,
+        req.user,
+        { reason, remarks: notes, rollback: true, transaction: t }
+      );
     } else {
-      const next = nextStage(stage, "invoice");
-
-      if (!next) {
-        // Final approval - mark as approved and reduce stock if linked to order
-        invoice.approvalStage = null;
-        invoice.approvalStatus = "approved";
-        invoice.status = "approved";
-
-        // If invoice is linked to an order, ensure stock is reduced
-        if (invoice.orderId) {
-          const { Order, OrderItem, Material } = require("../models");
-          const linkedOrder = await Order.findByPk(invoice.orderId, {
-            include: [{ model: OrderItem, as: "items" }]
-          });
-          if (linkedOrder && linkedOrder.items) {
-            for (const item of linkedOrder.items) {
-              const mat = await Material.findByPk(item.materialId);
-              if (mat) {
-                const currentStock = mat.stock || 0;
-                const newStock = Math.max(0, currentStock - item.qty);
-                await mat.update({ stock: newStock });
-              }
-            }
-          }
-        }
-      } else {
-        invoice.approvalStage = next;
-        invoice.approvalStatus = "pending";
-      }
+      result = await WorkflowService.approve(
+        "invoice",
+        invoice,
+        req.user,
+        { remarks: notes || reason, transaction: t }
+      );
     }
-
-    invoice.approvedBy = req.user.id;
-    invoice.approvedAt = new Date();
-
-    await invoice.save();
 
     await AuditLog.create({
       userId: req.user.id,
@@ -328,45 +298,18 @@ const approveInvoice = async (req, res) => {
       userAgent: req.headers["user-agent"],
     });
 
-    // Notify dealer
-    const io = req.app.get("io");
-
-    await Notification.create({
-      senderId: req.user.id,
-      recipientId: invoice.dealerId,
-      title: `Invoice ${invoice.approvalStatus}`,
-      message:
-        invoice.approvalStatus === "approved"
-          ? `✅ Your invoice "${invoice.invoiceNumber}" was approved.`
-          : `❌ Your invoice "${invoice.invoiceNumber}" was rejected. Reason: ${invoice.rejectionReason}`,
-      type: "invoice",
-      relatedId: invoice.id,
-    });
-
-    if (io) {
-      io.to(`user:${invoice.dealerId}`).emit("notification", {
-        title: `Invoice ${invoice.approvalStatus}`,
-        message:
-          invoice.approvalStatus === "approved"
-            ? `✅ "${invoice.invoiceNumber}" approved`
-            : `❌ "${invoice.invoiceNumber}" rejected`,
-        type: "invoice",
-      });
-
-      // Notify next approvers if moved to next stage
-      if (invoice.approvalStage) {
-        const nextRole = invoice.approvalStage;
-        io.to(`role:${nextRole}`).emit("invoice:pending:update");
-      }
-    }
+    await t.commit();
 
     res.json({
-      message: `Invoice ${invoice.approvalStatus}`,
-      invoice,
+      message: result.message || `Invoice ${invoice.approvalStatus}`,
+      invoice: invoice,
+      stage: result.currentStage,
+      isFinal: result.isFinal
     });
   } catch (err) {
+    await t.rollback();
     console.error("Approve invoice error:", err);
-    res.status(500).json({ error: "Failed to update invoice status" });
+    res.status(500).json({ error: "Failed to update invoice status", details: err.message });
   }
 };
 
@@ -394,9 +337,14 @@ const getPendingInvoices = async (req, res) => {
       approvalStatus: "pending"
     };
 
-    // Apply scope if available
-    const where =
-      req.scope?.invoices ? { ...baseWhere, ...req.scope.invoices } : baseWhere;
+    // Use RBAC engine for scoping
+    let where = baseWhere;
+    if (req.scope?.invoice) {
+      Object.assign(where, req.scope.invoice);
+    } else {
+      const scopeWhere = await RBACEngine.buildScopeWhereClause(req.user, 'Invoice');
+      Object.assign(where, scopeWhere);
+    }
 
     const invoices = await Invoice.findAll({
       where,
@@ -481,12 +429,88 @@ const generateInvoicePDF = async (req, res) => {
   }
 };
 
+/* ============================================================
+   REJECT INVOICE (Separate endpoint)
+============================================================ */
+const rejectInvoice = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const { id } = req.params;
+    const { reason, remarks } = req.body;
+
+    if (!reason) {
+      return res.status(400).json({ error: "Rejection reason is required" });
+    }
+
+    const invoice = await Invoice.findByPk(id, {
+      include: [{ model: Dealer, as: "dealer" }],
+      transaction: t
+    });
+    if (!invoice) {
+      await t.rollback();
+      return res.status(404).json({ error: "Invoice not found" });
+    }
+
+    const result = await WorkflowService.reject(
+      "invoice",
+      invoice,
+      req.user,
+      { reason, remarks, rollback: true, transaction: t }
+    );
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: "REJECT_INVOICE",
+      entity: "Invoice",
+      entityId: invoice.id,
+      changes: { reason, remarks },
+      ipAddress: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+
+    await t.commit();
+
+    res.json({
+      message: result.message,
+      invoice: invoice,
+      reason: result.reason
+    });
+  } catch (err) {
+    await t.rollback();
+    console.error("Reject invoice error:", err);
+    res.status(err.message.includes('cannot reject') ? 403 : 500).json({
+      error: "Failed to reject invoice",
+      details: err.message
+    });
+  }
+};
+
+/* ============================================================
+   GET WORKFLOW STATUS
+============================================================ */
+const getWorkflowStatus = async (req, res) => {
+  try {
+    const invoice = await Invoice.findByPk(req.params.id);
+    if (!invoice) {
+      return res.status(404).json({ error: "Invoice not found" });
+    }
+
+    const status = await WorkflowService.getWorkflowStatus("invoice", invoice);
+    res.json({ success: true, workflow: status });
+  } catch (err) {
+    console.error("getWorkflowStatus:", err);
+    res.status(500).json({ error: "Failed to get workflow status", details: err.message });
+  }
+};
+
 module.exports = {
   getAllInvoices,
   getInvoiceById,
   createInvoice,
   updateInvoice,
   approveInvoice,
+  rejectInvoice,
   getPendingInvoices,
   generateInvoicePDF,
+  getWorkflowStatus,
 };

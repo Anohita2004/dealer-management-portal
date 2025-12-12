@@ -22,7 +22,10 @@ const login = async (req, res) => {
       return res.status(403).json({ error: "Account inactive/blocked" });
 
     const valid = await user.validatePassword(password);
-    if (!valid) return res.status(401).json({ error: "Invalid credentials" });
+    if (!valid) {
+      console.error(`Login failed for user ${username}: Invalid password`);
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
 
     // Generate OTP
     const otp = user.generateOTP();

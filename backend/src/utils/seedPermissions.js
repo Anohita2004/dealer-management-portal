@@ -136,7 +136,7 @@ const ROLE_TO_PERMS = {
   regional_admin: [
     "dealer.view", "dealer.create", "dealer.update",
     "users.view", "users.create", "users.edit",
-    "regions.view", "areas.view", "territories.view",
+    "regions.view", "areas.view", "areas.manage", "territories.view", "territories.manage",
     "orders.view", "orders.approve",
     "invoices.view", "payments.view", "payments.approve",
     "documents.view", "documents.verify",
@@ -174,6 +174,7 @@ const ROLE_TO_PERMS = {
     "orders.view", "orders.approve", "orders.reject",
     "invoices.view", "payments.view",
     "documents.view", "documents.verify",
+    "pricing.view", "pricing.approve",
     "campaigns.view",
     "maps.view", "maps.heatmap",
     "dashboard.view.manager"

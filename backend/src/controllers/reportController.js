@@ -12,6 +12,9 @@ const {
   Campaign,
   PricingUpdate,   // ✅ The correct model
   Order,
+  Region,
+  Area,
+  Territory,
   sequelize,
 } = require("../models");
 
@@ -20,33 +23,22 @@ const PDFDocument = require("pdfkit");
 const ExcelJS = require("exceljs");
 const fs = require("fs");
 const path = require("path");
+const RBACEngine = require("../services/rbacEngine");
 
 // -------------------------------------------------
 // Helpers for dashboards
 // -------------------------------------------------
-const buildDealerWhere = (req) => {
-  const role = req.user.roleDetails?.name || req.user.role;
-
-  if (req.scope?.dealers) {
-    return { ...req.scope.dealers };
+const buildDealerWhere = async (req) => {
+  // Use RBAC engine for scoping
+  if (req.scope?.dealer) {
+    return { ...req.scope.dealer };
   }
 
-  if (role === "regional_admin" || role === "regional_manager") {
-    return { regionId: req.user.regionId };
-  }
-  if (role === "area_manager") {
-    return { areaId: req.user.areaId };
-  }
-  if (role === "territory_manager") {
-    return { territoryId: req.user.territoryId };
-  }
-  if (role && role.startsWith("dealer_")) {
-    return { id: req.user.dealerId };
-  }
-  return {};
+  const scopeWhere = await RBACEngine.buildScopeWhereClause(req.user, 'Dealer');
+  return scopeWhere;
 };
 
-const dashboardSummary = async (dealerWhere = {}) => {
+const dashboardSummary = async (dealerWhere = {}, user = null) => {
   const dealers = await Dealer.findAll({
     where: dealerWhere,
     attributes: ["id"],
@@ -99,7 +91,7 @@ const dashboardSummary = async (dealerWhere = {}) => {
 
 const getSuperDashboard = async (req, res) => {
   try {
-    const summary = await dashboardSummary({});
+    const summary = await dashboardSummary({}, req.user);
     res.json(summary);
   } catch (err) {
     console.error("Super dashboard error:", err);
@@ -109,8 +101,9 @@ const getSuperDashboard = async (req, res) => {
 
 const getRegionalDashboard = async (req, res) => {
   try {
-    if (!req.user.regionId) return res.status(400).json({ error: "regionId missing" });
-    const summary = await dashboardSummary({ regionId: req.user.regionId });
+    const scope = RBACEngine.getUserScope(req.user);
+    if (!scope.regionId) return res.status(400).json({ error: "regionId missing" });
+    const summary = await dashboardSummary({ regionId: scope.regionId }, req.user);
     res.json(summary);
   } catch (err) {
     console.error("Regional dashboard error:", err);
@@ -120,15 +113,15 @@ const getRegionalDashboard = async (req, res) => {
 
 const getManagerDashboard = async (req, res) => {
   try {
+    const where = await buildDealerWhere(req);
     const role = req.user.roleDetails?.name || req.user.role;
-    const where = buildDealerWhere(req);
     if (
       ["territory_manager", "area_manager", "regional_manager"].includes(role) &&
       !Object.keys(where).length
     ) {
       return res.status(400).json({ error: "Missing scoped ids for manager" });
     }
-    const summary = await dashboardSummary(where);
+    const summary = await dashboardSummary(where, req.user);
     res.json(summary);
   } catch (err) {
     console.error("Manager dashboard error:", err);
@@ -138,8 +131,9 @@ const getManagerDashboard = async (req, res) => {
 
 const getDealerDashboard = async (req, res) => {
   try {
-    if (!req.user.dealerId) return res.status(400).json({ error: "dealerId missing" });
-    const summary = await dashboardSummary({ id: req.user.dealerId });
+    const scope = RBACEngine.getUserScope(req.user);
+    if (!scope.dealerId) return res.status(400).json({ error: "dealerId missing" });
+    const summary = await dashboardSummary({ id: scope.dealerId }, req.user);
     res.json(summary);
   } catch (err) {
     console.error("Dealer dashboard error:", err);
@@ -221,8 +215,10 @@ const getDealerPerformanceReport = async (req, res) => {
       });
     }
 
-    // ✅ Admin Report (all dealers)
+    // ✅ Admin Report (scoped dealers)
+    const dealerWhere = await buildDealerWhere(req);
     const dealers = await Dealer.findAll({
+      where: dealerWhere,
       include: [{ model: Invoice, as: "invoices" }],
     });
 
@@ -489,7 +485,7 @@ const getOutstandingReceivablesReport = async (req, res) => {
 // =======================================================
 const getPendingApprovals = async (req, res) => {
   try {
-    const whereDealer = buildDealerWhere(req);
+    const whereDealer = await buildDealerWhere(req);
 
     const pendingDocs = await Document.findAll({
       where: { status: "pending" },
@@ -528,10 +524,15 @@ const getTerritoryReport = async (req, res) => {
   try {
     const { state, territory, region } = req.query;
 
+    // Build base where clause
     const where = {};
     if (state) where.state = state;
     if (territory) where.territory = territory;
     if (region) where.region = region;
+
+    // Apply RBAC scoping
+    const dealerWhere = await buildDealerWhere(req);
+    Object.assign(where, dealerWhere);
 
     const dealers = await Dealer.findAll({
       where,
@@ -611,10 +612,15 @@ const getRegionalSalesSummary = async (req, res) => {
   try {
     const { region, state, territory } = req.query;
 
+    // Build base where clause
     const where = {};
     if (region) where.region = region;
     if (state) where.state = state;
     if (territory) where.territory = territory;
+
+    // Apply RBAC scoping
+    const dealerWhere = await buildDealerWhere(req);
+    Object.assign(where, dealerWhere);
 
     // 1️⃣ Fetch Dealers + Their Invoices
     const dealers = await Dealer.findAll({

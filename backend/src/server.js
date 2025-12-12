@@ -39,6 +39,7 @@ const territoryRoutes = require('./routes/territoryRoutes');
 const teamRoutes = require('./routes/teamRoutes');
 const featureToggleRoutes = require('./routes/featureToggleRoutes');
 const taskRoutes = require('./routes/taskRoutes');
+const workflowRoutes = require('./routes/workflowRoutes');
 
 // --- Express app setup ---
 const app = express();
@@ -100,6 +101,7 @@ app.use('/api/territories', territoryRoutes);
 app.use('/api/teams', teamRoutes);
 app.use('/api/feature-toggles', featureToggleRoutes);
 app.use('/api/tasks', taskRoutes);
+app.use('/api/workflow', workflowRoutes);
 
 // --- Error handling (keep your behavior) ---
 app.use((err, req, res, next) => {

@@ -86,7 +86,8 @@ module.exports = (sequelize, DataTypes) => {
       },
       approvedBy: DataTypes.STRING,
       approvedAt: DataTypes.DATE,
-      rejectionReason: DataTypes.TEXT
+      rejectionReason: DataTypes.TEXT,
+      currentSlaExpiresAt: DataTypes.DATE
     },
     {
       timestamps: true,

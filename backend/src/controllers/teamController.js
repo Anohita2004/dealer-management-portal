@@ -1,5 +1,7 @@
 // src/controllers/teamController.js
-const { SalesGroup, Dealer, User, sequelize } = require('../models');
+const { SalesGroup, Dealer, User, Invoice, Order, Campaign, sequelize } = require('../models');
+const { Op } = require('sequelize');
+const RBACEngine = require('../services/rbacEngine');
 
 // Create new team/sales group
 const createTeam = async (req, res) => {
@@ -32,14 +34,11 @@ const createTeam = async (req, res) => {
 const getTeams = async (req, res) => {
   try {
     const whereClause = {};
-    const userRole = req.user.roleDetails?.name || req.user.role;
+    const scope = RBACEngine.getUserScope(req.user);
 
-    // Apply scoping
-    if (userRole === 'regional_admin') {
-      whereClause.region = req.user.regionId;
-    } else if (userRole === 'area_manager' || userRole === 'territory_manager') {
-      // Get teams from user's region
-      whereClause.region = req.user.regionId;
+    // Apply scoping based on user's hierarchy
+    if (scope.regionId) {
+      whereClause.regionId = scope.regionId;
     }
 
     const teams = await SalesGroup.findAll({
@@ -55,7 +54,18 @@ const getTeams = async (req, res) => {
       order: [['name', 'ASC']]
     });
 
-    res.json({ teams });
+    // Calculate performance for each team
+    const teamsWithStats = await Promise.all(
+      teams.map(async (team) => {
+        const stats = await calculateTeamStats(team.id);
+        return {
+          ...team.toJSON(),
+          stats
+        };
+      })
+    );
+
+    res.json({ teams: teamsWithStats });
   } catch (err) {
     console.error('getTeams:', err);
     res.status(500).json({ error: 'Failed to fetch teams' });
@@ -246,33 +256,67 @@ const deleteTeam = async (req, res) => {
 
 // Helper function to calculate team performance stats
 const calculateTeamStats = async (teamId) => {
-  const { Order, Invoice, sequelize } = require('../models');
-  const { Op, fn, col, literal } = sequelize;
-
   // Get team dealers
   const team = await SalesGroup.findByPk(teamId, {
     include: [{ model: Dealer, as: 'dealers', attributes: ['id'] }]
   });
 
-  if (!team || !team.dealers) return { totalDealers: 0, totalOrders: 0, totalRevenue: 0 };
+  if (!team || !team.dealers || team.dealers.length === 0) {
+    return {
+      totalDealers: 0,
+      totalOrders: 0,
+      totalRevenue: 0,
+      monthlyRevenue: 0,
+      outstandingAmount: 0,
+      activeCampaigns: 0
+    };
+  }
 
   const dealerIds = team.dealers.map(d => d.id);
 
-  // Calculate stats
-  const [result] = await sequelize.query(`
-    SELECT
-      COUNT(DISTINCT o.id) as totalOrders,
-      COALESCE(SUM(i.totalAmount), 0) as totalRevenue,
-      COUNT(DISTINCT d.id) as totalDealers
-    FROM dealers d
-    LEFT JOIN orders o ON o.dealerId = d.id
-    LEFT JOIN invoices i ON i.dealerId = d.id AND i.invoiceDate >= CURRENT_DATE - INTERVAL '30 days'
-    WHERE d.id IN (?)
-  `, {
-    replacements: [dealerIds]
+  // Calculate comprehensive stats
+  const totalOrders = await Order.count({
+    where: { dealerId: { [Op.in]: dealerIds } }
   });
 
-  return result[0];
+  const totalRevenue = await Invoice.sum('totalAmount', {
+    where: { dealerId: { [Op.in]: dealerIds } }
+  }) || 0;
+
+  const monthlyRevenue = await Invoice.sum('totalAmount', {
+    where: {
+      dealerId: { [Op.in]: dealerIds },
+      invoiceDate: {
+        [Op.gte]: new Date(new Date().setMonth(new Date().getMonth() - 1))
+      }
+    }
+  }) || 0;
+
+  const outstandingAmount = await Invoice.sum('balanceAmount', {
+    where: {
+      dealerId: { [Op.in]: dealerIds },
+      balanceAmount: { [Op.gt]: 0 }
+    }
+  }) || 0;
+
+  // Get active campaigns targeting team dealers
+  const activeCampaigns = await Campaign.count({
+    where: {
+      isActive: true,
+      targetAudience: {
+        [Op.contains]: dealerIds.map(id => ({ type: 'dealer', entityId: id }))
+      }
+    }
+  });
+
+  return {
+    totalDealers: dealerIds.length,
+    totalOrders,
+    totalRevenue: Number(totalRevenue),
+    monthlyRevenue: Number(monthlyRevenue),
+    outstandingAmount: Number(outstandingAmount),
+    activeCampaigns
+  };
 };
 
 module.exports = {

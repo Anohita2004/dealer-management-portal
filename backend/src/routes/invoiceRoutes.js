@@ -14,7 +14,11 @@ router.post('/', authenticate, authorize('super_admin', 'key_user', 'dealer_staf
 router.put('/:id', authenticate, authorize('super_admin', 'key_user'), checkPermission('invoices.edit'), invoiceController.updateInvoice);
 
 // Approval routes
-router.post('/:id/approve', authenticate, authorize('dealer_admin', 'territory_manager', 'area_manager', 'regional_manager', 'regional_admin'), checkPermission('invoices.edit'), invoiceController.approveInvoice);
+router.patch('/:id/approve', authenticate, authorize('dealer_admin', 'territory_manager', 'area_manager', 'regional_manager', 'regional_admin'), checkPermission('invoices.edit'), invoiceController.approveInvoice);
+router.patch('/:id/reject', authenticate, authorize('dealer_admin', 'territory_manager', 'area_manager', 'regional_manager', 'regional_admin'), checkPermission('invoices.edit'), invoiceController.rejectInvoice);
 router.get('/pending/approvals', authenticate, authorize('dealer_admin', 'territory_manager', 'area_manager', 'regional_manager', 'regional_admin'), checkPermission('invoices.view'), applyScoping(['Invoice']), invoiceController.getPendingInvoices);
+
+// Workflow status
+router.get('/:id/workflow', authenticate, checkPermission('invoices.view'), invoiceController.getWorkflowStatus);
 
 module.exports = router;

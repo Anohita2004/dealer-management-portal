@@ -14,6 +14,18 @@ module.exports = (sequelize, DataTypes) => {
     remarks: { type: DataTypes.TEXT },
     approvedBy: { type: DataTypes.STRING },
     approvedAt: { type: DataTypes.DATE },
+    currentSlaExpiresAt: { type: DataTypes.DATE, allowNull: true },
+
+    // Approval workflow fields
+    approvalStage: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    approvalStatus: {
+      type: DataTypes.ENUM('pending', 'approved', 'rejected'),
+      defaultValue: 'pending',
+    },
+    rejectionReason: { type: DataTypes.TEXT },
   });
 
   PricingUpdate.associate = (models) => {

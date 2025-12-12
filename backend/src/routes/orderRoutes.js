@@ -70,4 +70,14 @@ router.patch(
   orderController.rejectOrder
 );
 
+// ---------------------------
+// WORKFLOW STATUS
+// ---------------------------
+router.get(
+  "/:id/workflow",
+  authenticate,
+  checkPermission("orders.view"),
+  orderController.getWorkflowStatus
+);
+
 module.exports = router;

@@ -19,9 +19,9 @@ module.exports = (sequelize, DataTypes) => {
       roleId: { type: DataTypes.INTEGER, references:{ model:"roles", key:"id" } },
 
       // 🔥 Org hierarchy mapping
-      regionId:   { type: DataTypes.UUID, references:{ model:"Regions", key:"id" }},
-      areaId:     { type: DataTypes.UUID, references:{ model:"Areas", key:"id" }},
-      territoryId:{ type: DataTypes.UUID, references:{ model:"Territories", key:"id" }},
+      regionId:   { type: DataTypes.UUID, references:{ model:"regions", key:"id" }},
+      areaId:     { type: DataTypes.UUID, references:{ model:"areas", key:"id" }},
+      territoryId:{ type: DataTypes.UUID, references:{ model:"territories", key:"id" }},
       dealerId:   { type: DataTypes.UUID, allowNull:true },
 
       // 🔥 NEW → who this user reports to
@@ -50,8 +50,16 @@ module.exports = (sequelize, DataTypes) => {
       freezeTableName:true,
 
       hooks:{
-        beforeCreate:async(user)=>{ if(user.password) user.password = await bcrypt.hash(user.password,10); },
-        beforeUpdate:async(user)=>{ if(user.changed("password")) user.password = await bcrypt.hash(user.password,10); }
+        beforeCreate:async(user)=>{ 
+          if(user.password && !user.password.match(/^\$2[ayb]\$.{56}$/)) {
+            user.password = await bcrypt.hash(user.password,10); 
+          }
+        },
+        beforeUpdate:async(user)=>{ 
+          if(user.changed("password") && user.password && !user.password.match(/^\$2[ayb]\$.{56}$/)) {
+            user.password = await bcrypt.hash(user.password,10); 
+          }
+        }
       }
     }
   );
@@ -87,7 +95,10 @@ module.exports = (sequelize, DataTypes) => {
   // =================
   // INSTANCE METHODS
   // =================
-  User.prototype.validatePassword = function(pwd){ return bcrypt.compare(pwd,this.password); };
+  User.prototype.validatePassword = async function(pwd){ 
+    if(!pwd || !this.password) return false;
+    return await bcrypt.compare(pwd,this.password); 
+  };
 
   User.prototype.generateOTP = function(){
     const otp = Math.floor(100000 + Math.random()*900000).toString();
