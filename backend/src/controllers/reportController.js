@@ -12,6 +12,10 @@ const {
   Campaign,
   PricingUpdate,   // ✅ The correct model
   Order,
+  Region,
+  Area,
+  Territory,
+  sequelize,
 } = require("../models");
 
 const { Op } = require("sequelize");
@@ -19,6 +23,240 @@ const PDFDocument = require("pdfkit");
 const ExcelJS = require("exceljs");
 const fs = require("fs");
 const path = require("path");
+const RBACEngine = require("../services/rbacEngine");
+
+// -------------------------------------------------
+// Helpers for dashboards
+// -------------------------------------------------
+const buildDealerWhere = async (req) => {
+  // Use RBAC engine for scoping
+  if (req.scope?.dealer) {
+    return { ...req.scope.dealer };
+  }
+
+  const scopeWhere = await RBACEngine.buildScopeWhereClause(req.user, 'Dealer');
+  return scopeWhere;
+};
+
+const dashboardSummary = async (dealerWhere = {}, user = null) => {
+  const dealers = await Dealer.findAll({
+    where: dealerWhere,
+    attributes: ["id"],
+  });
+  const dealerIds = dealers.map((d) => d.id);
+
+  const [invoiceAgg] = await Invoice.findAll({
+    where: dealerIds.length ? { dealerId: { [Op.in]: dealerIds } } : {},
+    attributes: [
+      [sequelize.fn("COUNT", sequelize.col("id")), "totalInvoices"],
+      [sequelize.fn("SUM", sequelize.col("balanceAmount")), "outstanding"],
+    ],
+    raw: true,
+  });
+
+  const outstanding = Number(invoiceAgg?.outstanding || 0);
+  const totalInvoices = Number(invoiceAgg?.totalInvoices || 0);
+
+  const pendingDocs = await Document.count({
+    include: dealerIds.length
+      ? [{ model: Dealer, as: "dealer", where: { id: { [Op.in]: dealerIds } } }]
+      : [{ model: Dealer, as: "dealer" }],
+    where: { status: "pending" },
+  });
+
+  const pendingPricing = await PricingUpdate.count({
+    include: dealerIds.length
+      ? [{ model: Dealer, as: "dealer", where: { id: { [Op.in]: dealerIds } } }]
+      : [{ model: Dealer, as: "dealer" }],
+    where: { status: "pending" },
+  });
+
+  const activeCampaigns = await Campaign.count({
+    where: {
+      isActive: true,
+      ...(dealerWhere.regionId ? { regionId: dealerWhere.regionId } : {}),
+      ...(dealerWhere.areaId ? { areaId: dealerWhere.areaId } : {}),
+      ...(dealerWhere.territoryId ? { territoryId: dealerWhere.territoryId } : {}),
+    },
+  });
+
+  return {
+    dealers: dealerIds.length,
+    totalInvoices,
+    totalOutstanding: outstanding,
+    approvalsPending: pendingDocs + pendingPricing,
+    activeCampaigns,
+  };
+};
+
+const getSuperDashboard = async (req, res) => {
+  try {
+    const summary = await dashboardSummary({}, req.user);
+    res.json(summary);
+  } catch (err) {
+    console.error("Super dashboard error:", err);
+    res.status(500).json({ error: "Failed to load dashboard" });
+  }
+};
+
+const getRegionalDashboard = async (req, res) => {
+  try {
+    const scope = RBACEngine.getUserScope(req.user);
+    if (!scope.regionId) return res.status(400).json({ error: "regionId missing" });
+    const summary = await dashboardSummary({ regionId: scope.regionId }, req.user);
+    res.json(summary);
+  } catch (err) {
+    console.error("Regional dashboard error:", err);
+    res.status(500).json({ error: "Failed to load dashboard" });
+  }
+};
+
+const getManagerDashboard = async (req, res) => {
+  try {
+    const where = await buildDealerWhere(req);
+    const role = req.user.roleDetails?.name || req.user.role;
+    if (
+      ["territory_manager", "area_manager", "regional_manager"].includes(role) &&
+      !Object.keys(where).length
+    ) {
+      return res.status(400).json({ error: "Missing scoped ids for manager" });
+    }
+    const summary = await dashboardSummary(where, req.user);
+    res.json(summary);
+  } catch (err) {
+    console.error("Manager dashboard error:", err);
+    res.status(500).json({ error: "Failed to load dashboard" });
+  }
+};
+
+const getDealerDashboard = async (req, res) => {
+  try {
+    // Get dealerId from user directly (for dealer_admin and dealer_staff)
+    let dealerId = req.user.dealerId;
+    if (!dealerId) {
+      // Fallback to scope if dealerId not directly on user
+      const scope = RBACEngine.getUserScope(req.user);
+      if (!scope.dealerId) {
+        return res.status(400).json({ error: "dealerId missing" });
+      }
+      dealerId = scope.dealerId;
+    }
+
+    // Get date range from query params (optional)
+    const { startDate, endDate } = req.query;
+    const dateWhere = {};
+    if (startDate && endDate) {
+      dateWhere.invoiceDate = {
+        [Op.between]: [new Date(startDate), new Date(endDate)]
+      };
+    }
+
+    // Get dealer info
+    const dealer = await Dealer.findByPk(dealerId, {
+      attributes: ['id', 'dealerCode', 'businessName', 'outstandingAmount']
+    });
+
+    if (!dealer) {
+      return res.status(404).json({ error: "Dealer not found" });
+    }
+
+    // Get invoices with optional date filter
+    const invoiceWhere = { dealerId, ...dateWhere };
+    const invoices = await Invoice.findAll({
+      where: invoiceWhere,
+      order: [["invoiceDate", "DESC"]],
+    });
+
+    // Calculate totals
+    const totalSales = invoices.reduce(
+      (sum, inv) => sum + Number(inv.totalAmount || 0),
+      0
+    );
+    const totalPaid = invoices.reduce(
+      (sum, inv) => sum + Number(inv.paidAmount || 0),
+      0
+    );
+    const totalOutstanding = invoices.reduce(
+      (sum, inv) => sum + Number(inv.balanceAmount || 0),
+      0
+    );
+
+    // Count invoices by status
+    const paidInvoices = invoices.filter(inv => inv.status === 'paid').length;
+    const unpaidInvoices = invoices.filter(inv => inv.status === 'unpaid').length;
+    const partialInvoices = invoices.filter(inv => inv.status === 'partial').length;
+    const overdueInvoices = invoices.filter(inv => inv.status === 'overdue').length;
+
+    // Get orders count
+    const ordersCount = await Order.count({
+      where: { dealerId, ...(dateWhere.orderDate ? { orderDate: dateWhere.invoiceDate } : {}) }
+    });
+
+    // Get pending documents
+    const pendingDocs = await Document.count({
+      where: { dealerId, status: "pending" }
+    });
+
+    // Get pending pricing requests
+    const pendingPricing = await PricingUpdate.count({
+      where: { dealerId, status: "pending" }
+    });
+
+    // Get active campaigns for this dealer
+    const activeCampaigns = await Campaign.count({
+      where: {
+        isActive: true,
+        targetAudience: {
+          [Op.contains]: [{ type: 'dealer', entityId: dealerId }]
+        }
+      }
+    });
+
+    // Monthly trend data (if date range provided)
+    let monthlyTrend = [];
+    if (startDate && endDate) {
+      const monthlyData = {};
+      invoices.forEach(inv => {
+        const month = new Date(inv.invoiceDate).toISOString().substring(0, 7); // YYYY-MM
+        if (!monthlyData[month]) {
+          monthlyData[month] = { month, sales: 0, count: 0 };
+        }
+        monthlyData[month].sales += Number(inv.totalAmount || 0);
+        monthlyData[month].count += 1;
+      });
+      monthlyTrend = Object.values(monthlyData).sort((a, b) => a.month.localeCompare(b.month));
+    }
+
+    res.json({
+      dealer: {
+        id: dealer.id,
+        dealerCode: dealer.dealerCode,
+        businessName: dealer.businessName,
+        outstandingAmount: dealer.outstandingAmount
+      },
+      summary: {
+        totalInvoices: invoices.length,
+        totalSales,
+        totalPaid,
+        totalOutstanding,
+        ordersCount,
+        approvalsPending: pendingDocs + pendingPricing,
+        activeCampaigns
+      },
+      invoices: {
+        paid: paidInvoices,
+        unpaid: unpaidInvoices,
+        partial: partialInvoices,
+        overdue: overdueInvoices
+      },
+      monthlyTrend,
+      dateRange: startDate && endDate ? { startDate, endDate } : null
+    });
+  } catch (err) {
+    console.error("Dealer dashboard error:", err);
+    res.status(500).json({ error: "Failed to load dashboard" });
+  }
+};
 
 // =======================================================
 // ✅ DEALER PERFORMANCE REPORT
@@ -26,7 +264,7 @@ const path = require("path");
 const getDealerPerformanceReport = async (req, res) => {
   try {
     // ✅ If the logged-in user is a dealer → return THEIR OWN dashboard summary
-    if (req.user.role === "dealer") {
+    if (["dealer_admin", "dealer_staff", "dealer"].includes(req.user.role)) {
       const dealerId = req.user.dealerId;
 
       const dealer = await Dealer.findByPk(dealerId);
@@ -94,8 +332,10 @@ const getDealerPerformanceReport = async (req, res) => {
       });
     }
 
-    // ✅ Admin Report (all dealers)
+    // ✅ Admin Report (scoped dealers)
+    const dealerWhere = await buildDealerWhere(req);
     const dealers = await Dealer.findAll({
+      where: dealerWhere,
       include: [{ model: Invoice, as: "invoices" }],
     });
 
@@ -207,7 +447,7 @@ const getAccountStatementReport = async (req, res) => {
       };
     }
 
-    if (req.user.role === "dealer") {
+    if (["dealer_admin", "dealer_staff", "dealer"].includes(req.user.role)) {
       where.dealerId = req.user.dealerId;
     }
 
@@ -254,7 +494,7 @@ const getInvoiceRegisterReport = async (req, res) => {
       where.invoiceDate = { [Op.between]: [startDate, endDate] };
     }
 
-    if (req.user.role === "dealer") {
+    if (["dealer_admin", "dealer_staff", "dealer"].includes(req.user.role)) {
       where.dealerId = req.user.dealerId;
     }
 
@@ -286,7 +526,7 @@ const getCreditDebitNoteReport = async (req, res) => {
       where.noteDate = { [Op.between]: [startDate, endDate] };
     }
 
-    if (req.user.role === "dealer") {
+    if (["dealer_admin", "dealer_staff", "dealer"].includes(req.user.role)) {
       where.dealerId = req.user.dealerId;
     }
 
@@ -362,6 +602,8 @@ const getOutstandingReceivablesReport = async (req, res) => {
 // =======================================================
 const getPendingApprovals = async (req, res) => {
   try {
+    const whereDealer = await buildDealerWhere(req);
+
     const pendingDocs = await Document.findAll({
       where: { status: "pending" },
       include: [
@@ -369,6 +611,7 @@ const getPendingApprovals = async (req, res) => {
           model: Dealer,
           as: "dealer",
           attributes: ["id", "businessName"],
+          where: Object.keys(whereDealer).length ? whereDealer : undefined,
         },
       ],
     });
@@ -398,10 +641,15 @@ const getTerritoryReport = async (req, res) => {
   try {
     const { state, territory, region } = req.query;
 
+    // Build base where clause
     const where = {};
     if (state) where.state = state;
     if (territory) where.territory = territory;
     if (region) where.region = region;
+
+    // Apply RBAC scoping
+    const dealerWhere = await buildDealerWhere(req);
+    Object.assign(where, dealerWhere);
 
     const dealers = await Dealer.findAll({
       where,
@@ -481,10 +729,15 @@ const getRegionalSalesSummary = async (req, res) => {
   try {
     const { region, state, territory } = req.query;
 
+    // Build base where clause
     const where = {};
     if (region) where.region = region;
     if (state) where.state = state;
     if (territory) where.territory = territory;
+
+    // Apply RBAC scoping
+    const dealerWhere = await buildDealerWhere(req);
+    Object.assign(where, dealerWhere);
 
     // 1️⃣ Fetch Dealers + Their Invoices
     const dealers = await Dealer.findAll({
@@ -567,4 +820,8 @@ module.exports = {
   getTerritoryReport,
   getPendingApprovals,
   getRegionalSalesSummary,
+  getSuperDashboard,
+  getRegionalDashboard,
+  getManagerDashboard,
+  getDealerDashboard,
 };

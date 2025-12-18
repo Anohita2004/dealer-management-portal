@@ -1,11 +1,113 @@
-const { Dealer, SalesGroup, PricingUpdate, Document, User,Region, AuditLog,Role, sequelize } = require('../models');
-const { Op,fn, col, literal } = require('sequelize');
+// src/controllers/adminController.js
+const {
+  Dealer,
+  SalesGroup,
+  PricingUpdate,
+  Document,
+  User,
+  Region,
+  AuditLog,
+  Role,
+  sequelize,
+} = require('../models');
 
-// ✅ Block or unblock dealer with reason
+const { Op, fn, col, literal } = require('sequelize');
+
+/**
+ * Helper: check if a dealer is within the acting manager's hierarchical scope.
+ * Super / technical admins always return true.
+ */
+function isDealerInManagerScope(manager, dealer) {
+  const role = manager.roleDetails?.name || manager.role;
+
+  if (['super_admin', 'technical_admin'].includes(role)) return true;
+
+  if (['regional_admin', 'regional_manager'].includes(role) && manager.regionId) {
+    return dealer.regionId === manager.regionId;
+  }
+
+  if (role === 'area_manager' && manager.areaId) {
+    return dealer.areaId === manager.areaId;
+  }
+
+  if (role === 'territory_manager' && manager.territoryId) {
+    return dealer.territoryId === manager.territoryId;
+  }
+
+  return false;
+}
+
+/**
+ * Helper: check if a target user is within the acting manager's hierarchical scope.
+ * Uses region/area/territory on the user and, when present, the user's dealer.
+ */
+async function isUserInManagerScope(manager, targetUser) {
+  const role = manager.roleDetails?.name || manager.role;
+
+  // Global admins can manage everyone
+  if (['super_admin', 'technical_admin'].includes(role)) {
+    return true;
+  }
+
+  const getDealerForUser = async () => {
+    if (!targetUser.dealerId) return null;
+    if (targetUser.dealer) return targetUser.dealer;
+    return await Dealer.findByPk(targetUser.dealerId);
+  };
+
+  if (['regional_admin', 'regional_manager'].includes(role) && manager.regionId) {
+    const userInRegion = targetUser.regionId === manager.regionId;
+    let userDealerInRegion = false;
+
+    if (targetUser.dealerId) {
+      const dealer = await getDealerForUser();
+      if (dealer && dealer.regionId === manager.regionId) {
+        userDealerInRegion = true;
+      }
+    }
+
+    return userInRegion || userDealerInRegion;
+  }
+
+  if (role === 'area_manager' && manager.areaId) {
+    const userInArea = targetUser.areaId === manager.areaId;
+    let userDealerInArea = false;
+
+    if (targetUser.dealerId) {
+      const dealer = await getDealerForUser();
+      if (dealer && dealer.areaId === manager.areaId) {
+        userDealerInArea = true;
+      }
+    }
+
+    return userInArea || userDealerInArea;
+  }
+
+  if (role === 'territory_manager' && manager.territoryId) {
+    const userInTerritory = targetUser.territoryId === manager.territoryId;
+    let userDealerInTerritory = false;
+
+    if (targetUser.dealerId) {
+      const dealer = await getDealerForUser();
+      if (dealer && dealer.territoryId === manager.territoryId) {
+        userDealerInTerritory = true;
+      }
+    }
+
+    return userInTerritory || userDealerInTerritory;
+  }
+
+  // Other roles (finance, dealer_admin, etc.) don't have global user-management scope here
+  return false;
+}
+
+/**
+ * Block / Unblock Dealer
+ */
 const blockDealer = async (req, res) => {
   try {
     const { id } = req.params;
-    const { isBlocked, reason } = req.body;
+    const { isBlocked = true, reason = null } = req.body;
 
     const dealer = await Dealer.findByPk(id);
     if (!dealer) return res.status(404).json({ error: 'Dealer not found' });
@@ -18,17 +120,19 @@ const blockDealer = async (req, res) => {
       entity: 'Dealer',
       entityId: dealer.id,
       changes: { isBlocked, reason },
-      ipAddress: req.ip
+      ipAddress: req.ip,
     });
 
-    res.json({ message: `Dealer ${isBlocked ? 'blocked' : 'unblocked'} successfully`, dealer });
+    return res.json({ message: `Dealer ${isBlocked ? 'blocked' : 'unblocked'}`, dealer });
   } catch (err) {
     console.error('blockDealer:', err);
-    res.status(500).json({ error: 'Failed to update dealer block status' });
+    return res.status(500).json({ error: 'Failed to update dealer block status' });
   }
 };
 
-// ✅ Verify onboarding & license
+/**
+ * Verify Dealer (mark onboarding/license verified)
+ */
 const verifyDealer = async (req, res) => {
   try {
     const { id } = req.params;
@@ -39,10 +143,10 @@ const verifyDealer = async (req, res) => {
 
     await dealer.update({
       isVerified: true,
-      licenseNumber,
-      licenseDocument,
-      verifiedBy: req.user.username,
-      verifiedAt: new Date()
+      licenseNumber: licenseNumber ?? dealer.licenseNumber,
+      licenseDocument: licenseDocument ?? dealer.licenseDocument,
+      verifiedBy: req.user.username || req.user.id,
+      verifiedAt: new Date(),
     });
 
     await AuditLog.create({
@@ -51,58 +155,152 @@ const verifyDealer = async (req, res) => {
       entity: 'Dealer',
       entityId: dealer.id,
       changes: { licenseNumber },
-      ipAddress: req.ip
+      ipAddress: req.ip,
     });
 
-    res.json({ message: 'Dealer verified successfully', dealer });
+    return res.json({ message: 'Dealer verified successfully', dealer });
   } catch (err) {
     console.error('verifyDealer:', err);
-    res.status(500).json({ error: 'Failed to verify dealer' });
+    return res.status(500).json({ error: 'Failed to verify dealer' });
   }
 };
 
-// ✅ Merge or manage sales groups
-const mergeSalesGroups = async (req, res) => {
-  const t = await sequelize.transaction();
+/**
+ * Assign Region to Dealer
+ */
+const assignRegion = async (req, res) => {
   try {
-    const { groupIds = [], newName, region, description } = req.body;
-    if (groupIds.length < 2) return res.status(400).json({ error: 'Need at least two groups to merge' });
+    const { id } = req.params;
+    const { regionId } = req.body;
 
-    const groups = await SalesGroup.findAll({ where: { id: groupIds }, include: ['dealers'], transaction: t });
+    const dealer = await Dealer.findByPk(id);
+    if (!dealer) return res.status(404).json({ error: 'Dealer not found' });
 
-    const newGroup = await SalesGroup.create({ name: newName, region, description }, { transaction: t });
+    const region = regionId ? await Region.findByPk(regionId) : null;
+    if (regionId && !region) return res.status(400).json({ error: 'Region not found' });
 
-    const dealerIds = [...new Set(groups.flatMap(g => g.dealers.map(d => d.id)))];
-    await newGroup.addDealers(dealerIds, { transaction: t });
+    await dealer.update({ regionId });
 
     await AuditLog.create({
       userId: req.user.id,
-      action: 'MERGE_SALES_GROUPS',
-      entity: 'SalesGroup',
-      entityId: newGroup.id,
-      changes: { groupIds, mergedDealers: dealerIds },
-      ipAddress: req.ip
-    }, { transaction: t });
+      action: 'ASSIGN_REGION',
+      entity: 'Dealer',
+      entityId: dealer.id,
+      changes: { regionId },
+      ipAddress: req.ip,
+    });
 
-    await t.commit();
-    res.json({ message: 'Groups merged successfully', newGroup });
+    return res.json({ message: 'Region assigned successfully', dealer });
   } catch (err) {
-    await t.rollback();
-    console.error('mergeSalesGroups:', err);
-    res.status(500).json({ error: 'Failed to merge groups' });
+    console.error('assignRegion:', err);
+    return res.status(500).json({ error: 'Failed to assign region' });
   }
 };
 
-// ✅ Approve or reject documents
+/**
+ * Merge Sales Groups (create a new group, move dealers)
+ * Expects body: { groupIds: [1,2], newName: 'Merged', region, description }
+ */
+const mergeSalesGroups = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const { groupIds = [], newName, region = null, description = null } = req.body;
+
+    if (!Array.isArray(groupIds) || groupIds.length < 2) {
+      await t.rollback();
+      return res.status(400).json({ error: 'Need at least two groups to merge' });
+    }
+    if (!newName || !String(newName).trim()) {
+      await t.rollback();
+      return res.status(400).json({ error: 'newName is required' });
+    }
+
+    // Load groups with dealers
+    const groups = await SalesGroup.findAll({
+      where: { id: { [Op.in]: groupIds } },
+      include: [{ model: Dealer, as: 'dealers', attributes: ['id'] }],
+      transaction: t,
+    });
+
+    if (!groups || groups.length < 2) {
+      await t.rollback();
+      return res.status(404).json({ error: 'One or more groups not found' });
+    }
+
+    // Create new group
+    const newGroup = await SalesGroup.create(
+      { name: newName, region, description },
+      { transaction: t }
+    );
+
+    // Collect dealer IDs
+    const dealerIds = [
+      ...new Set(
+        groups.flatMap((g) =>
+          (g.dealers || []).map((d) => (typeof d.id === 'object' ? d.id.toString() : d.id))
+        )
+      ),
+    ];
+
+    // If through table exists, use addDealers; otherwise manage association via raw query
+    if (typeof newGroup.addDealers === 'function') {
+      await newGroup.addDealers(dealerIds, { transaction: t });
+    } else {
+      // fallback: create entries in junction table named SalesGroupMembers
+      const rows = dealerIds.map((dealerId) => ({
+        salesGroupId: newGroup.id,
+        dealerId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }));
+      if (rows.length) {
+        await sequelize.getQueryInterface().bulkInsert('SalesGroupMembers', rows, { transaction: t });
+      }
+    }
+
+    await AuditLog.create(
+      {
+        userId: req.user.id,
+        action: 'MERGE_SALES_GROUPS',
+        entity: 'SalesGroup',
+        entityId: newGroup.id,
+        changes: { groupIds, mergedDealers: dealerIds },
+        ipAddress: req.ip,
+      },
+      { transaction: t }
+    );
+
+    await t.commit();
+    return res.json({ message: 'Groups merged successfully', newGroup });
+  } catch (err) {
+    await t.rollback();
+    console.error('mergeSalesGroups:', err);
+    return res.status(500).json({ error: 'Failed to merge groups' });
+  }
+};
+
+/**
+ * Review Document (approve / reject)
+ * Expects body: { action: 'approve'|'reject', remarks }
+ */
 const reviewDocument = async (req, res) => {
   try {
     const { id } = req.params;
     const { action, remarks } = req.body;
+
     const document = await Document.findByPk(id);
     if (!document) return res.status(404).json({ error: 'Document not found' });
 
     const status = action === 'approve' ? 'approved' : 'rejected';
-    await document.update({ status, reviewRemarks: remarks, reviewedBy: req.user.username });
+
+    await document.update({
+      status,
+      reviewRemarks: remarks ?? document.reviewRemarks,
+      reviewedBy: req.user.username ?? req.user.id,
+      approvedBy: status === 'approved' ? req.user.id : document.approvedBy,
+      approvedAt: status === 'approved' ? new Date() : document.approvedAt,
+      rejectionReason: status === 'rejected' ? remarks ?? document.rejectionReason : null,
+    });
 
     await AuditLog.create({
       userId: req.user.id,
@@ -110,168 +308,548 @@ const reviewDocument = async (req, res) => {
       entity: 'Document',
       entityId: document.id,
       changes: { status, remarks },
-      ipAddress: req.ip
+      ipAddress: req.ip,
     });
 
-    res.json({ message: `Document ${status} successfully`, document });
+    return res.json({ message: `Document ${status}`, document });
   } catch (err) {
     console.error('reviewDocument:', err);
-    res.status(500).json({ error: 'Failed to review document' });
+    return res.status(500).json({ error: 'Failed to review document' });
   }
 };
 
-// ✅ Oversee pricing distribution (approve/reject updates)
+/**
+ * Review Pricing Update (approve / reject)
+ * Expects body: { action: 'approve'|'reject', remarks }
+ */
 const reviewPricingUpdate = async (req, res) => {
   const t = await sequelize.transaction();
   try {
     const { id } = req.params;
     const { action, remarks } = req.body;
+
     const pricing = await PricingUpdate.findByPk(id, { transaction: t });
-    if (!pricing) return res.status(404).json({ error: 'Pricing update not found' });
+    if (!pricing) {
+      await t.rollback();
+      return res.status(404).json({ error: 'Pricing update not found' });
+    }
 
     const status = action === 'approve' ? 'approved' : 'rejected';
-    await pricing.update({ status, remarks, approvedBy: req.user.username, approvedAt: new Date() }, { transaction: t });
 
-    await AuditLog.create({
-      userId: req.user.id,
-      action: `PRICING_${status.toUpperCase()}`,
-      entity: 'PricingUpdate',
-      entityId: pricing.id,
-      changes: { status, remarks },
-      ipAddress: req.ip
-    }, { transaction: t });
+    await pricing.update(
+      {
+        status,
+        remarks: remarks ?? pricing.remarks,
+        approvedBy: status === 'approved' ? req.user.username ?? req.user.id : pricing.approvedBy,
+        approvedAt: status === 'approved' ? new Date() : pricing.approvedAt,
+      },
+      { transaction: t }
+    );
+
+    await AuditLog.create(
+      {
+        userId: req.user.id,
+        action: `PRICING_${status.toUpperCase()}`,
+        entity: 'PricingUpdate',
+        entityId: pricing.id,
+        changes: { status, remarks },
+        ipAddress: req.ip,
+      },
+      { transaction: t }
+    );
 
     await t.commit();
-    res.json({ message: `Pricing ${status}`, pricing });
+    return res.json({ message: `Pricing ${status}`, pricing });
   } catch (err) {
     await t.rollback();
     console.error('reviewPricingUpdate:', err);
-    res.status(500).json({ error: 'Failed to process pricing update' });
+    return res.status(500).json({ error: 'Failed to process pricing update' });
   }
 };
 
-// ✅ User management
+/* -------------------------
+   User Management handlers
+   ------------------------- */
+
+/**
+ * Get all users (paginated, scoped by creator's hierarchy)
+ */
 const getAllUsers = async (req, res) => {
   try {
-    const users = await User.findAll({ order: [['createdAt', 'DESC']] });
-    res.json({ users });
+    const { page = 1, limit = 100 } = req.query;
+    const offset = (page - 1) * limit;
+
+    const creatorRole = req.user.roleDetails?.name || req.user.role;
+
+    // Build where clause based on creator's hierarchical scope
+    const whereClause = {};
+    if (['regional_admin', 'regional_manager'].includes(creatorRole) && req.user.regionId) {
+      // Region-level: users in this region or attached to dealers in this region
+      const dealersInRegion = await Dealer.findAll({
+        where: { regionId: req.user.regionId },
+        attributes: ['id'],
+      });
+      const dealerIds = dealersInRegion.map((d) => d.id);
+
+      whereClause[Op.or] = [
+        { regionId: req.user.regionId },
+        ...(dealerIds.length > 0 ? [{ dealerId: { [Op.in]: dealerIds } }] : []),
+      ];
+    } else if (creatorRole === 'area_manager' && req.user.areaId) {
+      // Area-level: users in this area or attached to dealers in this area
+      const dealersInArea = await Dealer.findAll({
+        where: { areaId: req.user.areaId },
+        attributes: ['id'],
+      });
+      const dealerIds = dealersInArea.map((d) => d.id);
+
+      whereClause[Op.or] = [
+        { areaId: req.user.areaId },
+        ...(dealerIds.length > 0 ? [{ dealerId: { [Op.in]: dealerIds } }] : []),
+      ];
+    } else if (creatorRole === 'territory_manager' && req.user.territoryId) {
+      // Territory-level: users in this territory or attached to dealers in this territory
+      const dealersInTerritory = await Dealer.findAll({
+        where: { territoryId: req.user.territoryId },
+        attributes: ['id'],
+      });
+      const dealerIds = dealersInTerritory.map((d) => d.id);
+
+      whereClause[Op.or] = [
+        { territoryId: req.user.territoryId },
+        ...(dealerIds.length > 0 ? [{ dealerId: { [Op.in]: dealerIds } }] : []),
+      ];
+    }
+    // super_admin and technical_admin see all (no where clause)
+
+    const { count, rows } = await User.findAndCountAll({
+      where: whereClause,
+      include: [{ model: Role, as: 'roleDetails' }, { model: Dealer, as: 'dealer' }],
+      order: [['createdAt', 'DESC']],
+      limit: parseInt(limit, 10),
+      offset: parseInt(offset, 10),
+    });
+
+    return res.json({
+      users: rows,
+      total: count,
+      page: parseInt(page, 10),
+      totalPages: Math.ceil(count / limit),
+    });
   } catch (err) {
     console.error('getAllUsers:', err);
-    res.status(500).json({ error: 'Failed to fetch users' });
+    return res.status(500).json({ error: 'Failed to fetch users' });
   }
 };
-const createUser = async (req, res) => {
+
+/**
+ * Get single user by id (scoped by creator's hierarchy)
+ */
+const getUserById = async (req, res) => {
   try {
-    const { username, email, password, roleId, dealerId, regionId, isActive } = req.body;
+    const user = await User.findByPk(req.params.id, {
+      include: [{ model: Role, as: 'roleDetails' }, { model: Dealer, as: 'dealer' }],
+    });
+    if (!user) return res.status(404).json({ error: 'User not found' });
 
-    // Check for duplicate email
-    const existing = await User.findOne({ where: { email } });
-    if (existing) return res.status(400).json({ error: "Email already exists" });
+    const inScope = await isUserInManagerScope(req.user, user);
+    if (!inScope) {
+      return res.status(403).json({ error: 'Access denied - User not in your scope' });
+    }
 
-    const user = await User.create({
+    return res.json({ user });
+  } catch (err) {
+    console.error('getUserById:', err);
+    return res.status(500).json({ error: 'Failed to fetch user' });
+  }
+};
+
+/**
+ * Create user (basic validation + permission assumptions)
+ * Note: assumes User model handles password hashing in hooks
+ */
+/**
+ * Create user (safe, FK-validated, scope-aware)
+ */
+const createUser = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const {
       username,
       email,
-      password, // assuming hooks handle hashing
-      roleId,
-      dealerId: dealerId || null,
-      regionId: regionId || null,
-      isActive
-    });
+      password,
+      roleId: rawRoleId,
+      regionId: rawRegionId,
+      areaId: rawAreaId,
+      territoryId: rawTerritoryId,
+      dealerId: rawDealerId,
+      isActive = true
+    } = req.body;
 
-    await AuditLog.create({
-      userId: req.user.id,
-      action: "CREATE_USER",
-      entity: "User",
-      entityId: user.id,
-      changes: req.body,
-      ipAddress: req.ip
-    });
+    const roleId = rawRoleId ? (typeof rawRoleId === 'string' ? rawRoleId.trim() : rawRoleId) : null;
+    const regionId = rawRegionId ? rawRegionId : null;
+    const areaId = rawAreaId ? rawAreaId : null;
+    const territoryId = rawTerritoryId ? rawTerritoryId : null;
+    const dealerId = rawDealerId ? rawDealerId : null;
 
-    res.json({ message: "User created", user });
+    // basic duplicate check
+    const existing = await User.findOne({ where: { email }, transaction: t });
+    if (existing) {
+      await t.rollback();
+      return res.status(400).json({ error: 'Email already exists' });
+    }
+
+    // role validation
+    const targetRole = await Role.findByPk(roleId, { transaction: t });
+    if (!targetRole) {
+      await t.rollback();
+      return res.status(400).json({ error: 'Invalid roleId' });
+    }
+
+    const creatorRole = req.user.roleDetails?.name || req.user.role;
+
+    // start with what frontend sent (super_admin must not be overridden)
+    let finalRegionId = regionId;
+    let finalAreaId = areaId;
+    let finalTerritoryId = territoryId;
+    let finalDealerId = dealerId;
+
+    // apply scoping ONLY if creator is NOT super_admin/technical_admin
+    if (!['super_admin', 'technical_admin'].includes(creatorRole)) {
+      if (creatorRole === 'regional_admin' || creatorRole === 'regional_manager') {
+        finalRegionId = req.user.regionId || finalRegionId;
+      }
+      if (creatorRole === 'area_manager') {
+        finalRegionId = req.user.regionId || finalRegionId;
+        finalAreaId = req.user.areaId || finalAreaId;
+      }
+      if (creatorRole === 'territory_manager') {
+        finalRegionId = req.user.regionId || finalRegionId;
+        finalAreaId = req.user.areaId || finalAreaId;
+        finalTerritoryId = req.user.territoryId || finalTerritoryId;
+      }
+      if (['dealer_admin', 'dealer_staff'].includes(creatorRole)) {
+        // dealer-level creators can only create dealer staff under their dealer
+        finalDealerId = req.user.dealerId;
+        finalRegionId = null;
+        finalAreaId = null;
+        finalTerritoryId = null;
+      }
+    }
+
+    // Enforce role-specific required/forbidden fields (backend guard)
+    const roleName = targetRole.name;
+    if (['dealer_admin', 'dealer_staff'].includes(roleName)) {
+      // Dealer roles must include a dealerId
+      if (!finalDealerId) {
+        await t.rollback();
+        return res.status(400).json({ error: 'dealerId is required for dealer roles' });
+      }
+      // Clear region/area/territory for dealer users
+      finalRegionId = null;
+      finalAreaId = null;
+      finalTerritoryId = null;
+    } else {
+      // Non-dealer roles should NOT have dealerId
+      finalDealerId = finalDealerId || null;
+    }
+
+    // Validate foreign keys before insert
+    if (finalRegionId) {
+      const regionExists = await Region.findByPk(finalRegionId, { transaction: t });
+      if (!regionExists) {
+        await t.rollback();
+        return res.status(400).json({ error: 'Invalid regionId' });
+      }
+    }
+
+    if (finalAreaId) {
+      const Area = require('../models').Area;
+      const areaExists = await Area.findByPk(finalAreaId, { transaction: t });
+      if (!areaExists) {
+        await t.rollback();
+        return res.status(400).json({ error: 'Invalid areaId' });
+      }
+    }
+
+    if (finalTerritoryId) {
+      const Territory = require('../models').Territory;
+      const territoryExists = await Territory.findByPk(finalTerritoryId, { transaction: t });
+      if (!territoryExists) {
+        await t.rollback();
+        return res.status(400).json({ error: 'Invalid territoryId' });
+      }
+    }
+
+    if (finalDealerId) {
+      const dealerExists = await Dealer.findByPk(finalDealerId, { transaction: t });
+      if (!dealerExists) {
+        await t.rollback();
+        return res.status(400).json({ error: 'Invalid dealerId' });
+      }
+      // Ensure dealer is within creator's scope (for regional/area/territory managers)
+      if (!isDealerInManagerScope(req.user, dealerExists)) {
+        await t.rollback();
+        return res.status(403).json({ error: 'dealerId is outside your allowed scope' });
+      }
+    }
+
+    // Create user - ensure 'role' string column is correct (use targetRole.name)
+    const user = await User.create(
+      {
+        username,
+        email,
+        password, // model hooks should hash
+        roleId: targetRole.id,
+        role: targetRole.name,
+        regionId: finalRegionId,
+        areaId: finalAreaId,
+        territoryId: finalTerritoryId,
+        dealerId: finalDealerId,
+        isActive: !!isActive,
+      },
+      { transaction: t }
+    );
+
+    await AuditLog.create(
+      {
+        userId: req.user.id,
+        action: 'CREATE_USER',
+        entity: 'User',
+        entityId: user.id,
+        changes: { username, email, roleId: targetRole.id, regionId: finalRegionId, areaId: finalAreaId, territoryId: finalTerritoryId, dealerId: finalDealerId },
+        ipAddress: req.ip,
+      },
+      { transaction: t }
+    );
+
+    await t.commit();
+    return res.status(201).json({ message: 'User created', user });
   } catch (err) {
-    console.error("createUser:", err);
-    res.status(500).json({ error: "Failed to create user" });
+    await t.rollback();
+    console.error('createUser error:', err);
+    // Provide helpful message for FK problems
+    if (err?.original?.constraint && err.original.constraint.includes('region')) {
+      return res.status(400).json({ error: 'Foreign key error: region invalid' });
+    }
+    return res.status(500).json({ error: 'Failed to create user' });
   }
 };
+
+
+/**
+ * Update user (safe, FK-validated, scoped)
+ */
 const updateUser = async (req, res) => {
+  const t = await sequelize.transaction();
   try {
     const { id } = req.params;
-    const { username, email, roleId, dealerId, regionId, isActive, password } = req.body;
-
-    const user = await User.findByPk(id);
-    if (!user) return res.status(404).json({ error: "User not found" });
-
-    // Prepare update payload
-    const updatePayload = {
+    const {
       username,
       email,
-      roleId,
-      dealerId: dealerId || null,
-      regionId: regionId || null,
+      password,
+      roleId: rawRoleId,
+      dealerId: rawDealerId,
+      regionId: rawRegionId,
+      areaId: rawAreaId,
+      territoryId: rawTerritoryId,
       isActive
-    };
+    } = req.body;
 
-    if (password && password.trim() !== "") {
-      updatePayload.password = password; // hashing handled by model hook
+    const roleId = rawRoleId ? (typeof rawRoleId === 'string' ? rawRoleId.trim() : rawRoleId) : undefined;
+    const regionId = rawRegionId !== undefined ? (rawRegionId || null) : undefined;
+    const areaId = rawAreaId !== undefined ? (rawAreaId || null) : undefined;
+    const territoryId = rawTerritoryId !== undefined ? (rawTerritoryId || null) : undefined;
+    const dealerId = rawDealerId !== undefined ? (rawDealerId || null) : undefined;
+
+    const user = await User.findByPk(id, { transaction: t });
+    if (!user) {
+      await t.rollback();
+      return res.status(404).json({ error: 'User not found' });
     }
 
-    // ---- Update USER ----
-    await user.update(updatePayload);
-
-    // ---- NEW: Auto-update dealer region ----
-    if (dealerId && regionId) {
-      await Dealer.update(
-        { regionId },
-        { where: { id: dealerId } }
-      );
+    // If roleId provided, validate it
+    let targetRole = null;
+    if (roleId !== undefined && roleId !== null && roleId !== '') {
+      targetRole = await Role.findByPk(roleId, { transaction: t });
+      if (!targetRole) {
+        await t.rollback();
+        return res.status(400).json({ error: 'Invalid roleId' });
+      }
     }
 
-    // ---- Audit Log ----
+    const creatorRole = req.user.roleDetails?.name || req.user.role;
+
+    // Check whether the acting user is allowed to manage this user
+    const inScope = await isUserInManagerScope(req.user, user);
+    if (!inScope) {
+      await t.rollback();
+      return res.status(403).json({ error: 'Access denied - User not in your scope' });
+    }
+
+    // Start with what is provided (do not blindly override if admin is super_admin)
+    let finalRegionId = regionId === undefined ? user.regionId : regionId;
+    let finalAreaId = areaId === undefined ? user.areaId : areaId;
+    let finalTerritoryId = territoryId === undefined ? user.territoryId : territoryId;
+    let finalDealerId = dealerId === undefined ? user.dealerId : dealerId;
+    let finalRoleId = roleId === undefined ? user.roleId : roleId;
+
+    // Apply creator scoping if creator is not super/technical admin
+    if (!['super_admin', 'technical_admin'].includes(creatorRole)) {
+      if (creatorRole === 'regional_admin' || creatorRole === 'regional_manager') {
+        finalRegionId = req.user.regionId;
+      }
+      if (creatorRole === 'area_manager') {
+        finalAreaId = req.user.areaId;
+        finalRegionId = req.user.regionId;
+      }
+      if (creatorRole === 'territory_manager') {
+        finalTerritoryId = req.user.territoryId;
+        finalAreaId = req.user.areaId;
+        finalRegionId = req.user.regionId;
+      }
+      if (['dealer_admin', 'dealer_staff'].includes(creatorRole)) {
+        finalDealerId = req.user.dealerId;
+        finalRegionId = null;
+        finalAreaId = null;
+        finalTerritoryId = null;
+      }
+    }
+
+    // If targetRole (new role) is dealer-level, ensure dealerId present
+    if (targetRole && ['dealer_admin', 'dealer_staff'].includes(targetRole.name)) {
+      if (!finalDealerId) {
+        await t.rollback();
+        return res.status(400).json({ error: 'dealerId is required for dealer roles' });
+      }
+      finalRegionId = null;
+      finalAreaId = null;
+      finalTerritoryId = null;
+    }
+
+    // Validate foreign keys
+    if (finalRegionId) {
+      const regionExists = await Region.findByPk(finalRegionId, { transaction: t });
+      if (!regionExists) {
+        await t.rollback();
+        return res.status(400).json({ error: 'Invalid regionId' });
+      }
+    }
+    if (finalAreaId) {
+      const Area = require('../models').Area;
+      const areaExists = await Area.findByPk(finalAreaId, { transaction: t });
+      if (!areaExists) {
+        await t.rollback();
+        return res.status(400).json({ error: 'Invalid areaId' });
+      }
+    }
+    if (finalTerritoryId) {
+      const Territory = require('../models').Territory;
+      const territoryExists = await Territory.findByPk(finalTerritoryId, { transaction: t });
+      if (!territoryExists) {
+        await t.rollback();
+        return res.status(400).json({ error: 'Invalid territoryId' });
+      }
+    }
+    if (finalDealerId) {
+      const dealerExists = await Dealer.findByPk(finalDealerId, { transaction: t });
+      if (!dealerExists) {
+        await t.rollback();
+        return res.status(400).json({ error: 'Invalid dealerId' });
+      }
+      if (!isDealerInManagerScope(req.user, dealerExists)) {
+        await t.rollback();
+        return res.status(403).json({ error: 'dealerId is outside your allowed scope' });
+      }
+    }
+
+    // Build payload
+    const updatePayload = {};
+    if (username !== undefined) updatePayload.username = username;
+    if (email !== undefined) updatePayload.email = email;
+    if (password !== undefined && String(password).trim()) updatePayload.password = password;
+    if (finalRoleId !== undefined) updatePayload.roleId = finalRoleId;
+    if (targetRole) updatePayload.role = targetRole.name;
+    updatePayload.regionId = finalRegionId;
+    updatePayload.areaId = finalAreaId;
+    updatePayload.territoryId = finalTerritoryId;
+    updatePayload.dealerId = finalDealerId;
+    if (isActive !== undefined) updatePayload.isActive = !!isActive;
+
+    // Update
+    await user.update(updatePayload, { transaction: t });
+
     await AuditLog.create({
       userId: req.user.id,
-      action: "UPDATE_USER",
-      entity: "User",
-      entityId: id,
+      action: 'UPDATE_USER',
+      entity: 'User',
+      entityId: user.id,
       changes: updatePayload,
-      ipAddress: req.ip
-    });
+      ipAddress: req.ip,
+    }, { transaction: t });
 
-    res.json({ message: "User updated", user });
+    await t.commit();
+    return res.json({ message: 'User updated', user });
   } catch (err) {
-    console.error("updateUser:", err);
-    res.status(500).json({ error: "Failed to update user" });
+    await t.rollback();
+    console.error('updateUser error:', err);
+    return res.status(500).json({ error: 'Failed to update user' });
   }
 };
 
-
+/**
+ * Update user role (lightweight, scoped by creator's hierarchy)
+ */
 const updateUserRole = async (req, res) => {
   try {
     const { id } = req.params;
-    const { role } = req.body;
+    const { roleId } = req.body;
+
+    const role = await Role.findByPk(roleId);
+    if (!role) return res.status(400).json({ error: 'Invalid role' });
+
     const user = await User.findByPk(id);
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    await user.update({ role });
+    const inScope = await isUserInManagerScope(req.user, user);
+    if (!inScope) {
+      return res.status(403).json({ error: 'Access denied - User not in your scope' });
+    }
+
+    await user.update({ roleId });
 
     await AuditLog.create({
       userId: req.user.id,
       action: 'UPDATE_USER_ROLE',
       entity: 'User',
       entityId: user.id,
-      changes: { role },
-      ipAddress: req.ip
+      changes: { roleId },
+      ipAddress: req.ip,
     });
 
-    res.json({ message: 'User role updated', user });
+    return res.json({ message: 'User role updated', user });
   } catch (err) {
     console.error('updateUserRole:', err);
-    res.status(500).json({ error: 'Failed to update role' });
+    return res.status(500).json({ error: 'Failed to update user role' });
   }
 };
 
+/**
+ * Delete user (scoped by creator's hierarchy)
+ */
 const deleteUser = async (req, res) => {
   try {
     const { id } = req.params;
+    
+    // Check if user exists and is within actor's scope
+    const user = await User.findByPk(id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const inScope = await isUserInManagerScope(req.user, user);
+    if (!inScope) {
+      return res.status(403).json({ error: 'Access denied - User not in your scope' });
+    }
+
     await User.destroy({ where: { id } });
 
     await AuditLog.create({
@@ -279,18 +857,19 @@ const deleteUser = async (req, res) => {
       action: 'DELETE_USER',
       entity: 'User',
       entityId: id,
-      ipAddress: req.ip
+      ipAddress: req.ip,
     });
 
-    res.json({ message: 'User deleted successfully' });
+    return res.json({ message: 'User deleted successfully' });
   } catch (err) {
     console.error('deleteUser:', err);
-    res.status(500).json({ error: 'Failed to delete user' });
+    return res.status(500).json({ error: 'Failed to delete user' });
   }
 };
 
-
-
+/**
+ * Admin dashboard / report
+ */
 const getAdminReport = async (req, res) => {
   try {
     // ---------- KPIs ----------
@@ -417,25 +996,6 @@ dealerDistribution.push({
   }
 };
 
-const assignRegion = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { regionId } = req.body;
-
-    const dealer = await Dealer.findByPk(id);
-    if (!dealer) return res.status(404).json({ error: 'Dealer not found' });
-
-    await dealer.update({ regionId });
-
-    res.json({ message: "Region assigned successfully", dealer });
-  } catch (err) {
-    console.error("assignRegion:", err);
-    res.status(500).json({ error: "Failed to assign region" });
-  }
-};
-
-
-
 
 module.exports = {
   blockDealer,
@@ -444,11 +1004,11 @@ module.exports = {
   reviewDocument,
   reviewPricingUpdate,
   getAllUsers,
+  getUserById,
   createUser,
   updateUser,
   updateUserRole,
   deleteUser,
   getAdminReport,
   assignRegion,
-  
 };

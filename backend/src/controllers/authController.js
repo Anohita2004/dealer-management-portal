@@ -5,6 +5,9 @@ const { generateToken } = require("../utils/jwt");
 // -------------------------------
 // LOGIN (Step 1 → Generate OTP)
 // -------------------------------
+// -------------------------------
+// LOGIN (Step 1 → Generate OTP)
+// -------------------------------
 const login = async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -19,10 +22,14 @@ const login = async (req, res) => {
       return res.status(403).json({ error: "Account inactive/blocked" });
 
     const valid = await user.validatePassword(password);
-    if (!valid) return res.status(401).json({ error: "Invalid credentials" });
+    if (!valid) {
+      console.error(`Login failed for user ${username}: Invalid password`);
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
 
     // Generate OTP
     const otp = user.generateOTP();
+    console.log("LOGIN OTP for user:", user.username, "=>", otp); // <-- log here
     await user.save();
 
     await AuditLog.create({
@@ -34,7 +41,12 @@ const login = async (req, res) => {
       userAgent: req.headers["user-agent"],
     });
 
-    return res.json({ message: "OTP sent", userId: user.id, otpSent: true });
+    return res.json({
+      message: "OTP generated",
+      userId: user.id,
+      otpSent: true,
+      otp: process.env.NODE_ENV === "development" ? otp : undefined,
+    });
   } catch (err) {
     console.error("Login error:", err);
     return res.status(500).json({ error: "Login failed" });

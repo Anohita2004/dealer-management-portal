@@ -60,9 +60,17 @@ module.exports = (sequelize, DataTypes) => {
       verifiedBy: DataTypes.STRING,
       verifiedAt: DataTypes.DATE,
       licenses: DataTypes.JSON,
+      lat: DataTypes.FLOAT,
+lng: DataTypes.FLOAT,
+territoryId: DataTypes.UUID,
 
       // ✅ REAL REGION RELATION
       regionId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
+
+      areaId: {
         type: DataTypes.UUID,
         allowNull: true,
       },
@@ -74,13 +82,14 @@ module.exports = (sequelize, DataTypes) => {
     }
   );
 
-  Dealer.associate = (models) => {
+Dealer.associate = (models) => {
     Dealer.hasOne(models.User, {
       foreignKey: "dealerId",
       as: "user",
       onDelete: "SET NULL",
       onUpdate: "CASCADE",
     });
+Dealer.belongsTo(models.Territory, { foreignKey: 'territoryId' });
 
     Dealer.belongsTo(models.User, {
       foreignKey: { name: "managerId", allowNull: true },
@@ -110,6 +119,11 @@ module.exports = (sequelize, DataTypes) => {
     Dealer.belongsTo(models.Region, {
       foreignKey: "regionId",
       as: "region",
+    });
+
+    Dealer.belongsTo(models.Area, {
+      foreignKey: "areaId",
+      as: "area",
     });
   };
 

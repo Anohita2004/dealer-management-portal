@@ -2,8 +2,9 @@
 // FILE: src/controllers/pricingController.js
 // ==============================
 
-const { PricingUpdate, AuditLog, Product, Dealer, Notification } = require("../models");
+const { PricingUpdate, AuditLog, Product, Dealer, Notification, sequelize } = require("../models");
 const { Op } = require("sequelize");
+const { nextStage, isApproverForStage } = require("../utils/approvalEngine");
 
 // ----------------------------
 // 1️⃣ Request Pricing Change (Dealer → Manager Notification)
@@ -28,6 +29,8 @@ exports.requestPricingChange = async (req, res) => {
       requestedBy: req.user.username || req.user.id,
       requestedByUserId: req.user.id,
       status: "pending",
+      approvalStage: "area_manager",  // First stage of approval
+      approvalStatus: "pending",
     });
 
     await AuditLog.create({
@@ -74,14 +77,20 @@ exports.requestPricingChange = async (req, res) => {
 // ----------------------------
 exports.getPricingUpdates = async (req, res) => {
   try {
+    const role = req.user.roleDetails?.name || req.user.role;
     const { mine, page = 1, limit = 50 } = req.query;
     const offset = (page - 1) * limit;
 
     const where = {};
 
     // Dealers see their requests only
-    if (mine === "true" || req.user.role === "dealer") {
+    if (mine === "true" || ["dealer_admin","dealer_staff","dealer"].includes(role)) {
       where.requestedByUserId = req.user.id;
+    }
+
+    // Apply scoped dealer filter if provided
+    if (req.scope?.dealers) {
+      where.dealerId = { [Op.in]: Object.values(req.scope.dealers).length ? Object.values(req.scope.dealers) : req.scope.dealers.id ? [req.scope.dealers.id] : [] };
     }
 
     const { count, rows } = await PricingUpdate.findAndCountAll({
@@ -120,13 +129,16 @@ exports.getPricingSummary = async (req, res) => {
 exports.getManagerPricingRequests = async (req, res) => {
   try {
     const managerId = req.user.id;
+    const dealerWhere = { managerId };
+
+    if (req.scope?.dealers) Object.assign(dealerWhere, req.scope.dealers);
 
     const updates = await PricingUpdate.findAll({
       include: [
         {
           model: Dealer,
           as: "dealer",
-          where: { managerId },
+          where: dealerWhere,
         },
       ],
       order: [["createdAt", "DESC"]],
@@ -140,60 +152,156 @@ exports.getManagerPricingRequests = async (req, res) => {
 };
 
 // ----------------------------
-// 5️⃣ Update Pricing Status (Manager → Dealer Notification)
+// 5️⃣ Approve Pricing Request (Multi-Stage Workflow)
 // ----------------------------
-exports.updatePricingStatus = async (req, res) => {
+exports.approvePricingRequest = async (req, res) => {
+  const t = await sequelize.transaction();
   try {
     const { id } = req.params;
-    const { status, remarks } = req.body;
+    const { action, remarks } = req.body;
 
-    if (!["approved", "rejected"].includes(status)) {
-      return res.status(400).json({ error: "Invalid status" });
+    if (!["approve", "reject"].includes(action)) {
+      return res.status(400).json({ error: "Invalid action. Use 'approve' or 'reject'" });
     }
 
-    const update = await PricingUpdate.findByPk(id);
-    if (!update) return res.status(404).json({ error: "Request not found" });
-
-    // If approved → update product price
-    if (status === "approved") {
-      await Product.update({ price: update.newPrice }, { where: { id: update.productId } });
+    const pricingRequest = await PricingUpdate.findByPk(id, { transaction: t });
+    if (!pricingRequest) {
+      return res.status(404).json({ error: "Pricing request not found" });
     }
 
-    update.status = status;
-    update.remarks = remarks;
-    update.approvedBy = req.user.username;
-    update.approvedAt = new Date();
-    await update.save();
+    const role = req.user.roleDetails?.name || req.user.role;
+    const stage = pricingRequest.approvalStage || "area_manager";
 
-    // ✅ Create Notification for Dealer
+    if (!isApproverForStage(role, stage, "pricing")) {
+      return res.status(403).json({
+        error: `Not authorized to approve/reject at stage: ${stage}`,
+      });
+    }
+
+    if (action === "reject") {
+      pricingRequest.approvalStatus = "rejected";
+      pricingRequest.status = "rejected";
+      pricingRequest.rejectionReason = remarks || "Rejected by approver";
+      pricingRequest.approvalStage = null;
+    } else {
+      const next = nextStage(stage, "pricing");
+
+      if (!next) {
+        // Final approval - update product price
+        pricingRequest.approvalStage = null;
+        pricingRequest.approvalStatus = "approved";
+        pricingRequest.status = "approved";
+
+        // Update product price
+        await Product.update(
+          { price: pricingRequest.newPrice },
+          { where: { id: pricingRequest.productId }, transaction: t }
+        );
+      } else {
+        pricingRequest.approvalStage = next;
+        pricingRequest.approvalStatus = "pending";
+      }
+    }
+
+    pricingRequest.approvedBy = req.user.username || req.user.id;
+    pricingRequest.approvedAt = new Date();
+    pricingRequest.remarks = remarks;
+    await pricingRequest.save({ transaction: t });
+
+    await AuditLog.create(
+      {
+        userId: req.user.id,
+        action: action === "approve" ? "PRICING_APPROVED" : "PRICING_REJECTED",
+        entity: "PricingUpdate",
+        entityId: pricingRequest.id,
+        changes: { from: stage, to: next || "final", action, remarks },
+        ipAddress: req.ip,
+      },
+      { transaction: t }
+    );
+
+    await t.commit();
+
+    // Send notification
     const io = req.app.get("io");
+    const statusMsg = pricingRequest.status;
+    const statusEmoji = statusMsg === "approved" ? "✅" : "❌";
 
     await Notification.create({
       senderId: req.user.id,
-      recipientId: update.requestedByUserId,
-      title: `Pricing ${status}`,
-      message:
-        status === "approved"
-          ? `Your pricing request for product ID ${update.productId} has been approved.`
-          : `Your pricing request for product ID ${update.productId} was rejected. Remarks: ${remarks || "N/A"}.`,
+      recipientId: pricingRequest.requestedByUserId,
+      title: `Pricing ${statusMsg}`,
+      message: `${statusEmoji} Your pricing request for Product ID ${pricingRequest.productId} was ${statusMsg}. ${remarks ? `Remarks: ${remarks}` : ""}`,
       type: "pricing",
-      relatedId: update.id,
+      relatedId: pricingRequest.id,
     });
 
     if (io) {
-      io.to(`user:${update.requestedByUserId}`).emit("notification", {
-        title: `Pricing ${status}`,
-        message:
-          status === "approved"
-            ? `✅ Your pricing request (Product ID ${update.productId}) was approved`
-            : `❌ Your pricing request (Product ID ${update.productId}) was rejected`,
+      io.to(`user:${pricingRequest.requestedByUserId}`).emit("notification", {
+        title: `Pricing ${statusMsg}`,
+        message: `${statusEmoji} Your pricing request (Product ID ${pricingRequest.productId}) was ${statusMsg}`,
         type: "pricing",
       });
     }
 
-    res.json({ message: "Status updated", update });
+    res.json({
+      message: pricingRequest.status === "approved"
+        ? `Pricing ${action}d successfully`
+        : "Pricing request rejected",
+      pricingRequest,
+    });
   } catch (err) {
-    console.error("updatePricingStatus:", err);
-    res.status(500).json({ error: "Failed to update pricing status" });
+    await t.rollback();
+    console.error("approvePricingRequest:", err);
+    res.status(500).json({ error: "Failed to process pricing request" });
   }
+};
+
+// ----------------------------
+// 6️⃣ Get Pending Pricing Requests (For Current Stage)
+// ----------------------------
+exports.getPendingPricingRequests = async (req, res) => {
+  try {
+    const role = req.user.roleDetails?.name || req.user.role;
+
+    // Determine approval stage based on role
+    let approvalStage;
+    if (role === 'area_manager') approvalStage = 'area_manager';
+    else if (role === 'regional_admin') approvalStage = 'regional_admin';
+    else if (role === 'super_admin') approvalStage = 'super_admin';
+    else {
+      return res.status(403).json({ error: "Role not authorized for pricing approvals" });
+    }
+
+    const requests = await PricingUpdate.findAll({
+      where: {
+        approvalStage,
+        approvalStatus: "pending"
+      },
+      include: [
+        {
+          model: Dealer,
+          as: "dealer",
+          attributes: ["id", "businessName", "dealerCode"]
+        },
+        {
+          model: Product,
+          as: "product",
+          attributes: ["id", "name", "price"]
+        }
+      ],
+      order: [["createdAt", "DESC"]],
+    });
+
+    res.json({ requests });
+  } catch (err) {
+    console.error("getPendingPricingRequests:", err);
+    res.status(500).json({ error: "Failed to fetch pending pricing requests" });
+  }
+};
+
+// Backward compatibility - single stage approval
+exports.updatePricingStatus = async (req, res) => {
+  console.warn("updatePricingStatus is deprecated. Use approvePricingRequest instead.");
+  await exports.approvePricingRequest(req, res);
 };

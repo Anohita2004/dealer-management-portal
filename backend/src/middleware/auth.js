@@ -7,6 +7,18 @@ const verifyAsync = promisify(jwt.verify);
 // Load all models properly
 const { User, Role, Dealer } = require("../models");
 
+// Legacy → canonical role mapping to smooth transition while we finish migrations
+const LEGACY_ROLE_MAP = {
+  admin: "super_admin",
+  key_user: "technical_admin",
+  tm: "territory_manager",
+  am: "area_manager",
+  sm: "regional_manager",
+  dealer: "dealer_admin",
+  accounts: "accounts_user",
+  inventory: "inventory_user",
+};
+
 const authenticate = async (req, res, next) => {
   try {
     const header = req.headers.authorization || req.headers.Authorization;
@@ -46,16 +58,38 @@ const authenticate = async (req, res, next) => {
 
     if (!user) return res.status(401).json({ error: "User not found" });
 
+    // Normalize role name
+    const canonicalRole =
+      user.roleDetails?.name ||
+      LEGACY_ROLE_MAP[user.role] ||
+      user.role ||
+      null;
+
     req.user = {
       id: user.id,
       username: user.username,
       email: user.email,
       roleId: user.roleId,
-      role: user.roleDetails?.name || null,
+      role: canonicalRole,
+      roleDetails: user.roleDetails ? { name: canonicalRole, id: user.roleDetails.id } : null,
       dealerId: user.dealerId || user.dealer?.id || null,
       isActive: user.isActive,
       isBlocked: user.isBlocked,
+      regionId: user.regionId || null,
+      areaId: user.areaId || null,
+      territoryId: user.territoryId || null,
     };
+console.log("AUTH USER DEBUG:", {
+  id: req.user.id,
+  username: req.user.username,
+  role: req.user.role,
+  roleDetails: req.user.roleDetails,
+  regionId: req.user.regionId,
+  areaId: req.user.areaId,
+  territoryId: req.user.territoryId,
+  dealerId: req.user.dealerId
+});
+
 
     return next();
   } catch (err) {

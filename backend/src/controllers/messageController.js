@@ -11,16 +11,8 @@ exports.getMessages = async (req, res) => {
         [Op.or]: [{ senderId: userId }, { recipientId: userId }],
       },
       include: [
-        {
-          model: User,
-          as: "sender",
-          attributes: ["id", "username", "email", "role"],
-        },
-        {
-          model: User,
-          as: "recipient",
-          attributes: ["id", "username", "email", "role"],
-        },
+        { model: User, as: "sender", attributes: ["id", "username", "role"] },
+        { model: User, as: "recipient", attributes: ["id", "username", "role"] },
       ],
       order: [["createdAt", "DESC"]],
     });
@@ -28,17 +20,20 @@ exports.getMessages = async (req, res) => {
     res.json({ messages });
   } catch (error) {
     console.error("Error fetching messages:", error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: "Failed to fetch messages" });
   }
 };
 
 // 📨 Send a new message
 exports.sendMessage = async (req, res) => {
   try {
-    const { recipientId, subject, body } = req.body;
+    const { recipientId, body, subject } = req.body;
     const senderId = req.user.id;
 
-    // Create the message
+    if (!recipientId || !body) {
+      return res.status(400).json({ error: "recipientId and body are required" });
+    }
+
     const message = await Message.create({
       senderId,
       recipientId,
@@ -48,11 +43,9 @@ exports.sendMessage = async (req, res) => {
     });
 
     const io = req.app.get("io");
-
-    // 1️⃣ Real-time message push to recipient
     if (io) io.to(`user:${recipientId}`).emit("message:new", message);
 
-    // 2️⃣ Save persistent notification
+    // Save notification
     await Notification.create({
       senderId,
       recipientId,
@@ -62,7 +55,6 @@ exports.sendMessage = async (req, res) => {
       relatedId: message.id,
     });
 
-    // 3️⃣ Emit a "notification" event to recipient
     if (io) {
       io.to(`user:${recipientId}`).emit("notification", {
         title: "New Message Received",
@@ -74,29 +66,38 @@ exports.sendMessage = async (req, res) => {
     res.status(201).json({ message });
   } catch (error) {
     console.error("Error sending message:", error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: "Failed to send message" });
   }
 };
 
-// ✅ Mark message as read
+// ✅ Mark one or multiple messages as read
 exports.markAsRead = async (req, res) => {
   try {
-    const { id } = req.params;
-    const message = await Message.findByPk(id);
+    const { id } = req.params; // can be a single message ID or comma-separated IDs
+    const userId = req.user.id;
 
-    if (!message) return res.status(404).json({ error: "Message not found" });
+    const ids = id.split(","); // allow multiple IDs
+    const messages = await Message.findAll({
+      where: {
+        id: { [Op.in]: ids },
+        recipientId: userId,
+        status: "unread",
+      },
+    });
 
-    message.status = "read";
-    await message.save();
+    if (!messages.length) {
+      return res.status(404).json({ error: "No unread messages found" });
+    }
 
-    res.json({ message });
+    await Promise.all(messages.map((msg) => (msg.status = "read", msg.save())));
+    res.json({ messages });
   } catch (error) {
-    console.error("Error marking message as read:", error);
-    res.status(500).json({ error: error.message });
+    console.error("Error marking messages as read:", error);
+    res.status(500).json({ error: "Failed to mark messages as read" });
   }
 };
 
-// 💬 Get conversation between two users (Dealer ↔ Manager)
+// 💬 Get conversation between current user and partner
 exports.getConversation = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -119,7 +120,6 @@ exports.getConversation = async (req, res) => {
     res.json({ messages });
   } catch (error) {
     console.error("Error fetching conversation:", error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: "Failed to fetch conversation" });
   }
 };
-

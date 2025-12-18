@@ -1,5 +1,10 @@
 // src/controllers/orderController.js
 const { Order, OrderItem, Material, Dealer, sequelize } = require("../models");
+const { nextStage, isApproverForStage } = require("../utils/approvalEngine");
+const RBACEngine = require("../services/rbacEngine");
+const { WorkflowService } = require("../services/workflow");
+const eventBus = require("../services/eventBus");
+const inventoryService = require("../services/inventoryService");
 
 // --------------------------------------
 // PLACE ORDER  (Dealer / Dealer Staff)
@@ -16,7 +21,6 @@ exports.placeOrder = async (req, res) => {
       return res.status(400).json({ error: "No items provided" });
 
     let total = 0;
-
     for (const it of items) {
       const mat = await Material.findByPk(it.materialId);
       if (!mat) {
@@ -39,6 +43,11 @@ exports.placeOrder = async (req, res) => {
       { transaction: t }
     );
 
+    // Start workflow
+    await WorkflowService.startWorkflow("order", order, req.user, {
+      transaction: t,
+    });
+
     for (const it of items) {
       const lineTotal = Number(it.qty) * Number(it.unitPrice || 0);
       await OrderItem.create(
@@ -54,16 +63,24 @@ exports.placeOrder = async (req, res) => {
     }
 
     await t.commit();
+
+    // Emit order created event
+    await eventBus.emit('order:created', {
+      orderId: order.id,
+      dealerId: order.dealerId,
+      orderNumber: order.orderNumber
+    });
+
     return res.status(201).json({
       orderId: order.id,
       orderNumber: order.orderNumber,
+      approvalStage: order.approvalStage,
+      approvalStatus: order.approvalStatus,
     });
   } catch (err) {
     await t.rollback();
     console.error("placeOrder:", err);
-    res
-      .status(500)
-      .json({ error: "Failed to place order", details: err.message });
+    res.status(500).json({ error: "Failed to place order", details: err.message });
   }
 };
 
@@ -79,13 +96,8 @@ exports.getMyOrders = async (req, res) => {
       include: [
         {
           model: OrderItem,
-          as: "items", // 🔥 FIXED alias
-          include: [
-            {
-              model: Material,
-              as: "material", // 🔥 FIXED alias
-            },
-          ],
+          as: "items",
+          include: [{ model: Material, as: "material" }],
         },
       ],
       order: [["createdAt", "DESC"]],
@@ -99,21 +111,26 @@ exports.getMyOrders = async (req, res) => {
 };
 
 // --------------------------------------
-// ADMIN / MANAGER → ALL ORDERS
+// ADMIN / MANAGER → ALL ORDERS (SCOPED)
 // --------------------------------------
 exports.getAllOrders = async (req, res) => {
   try {
+    // Use RBAC engine for scoping
+    let whereClause = {};
+
+    // If scoping middleware populated a scope, honor it
+    if (req.scope?.order) {
+      whereClause = { ...req.scope.order };
+    } else {
+      // Use RBAC engine to build scope
+      whereClause = await RBACEngine.buildScopeWhereClause(req.user, 'Order');
+    }
+
     const orders = await Order.findAll({
+      where: whereClause,
       include: [
-        {
-          model: OrderItem,
-          as: "items",
-          include: [{ model: Material, as: "material" }],
-        },
-        {
-          model: Dealer,
-          as: "dealer",
-        },
+        { model: OrderItem, as: "items", include: [{ model: Material, as: "material" }] },
+        { model: Dealer, as: "dealer" },
       ],
       order: [["createdAt", "DESC"]],
     });
@@ -134,24 +151,20 @@ exports.updateOrderStatus = async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
 
-    const order = await Order.findByPk(id, {
-      include: [{ model: OrderItem, as: "items" }],
-    });
-
+    const order = await Order.findByPk(id, { include: [{ model: OrderItem, as: "items" }] });
     if (!order) return res.status(404).json({ error: "Order not found" });
 
+    const oldStatus = order.status;
     order.status = status;
     await order.save({ transaction: t });
 
+    // Use inventory service for stock management
     if (["Shipped", "Processing"].includes(status)) {
-      for (const item of order.items) {
-        const mat = await Material.findByPk(item.materialId);
-        if (mat) {
-          mat.stock = Math.max(0, (mat.stock || 0) - item.qty);
-          await mat.save({ transaction: t });
-        }
-      }
+      await inventoryService.reduceStockOnOrderApproval(order.id, t);
     }
+
+    // Handle status change events
+    await inventoryService.handleOrderStatusChange(order.id, oldStatus, status);
 
     await t.commit();
     res.json({ order });
@@ -163,31 +176,94 @@ exports.updateOrderStatus = async (req, res) => {
 };
 
 // --------------------------------------
-// APPROVE ORDER
+// APPROVE ORDER (Multi-stage)
 // --------------------------------------
 exports.approveOrder = async (req, res) => {
-  const order = await Order.findByPk(req.params.id);
-  if (!order)
-    return res.status(404).json({ error: "Order not found" });
+  const t = await sequelize.transaction();
+  try {
+    const { reason, notes } = req.body;
+    const order = await Order.findByPk(req.params.id, {
+      include: [{ model: OrderItem, as: "items" }],
+      transaction: t
+    });
+    if (!order) {
+      await t.rollback();
+      return res.status(404).json({ error: "Order not found" });
+    }
 
-  order.status = "Approved";
-  await order.save();
-  res.json({ message: "Order approved" });
+    // Use workflow service for approval
+    const result = await WorkflowService.approve(
+      "order",
+      order,
+      req.user,
+      { remarks: notes || reason, transaction: t }
+    );
+
+    // If final approval, reduce stock
+    if (result.isFinal) {
+      await inventoryService.reduceStockOnOrderApproval(order.id, t);
+    }
+
+    await t.commit();
+
+    return res.json({
+      message: result.message,
+      order: result.entity,
+      stage: result.stage,
+      isFinal: result.isFinal
+    });
+  } catch (err) {
+    await t.rollback();
+    console.error("approveOrder:", err);
+    res.status(500).json({ error: "Failed to approve order", details: err.message });
+  }
+};
+
+
+// --------------------------------------
+// REJECT ORDER (Multi-stage)
+// --------------------------------------
+exports.rejectOrder = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const { reason } = req.body;
+    const order = await Order.findByPk(req.params.id, { transaction: t });
+    if (!order) {
+      await t.rollback();
+      return res.status(404).json({ error: "Order not found" });
+    }
+
+    // Use workflow service for rejection
+    const result = await WorkflowService.reject(
+      "order",
+      order,
+      req.user,
+      { reason, rollback: true, transaction: t }
+    );
+
+    await t.commit();
+    return res.json({ message: "Order rejected", order: result.entity });
+  } catch (err) {
+    await t.rollback();
+    console.error("rejectOrder:", err);
+    res.status(500).json({ error: "Failed to reject order", details: err.message });
+  }
 };
 
 // --------------------------------------
-// REJECT ORDER
+// GET WORKFLOW STATUS
 // --------------------------------------
-exports.rejectOrder = async (req, res) => {
-  const { reason } = req.body;
+exports.getWorkflowStatus = async (req, res) => {
+  try {
+    const order = await Order.findByPk(req.params.id);
+    if (!order) {
+      return res.status(404).json({ error: "Order not found" });
+    }
 
-  const order = await Order.findByPk(req.params.id);
-  if (!order)
-    return res.status(404).json({ error: "Order not found" });
-
-  order.status = "Rejected";
-  order.notes = reason;
-  await order.save();
-
-  res.json({ message: "Order rejected" });
+    const status = await WorkflowService.getWorkflowStatus("order", order);
+    res.json({ success: true, workflow: status });
+  } catch (err) {
+    console.error("getWorkflowStatus:", err);
+    res.status(500).json({ error: "Failed to get workflow status", details: err.message });
+  }
 };

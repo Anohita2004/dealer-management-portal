@@ -32,16 +32,16 @@ Object.keys(db).forEach((modelName) => {
 db.sequelize = sequelize;
 db.Sequelize = Sequelize;
 
-// ADD THIS ⬇⬇⬇
-db.syncDatabase = async () => {
-  try {
-    await db.sequelize.sync();
+// Removed auto-sync since we use migrations
+// db.syncDatabase = async () => {
+//   try {
+//     await db.sequelize.sync({ alter: false, force: false });
 
-    console.log("✅ Database synchronized successfully.");
-  } catch (error) {
-    console.error("❌ Error synchronizing database:", error);
-  }
-};
+//     console.log("✅ Database synchronized successfully.");
+//   } catch (error) {
+//     console.error("❌ Error synchronizing database:", error);
+//   }
+// };
 
 // EXPORT ALL
 module.exports = db;

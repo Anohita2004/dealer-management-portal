@@ -7,7 +7,7 @@ const accountsController = require("../controllers/accountsController");
 router.get(
   "/summary",
   authenticate,
-  authorize("accounts", "super_admin"),
+  authorize("accounts_user", "super_admin"),
   accountsController.getSummary
 );
 
@@ -15,25 +15,25 @@ router.get(
 router.get(
   "/invoices",
   authenticate,
-  authorize("accounts", "super_admin"),
+  authorize("accounts_user", "super_admin"),
   accountsController.getInvoices
 );
 router.post(
   "/invoices",
   authenticate,
-  authorize("accounts", "super_admin"),
+  authorize("accounts_user", "super_admin"),
   accountsController.createInvoice
 );
 router.put(
   "/invoices/:id",
   authenticate,
-  authorize("accounts", "super_admin"),
+  authorize("accounts_user", "super_admin"),
   accountsController.updateInvoice
 );
 router.delete(
   "/invoices/:id",
   authenticate,
-  authorize("accounts", "super_admin"),
+  authorize("accounts_user", "super_admin"),
   accountsController.deleteInvoice
 );
 
@@ -41,25 +41,25 @@ router.delete(
 router.get(
   "/notes",
   authenticate,
-  authorize("accounts", "super_admin"),
+  authorize("accounts_user", "super_admin"),
   accountsController.getNotes
 );
 router.post(
   "/notes",
   authenticate,
-  authorize("accounts", "super_admin"),
+  authorize("accounts_user", "super_admin"),
   accountsController.createNote
 );
 router.put(
   "/notes/:id",
   authenticate,
-  authorize("accounts", "super_admin"),
+  authorize("accounts_user", "super_admin"),
   accountsController.updateNote
 );
 router.delete(
   "/notes/:id",
   authenticate,
-  authorize("accounts", "super_admin"),
+  authorize("accounts_user", "super_admin"),
   accountsController.deleteNote
 );
 
@@ -67,19 +67,19 @@ router.delete(
 router.get(
   "/statements",
   authenticate,
-  authorize("accounts", "super_admin"),
+  authorize("accounts_user", "super_admin"),
   accountsController.getStatements
 );
 router.post(
   "/statements",
   authenticate,
-  authorize("accounts", "super_admin"),
+  authorize("accounts_user", "super_admin"),
   accountsController.createStatement
 );
 router.put(
   "/statements/:id",
   authenticate,
-  authorize("accounts", "super_admin"),
+  authorize("accounts_user", "super_admin"),
   accountsController.updateStatement
 );
 
@@ -87,7 +87,7 @@ router.put(
 router.get(
   "/reconciliation",
   authenticate,
-  authorize("accounts", "super_admin"),
+  authorize("accounts_user", "super_admin"),
   accountsController.getReconciliation
 );
 

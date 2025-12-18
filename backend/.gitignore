@@ -1,2 +1,4 @@
-.github/instructions/kluster-code-verify.instructions.md
-.kluster
+# Note: .kluster and .github/instructions/ files are tracked in this repository
+# If you need to ignore them in the future, uncomment the lines below:
+# .github/instructions/kluster-code-verify.instructions.md
+# .kluster

@@ -1,57 +1,64 @@
-const { DataTypes } = require('sequelize');
-
 module.exports = (sequelize, DataTypes) => {
 
   const Campaign = sequelize.define('Campaign', {
     id: {
       type: DataTypes.UUID,
       defaultValue: DataTypes.UUIDV4,
-      primaryKey: true
+      primaryKey: true,
     },
-    campaignName: {
-      type: DataTypes.STRING,
-      allowNull: false
-    },
+
+    campaignName: { type: DataTypes.STRING, allowNull:false },
     campaignType: {
-      type: DataTypes.ENUM('promotion', 'sales_scheme', 'seasonal_offer'),
-      allowNull: false
+      type: DataTypes.ENUM('promotion','sales_scheme','seasonal_offer'),
+      allowNull:false
     },
-    description: {
-      type: DataTypes.TEXT
-    },
-    startDate: {
-      type: DataTypes.DATE,
-      allowNull: false
-    },
-    endDate: {
-      type: DataTypes.DATE,
-      allowNull: false
-    },
-    productGroup: {
-      type: DataTypes.STRING
-    },
-    discountPercentage: {
-      type: DataTypes.DECIMAL(5, 2)
-    },
-    discountAmount: {
-      type: DataTypes.DECIMAL(15, 2)
-    },
-    targetAudience: {
-      type: DataTypes.JSON
-    },
+    description: DataTypes.TEXT,
+
+    startDate: { type: DataTypes.DATE, allowNull:false },
+    endDate: { type: DataTypes.DATE, allowNull:false },
+
+    productGroup: DataTypes.STRING,
+    discountPercentage: DataTypes.DECIMAL(5,2),
+    discountAmount: DataTypes.DECIMAL(15,2),
+
+    targetAudience: DataTypes.JSON,
+
     isActive: {
       type: DataTypes.BOOLEAN,
       defaultValue: true
     },
-    terms: {
-      type: DataTypes.TEXT
+
+    terms: DataTypes.TEXT,
+    bannerImage: DataTypes.STRING,
+
+    areaId: { type: DataTypes.UUID, allowNull:true },
+
+    // Approval workflow fields
+    approvalStage: {
+      type: DataTypes.STRING,
+      allowNull: true
     },
-    bannerImage: {
-      type: DataTypes.STRING
-    }
+    approvalStatus: {
+      type: DataTypes.ENUM('pending', 'approved', 'rejected'),
+      defaultValue: 'pending'
+    },
+    approvedBy: DataTypes.STRING,
+    approvedAt: DataTypes.DATE,
+    rejectionReason: DataTypes.TEXT,
+    currentSlaExpiresAt: DataTypes.DATE
   }, {
-    timestamps: true
+    timestamps:true,
+    tableName:"Campaigns"
   });
+
+  // 🔥 Add association (critical)
+  Campaign.associate = models => {
+    Campaign.belongsTo(models.Area, {
+      foreignKey:"areaId",
+      as:"area",
+      onDelete:"SET NULL"
+    });
+  };
 
   return Campaign;
 };

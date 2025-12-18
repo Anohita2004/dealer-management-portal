@@ -28,6 +28,15 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.INTEGER,
       defaultValue: 0
     },
+    reorderLevel: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: 0
+    },
+    expiryDate: {
+      type: DataTypes.DATE,
+      allowNull: true
+    },
     materialGroupId: {
       type: DataTypes.UUID,
       allowNull: true

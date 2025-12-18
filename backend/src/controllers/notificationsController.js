@@ -1,113 +1,145 @@
-const { Notification,Dealer, Document } = require('../models');
-const { Op } = require('sequelize');
+const { Notification, Dealer, Document } = require("../models");
+const { Op } = require("sequelize");
 
-// ========================= Get Manager Notifications =========================
+/* =====================================================================
+   1) MANAGER LIVE DASHBOARD SNAPSHOT (NOT LIST)
+=====================================================================*/
 exports.getManagerNotifications = async (req, res) => {
   try {
-    const { role, region, territory, id } = req.user;
-    const whereDealer = {};
-    if (region) whereDealer.region = region;
-    if (territory) whereDealer.territory = territory;
+    const { region, territory, id } = req.user;
+    const where = {};
+    if (region) where.region = region;
+    if (territory) where.territory = territory;
 
     const expiringLicenses = await Dealer.count({
       where: {
-        ...whereDealer,
+        ...where,
         licenses: { [Op.ne]: null },
-        updatedAt: { [Op.lt]: new Date(Date.now() - 330 * 24 * 60 * 60 * 1000) } // older than 11 months
+        updatedAt: { [Op.lt]: new Date(Date.now() - (330 * 24 * 60 * 60 * 1000)) }
       }
     });
 
     const pendingDocs = await Document.count({
-      where: { status: 'pending', ...whereDealer }
+      where: { status: "pending", ...where }
     });
 
-    const data = {
-      expiringLicenses,
-      pendingDocs,
-      message: 'Notifications fetched successfully'
-    };
+    const summary = { expiringLicenses, pendingDocs };
 
-    // 🔌 SOCKET: emit real-time update to TM/AM dashboard
-    const io = req.app.get('io');
-    if (io) io.to(`user:${id}`).emit('notification:update', data);
+    req.app.get("io")?.to(`user:${id}`).emit("notification:update", summary);
+    return res.json(summary);
 
-    res.json(data);
-  } catch (error) {
-    console.error('Manager notifications error:', error);
-    res.status(500).json({ error: 'Failed to fetch notifications' });
-  }
-};
-// src/controllers/notificationController.js
-
-// ========================= Manager Snapshot Notifications =========================
-exports.getManagerNotifications = async (req, res) => {
-  try {
-    const { role, region, territory, id } = req.user;
-    const whereDealer = {};
-    if (region) whereDealer.region = region;
-    if (territory) whereDealer.territory = territory;
-
-    const expiringLicenses = await Dealer.count({
-      where: {
-        ...whereDealer,
-        licenses: { [Op.ne]: null },
-        updatedAt: { [Op.lt]: new Date(Date.now() - 330 * 24 * 60 * 60 * 1000) },
-      },
-    });
-
-    const pendingDocs = await Document.count({
-      where: { status: 'pending', ...whereDealer },
-    });
-
-    const summary = {
-      expiringLicenses,
-      pendingDocs,
-      message: 'Notifications fetched successfully',
-    };
-
-    const io = req.app.get('io');
-    if (io) io.to(`user:${id}`).emit('notification:update', summary);
-
-    res.json(summary);
-  } catch (error) {
-    console.error('Manager notifications error:', error);
-    res.status(500).json({ error: 'Failed to fetch notifications' });
+  } catch (err) {
+    console.error("Manager Notification Error:", err);
+    res.status(500).json({ error: "Failed to fetch notifications" });
   }
 };
 
-// ========================= Real Notification CRUD =========================
+/* =====================================================================
+   2) User — GET Notifications List
+=====================================================================*/
 exports.getUserNotifications = async (req, res) => {
   try {
     const { id, role } = req.user;
-    const where = {
-      [Op.or]: [
-        { recipientId: id },
-        { recipientRole: role },
-      ],
-    };
 
     const notes = await Notification.findAll({
-      where,
-      order: [['createdAt', 'DESC']],
+      where: {
+        [Op.or]: [
+          { recipientId: id },      // user-specific
+          { recipientRole: role },  // role broadcast
+        ]
+      },
+      order: [["createdAt", "DESC"]],
+      limit: 50
     });
 
     res.json({ notifications: notes });
   } catch (err) {
-    console.error('Get notifications error:', err);
-    res.status(500).json({ error: 'Failed to fetch notifications' });
+    console.error("getUserNotifications ERROR:", err);
+    res.status(500).json({ error: "Failed to fetch notifications" });
   }
 };
 
+
+/* =====================================================================
+   3) Create Notification (Admin / System)
+=====================================================================*/
+exports.createNotification = async (req, res) => {
+  try {
+    const note = await Notification.create(req.body);
+
+    // Push live to recipient channel
+    req.app.get("io")?.to(`user:${note.recipientId}`).emit("notification:new", note);
+
+    res.json({ message: "Notification created", note });
+
+  } catch (err) {
+    console.error("Create Notification Error:", err);
+    res.status(500).json({ error: "Failed to create notification" });
+  }
+};
+
+/* =====================================================================
+   4) Mark Single Notification Read
+=====================================================================*/
 exports.markAsRead = async (req, res) => {
   try {
-    const { id } = req.params;
-    const note = await Notification.findByPk(id);
-    if (!note) return res.status(404).json({ error: 'Notification not found' });
+    const note = await Notification.findByPk(req.params.id);
+    if (!note) return res.status(404).json({ error: "Not found" });
 
     await note.update({ isRead: true });
-    res.json({ message: 'Notification marked as read', note });
+    res.json({ message: "Marked as read" });
+
   } catch (err) {
-    console.error('Mark notification read error:', err);
-    res.status(500).json({ error: 'Failed to update notification' });
+    console.error(err);
+    res.status(500).json({ error: "Failed to update notification" });
+  }
+};
+
+/* =====================================================================
+   5) Mark ALL as read
+=====================================================================*/
+exports.markAllAsRead = async (req, res) => {
+  try {
+    await Notification.update(
+      { isRead: true },
+      { where: { recipientId: req.user.id } }
+    );
+
+    res.json({ message: "All marked as read" });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to mark all read" });
+  }
+};
+
+/* =====================================================================
+   6) Delete Notification
+=====================================================================*/
+exports.deleteNotification = async (req, res) => {
+  try {
+    await Notification.destroy({ where: { id: req.params.id }});
+    res.json({ message: "Notification deleted" });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to delete notification" });
+  }
+};
+
+/* =====================================================================
+   7) Unread Count
+=====================================================================*/
+exports.getUnreadCount = async (req, res) => {
+  try {
+    const unread = await Notification.count({
+      where: { recipientId: req.user.id, isRead: false }
+    });
+
+    res.json({ unread });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to get unread count" });
   }
 };

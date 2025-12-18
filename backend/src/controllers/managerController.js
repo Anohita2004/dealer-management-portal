@@ -5,8 +5,33 @@ const {
   PricingUpdate,
   AccountStatement,
   Product,
+  User,
 } = require('../models');
 const { Op } = require('sequelize');
+
+/**
+ * Helper: check if a dealer is within the acting manager's scope.
+ * Super / technical admins are global.
+ */
+function isDealerInScope(manager, dealer) {
+  const role = manager.roleDetails?.name || manager.role;
+
+  if (['super_admin', 'technical_admin'].includes(role)) return true;
+
+  if (['regional_admin', 'regional_manager'].includes(role) && manager.regionId) {
+    return dealer.regionId === manager.regionId;
+  }
+
+  if (role === 'area_manager' && manager.areaId) {
+    return dealer.areaId === manager.areaId;
+  }
+
+  if (role === 'territory_manager' && manager.territoryId) {
+    return dealer.territoryId === manager.territoryId;
+  }
+
+  return false;
+}
 
 module.exports = {
   // ======================================
@@ -91,8 +116,8 @@ getDealers: async (req, res) => {
         },
         {
           // 🔹 Add the associated User record (used for messaging)
-          model: require("../models").User,
-          as: "users",
+          model: User,
+          as: "user",
           attributes: ["id", "username", "email", "role"],
         },
       ],
@@ -264,6 +289,11 @@ getPricingRequests: async (req, res) => {
 
       const dealer = await Dealer.findByPk(dealerId);
       if (!dealer) return res.status(404).json({ error: 'Dealer not found' });
+
+      // Ensure the acting user is allowed to manage this dealer
+      if (!isDealerInScope(req.user, dealer)) {
+        return res.status(403).json({ error: 'Dealer is outside your scope' });
+      }
 
       dealer.managerId = managerId;
       await dealer.save();

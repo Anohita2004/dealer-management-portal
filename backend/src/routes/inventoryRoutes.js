@@ -2,12 +2,14 @@ const express = require("express");
 const router = express.Router();
 const { authenticate, authorize } = require("../middleware/auth");
 const inventoryController = require("../controllers/inventoryController");
+const checkPermission = require("../middleware/checkPermission");
 
 // ✅ Fetch summary — visible to Inventory, Admin, and Key Users
 router.get(
   "/summary",
   authenticate,
-  authorize("inventory", "super_admin", "key_user","dealer", "tm"),
+  authorize("inventory_user", "super_admin", "key_user","dealer_admin", "tm"),
+  checkPermission("inventory.view"),
   inventoryController.getInventorySummary
 );
 
@@ -15,7 +17,8 @@ router.get(
 router.get(
   "/details",
   authenticate,
-  authorize("inventory", "super_admin"),
+  authorize("inventory_user", "super_admin"),
+  checkPermission("inventory.view"),
   inventoryController.getInventoryDetails
 );
 
@@ -23,7 +26,8 @@ router.get(
 router.post(
   "/",
   authenticate,
-  authorize("inventory", "super_admin"),
+  authorize("inventory_user", "super_admin"),
+  checkPermission("inventory.manage"),
   inventoryController.addItem
 );
 
@@ -31,7 +35,8 @@ router.post(
 router.put(
   "/:id",
   authenticate,
-  authorize("inventory", "super_admin"),
+  authorize("inventory_user", "super_admin"),
+  checkPermission("inventory.manage"),
   inventoryController.updateItem
 );
 
@@ -39,7 +44,8 @@ router.put(
 router.delete(
   "/:id",
   authenticate,
-  authorize("inventory", "super_admin"),
+  authorize("inventory_user", "super_admin"),
+  checkPermission("inventory.manage"),
   inventoryController.deleteItem
 );
 
@@ -47,7 +53,8 @@ router.delete(
 router.get(
   "/export",
   authenticate,
-  authorize("inventory", "super_admin", "key_user"),
+  authorize("inventory_user", "super_admin", "key_user"),
+  checkPermission("inventory.view"),
   inventoryController.exportInventory
 );
 

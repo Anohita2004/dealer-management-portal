@@ -39,6 +39,17 @@ module.exports = (sequelize, DataTypes) => {
       approvedBy: { type: DataTypes.UUID },
       approvedAt: { type: DataTypes.DATE },
       rejectionReason: { type: DataTypes.TEXT },
+      currentSlaExpiresAt: { type: DataTypes.DATE, allowNull: true },
+
+      // Approval workflow fields
+      approvalStage: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
+      approvalStatus: {
+        type: DataTypes.ENUM('pending', 'approved', 'rejected'),
+        defaultValue: 'pending',
+      },
 
       sapDocumentId: { type: DataTypes.STRING },
     },

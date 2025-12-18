@@ -1,228 +1,505 @@
-const { Invoice, Dealer, AuditLog, Order } = require('../models');
-const { Op } = require('sequelize');
-const PDFDocument = require('pdfkit');
-const fs = require('fs');
-const path = require('path');
+const { Invoice, Dealer, AuditLog, Order, Notification, sequelize } = require("../models");
+const { Op } = require("sequelize");
+const PDFDocument = require("pdfkit");
+const fs = require("fs");
+const path = require("path");
+const { nextStage, isApproverForStage } = require("../utils/approvalEngine");
+const RBACEngine = require("../services/rbacEngine");
+const { WorkflowService } = require("../services/workflow");
+const eventBus = require("../services/eventBus");
+const notificationService = require("../services/notificationService");
+
+/* ============================================================
+   Utility Functions
+=========================================================== */
+
+const computeAmounts = (data = {}) => {
+  const base = Number(data.baseAmount || data.amount || 0);
+  const tax = Number(data.taxAmount || 0);
+  const paid = Number(data.paidAmount || 0);
+
+  const total = base + tax;
+  const balance = total - paid;
+
+  return {
+    baseAmount: base,
+    taxAmount: tax,
+    totalAmount: total,
+    paidAmount: paid,
+    balanceAmount: balance < 0 ? 0 : balance
+  };
+};
+
+const ensureDirectory = (dirPath) => {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+  }
+};
+
+/* ============================================================
+   GET ALL INVOICES (with advanced filtering)
+=========================================================== */
 
 const getAllInvoices = async (req, res) => {
   try {
-    const { page = 1, limit = 10, dealerId, status, productGroup, startDate, endDate } = req.query;
+    const role = req.user.roleDetails?.name || req.user.role;
+    const {
+      page = 1,
+      limit = 10,
+      dealerId,
+      status,
+      startDate,
+      endDate,
+      search
+    } = req.query;
+
     const offset = (page - 1) * limit;
 
     const where = {};
+
     if (dealerId) where.dealerId = dealerId;
     if (status) where.status = status;
-    if (productGroup) where.productGroup = productGroup;
+
     if (startDate && endDate) {
       where.invoiceDate = {
-        [Op.between]: [new Date(startDate), new Date(endDate)]
+        [Op.between]: [new Date(startDate), new Date(endDate)],
       };
     }
 
-    if (req.user.role === 'dealer') {
+    if (search) {
+      where[Op.or] = [
+        { invoiceNumber: { [Op.like]: `%${search}%` } },
+        { description: { [Op.like]: `%${search}%` } }
+      ];
+    }
+
+    if (req.scope?.invoices) {
+      Object.assign(where, req.scope.invoices);
+    } else if (["dealer_admin", "dealer_staff", "dealer"].includes(role)) {
       where.dealerId = req.user.dealerId;
     }
 
     const { count, rows } = await Invoice.findAndCountAll({
       where,
-      include: [{ model: Dealer, as: 'dealer' }],
+      include: [{ model: Dealer, as: "dealer" }],
       limit: parseInt(limit),
-      offset: parseInt(offset),
-      order: [['invoiceDate', 'DESC']]
+      offset,
+      order: [["invoiceDate", "DESC"]],
     });
 
     res.json({
       invoices: rows,
       total: count,
-      page: parseInt(page),
-      totalPages: Math.ceil(count / limit)
+      page: Number(page),
+      totalPages: Math.ceil(count / limit),
     });
   } catch (error) {
-    console.error('Get invoices error:', error);
-    res.status(500).json({ error: 'Failed to fetch invoices' });
+    console.error("Get invoices error:", error);
+    res.status(500).json({ error: "Failed to fetch invoices" });
   }
 };
 
+/* ============================================================
+   GET SINGLE INVOICE
+=========================================================== */
+
 const getInvoiceById = async (req, res) => {
   try {
+    const role = req.user.roleDetails?.name || req.user.role;
     const { id } = req.params;
+
     const where = { id };
 
-    if (req.user.role === 'dealer') {
+    if (req.scope?.invoices) {
+      Object.assign(where, req.scope.invoices);
+    } else if (["dealer_admin", "dealer_staff", "dealer"].includes(role)) {
       where.dealerId = req.user.dealerId;
     }
 
     const invoice = await Invoice.findOne({
       where,
-      include: [{ model: Dealer, as: 'dealer' }]
+      include: [{ model: Dealer, as: "dealer" }],
     });
 
     if (!invoice) {
-      return res.status(404).json({ error: 'Invoice not found' });
+      return res.status(404).json({ error: "Invoice not found" });
     }
 
     res.json(invoice);
   } catch (error) {
-    console.error('Get invoice error:', error);
-    res.status(500).json({ error: 'Failed to fetch invoice' });
+    console.error("Get invoice error:", error);
+    res.status(500).json({ error: "Failed to fetch invoice" });
   }
 };
 
+/* ============================================================
+   CREATE INVOICE (Dealer Staff & Admin)
+=========================================================== */
+
 const createInvoice = async (req, res) => {
   try {
+    const role = req.user.roleDetails?.name || req.user.role;
+    let data = { ...req.body };
 
-    // Business rule: dealer_staff may create invoice only for orders that
-    // belong to their dealer and are already Approved by dealer_admin.
-    const invoiceData = { ...req.body };
+    if (role === "dealer_staff") {
+      const { orderId } = data;
 
-    if (req.user.role === 'dealer_staff') {
-      const { orderId } = req.body;
       if (!orderId) {
-        return res.status(400).json({ error: 'orderId is required for dealer staff invoice requests' });
+        return res.status(400).json({ error: "orderId is required" });
       }
 
       const order = await Order.findByPk(orderId);
-      if (!order) return res.status(404).json({ error: 'Order not found' });
+      if (!order) return res.status(404).json({ error: "Order not found" });
 
-      if ((order.dealerId || '') !== (req.user.dealerId || '')) {
-        return res.status(403).json({ error: 'Forbidden: order does not belong to your dealer' });
+      if (order.dealerId !== req.user.dealerId) {
+        return res.status(403).json({ error: "Order does not belong to your dealer" });
       }
 
-      if (order.status !== 'Approved') {
-        return res.status(400).json({ error: 'Order must be Approved by dealer admin before creating invoice' });
+      if (order.status !== "Approved") {
+        return res
+          .status(400)
+          .json({ error: "Order must be approved before invoice creation" });
       }
 
-      // Derive invoice values from order if not provided
-      invoiceData.dealerId = order.dealerId;
-      invoiceData.orderId = order.id;
-      invoiceData.totalAmount = invoiceData.totalAmount || order.totalAmount;
-      invoiceData.invoiceNumber = invoiceData.invoiceNumber || `INV-${Date.now()}`;
-      invoiceData.invoiceDate = invoiceData.invoiceDate || new Date();
+      data.dealerId = order.dealerId;
+      data.orderId = order.id;
+      data.description = data.description || order.description;
+      data.invoiceNumber = data.invoiceNumber || `INV-${Date.now()}`;
+      data.invoiceDate = new Date();
+
+      data.baseAmount = data.baseAmount || order.totalAmount;
+      data.taxAmount = data.taxAmount || 0;
+      data.paidAmount = 0;
     }
 
-    // compute balanceAmount
-    invoiceData.balanceAmount = (invoiceData.totalAmount || 0) - (invoiceData.paidAmount || 0);
+    // Initialize approval workflow for invoices
+    const firstStage = nextStage(null, "invoice");
+    data.approvalStage = firstStage;
+    data.approvalStatus = "pending";
+
+    const amounts = computeAmounts(data);
+    const invoiceData = { ...data, ...amounts };
 
     const invoice = await Invoice.create(invoiceData);
 
     await AuditLog.create({
       userId: req.user.id,
-      action: 'CREATE_INVOICE',
-      entity: 'Invoice',
+      action: "CREATE_INVOICE",
+      entity: "Invoice",
       entityId: invoice.id,
       changes: invoiceData,
       ipAddress: req.ip,
-      userAgent: req.headers['user-agent']
+      userAgent: req.headers["user-agent"],
     });
+
+    // Emit event for automation
+    await eventBus.emit('invoice:created', {
+      invoiceId: invoice.id,
+      dealerId: invoice.dealerId,
+      invoiceNumber: invoice.invoiceNumber
+    });
+
+    // Use notification service
+    await notificationService.notifyInvoiceCreated(invoice);
 
     res.status(201).json(invoice);
   } catch (error) {
-    console.error('Create invoice error:', error);
-    res.status(500).json({ error: 'Failed to create invoice' });
+    console.error("Create invoice error:", error);
+    res.status(500).json({ error: "Failed to create invoice" });
   }
 };
+
+/* ============================================================
+   UPDATE INVOICE (Admins only)
+=========================================================== */
 
 const updateInvoice = async (req, res) => {
   try {
     const { id } = req.params;
-    const invoice = await Invoice.findByPk(id);
 
-    if (!invoice) {
-      return res.status(404).json({ error: 'Invoice not found' });
-    }
+    const invoice = await Invoice.findByPk(id);
+    if (!invoice) return res.status(404).json({ error: "Invoice not found" });
 
     const oldData = invoice.toJSON();
+
+    const amounts = computeAmounts(req.body);
+
     const updateData = {
       ...req.body,
-      balanceAmount: req.body.totalAmount - (req.body.paidAmount || 0)
+      ...amounts,
     };
 
     await invoice.update(updateData);
 
     await AuditLog.create({
       userId: req.user.id,
-      action: 'UPDATE_INVOICE',
-      entity: 'Invoice',
+      action: "UPDATE_INVOICE",
+      entity: "Invoice",
       entityId: invoice.id,
       changes: { old: oldData, new: updateData },
       ipAddress: req.ip,
-      userAgent: req.headers['user-agent']
+      userAgent: req.headers["user-agent"],
     });
 
     res.json(invoice);
   } catch (error) {
-    console.error('Update invoice error:', error);
-    res.status(500).json({ error: 'Failed to update invoice' });
+    console.error("Update invoice error:", error);
+    res.status(500).json({ error: "Failed to update invoice" });
   }
 };
+
+/* ============================================================
+   APPROVE / REJECT INVOICE (Multi-Stage)
+=========================================================== */
+
+const approveInvoice = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const { id } = req.params;
+    const { action, reason, notes } = req.body;
+
+    if (!["approve", "reject"].includes(action))
+      return res.status(400).json({ error: "Invalid action" });
+
+    const invoice = await Invoice.findByPk(id, {
+      include: [{ model: Dealer, as: "dealer" }],
+      transaction: t
+    });
+    if (!invoice) {
+      await t.rollback();
+      return res.status(404).json({ error: "Invoice not found" });
+    }
+
+    // Use workflow service
+    let result;
+    if (action === "reject") {
+      result = await WorkflowService.reject(
+        "invoice",
+        invoice,
+        req.user,
+        { reason, remarks: notes, rollback: true, transaction: t }
+      );
+    } else {
+      result = await WorkflowService.approve(
+        "invoice",
+        invoice,
+        req.user,
+        { remarks: notes || reason, transaction: t }
+      );
+    }
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: action === "approve" ? "APPROVE_INVOICE" : "REJECT_INVOICE",
+      entity: "Invoice",
+      entityId: invoice.id,
+      changes: { action, reason },
+      ipAddress: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+
+    await t.commit();
+
+    res.json({
+      message: result.message || `Invoice ${invoice.approvalStatus}`,
+      invoice: invoice,
+      stage: result.currentStage,
+      isFinal: result.isFinal
+    });
+  } catch (err) {
+    await t.rollback();
+    console.error("Approve invoice error:", err);
+    res.status(500).json({ error: "Failed to update invoice status", details: err.message });
+  }
+};
+
+/* ============================================================
+   GET PENDING INVOICES FOR APPROVAL
+=========================================================== */
+
+const getPendingInvoices = async (req, res) => {
+  try {
+    const role = req.user.roleDetails?.name || req.user.role;
+
+    // Determine approval stage based on role
+    let approvalStage;
+    if (role === 'dealer_admin') approvalStage = 'dealer_admin';
+    else if (role === 'territory_manager') approvalStage = 'territory_manager';
+    else if (role === 'area_manager') approvalStage = 'area_manager';
+    else if (role === 'regional_manager') approvalStage = 'regional_manager';
+    else if (role === 'regional_admin') approvalStage = 'regional_admin';
+    else {
+      return res.status(403).json({ error: "Role not authorized for invoice approvals" });
+    }
+
+    const baseWhere = {
+      approvalStage,
+      approvalStatus: "pending"
+    };
+
+    // Use RBAC engine for scoping
+    let where = baseWhere;
+    if (req.scope?.invoice) {
+      Object.assign(where, req.scope.invoice);
+    } else {
+      const scopeWhere = await RBACEngine.buildScopeWhereClause(req.user, 'Invoice');
+      Object.assign(where, scopeWhere);
+    }
+
+    const invoices = await Invoice.findAll({
+      where,
+      include: [
+        {
+          model: Dealer,
+          as: "dealer",
+          attributes: ["id", "businessName", "dealerCode"]
+        }
+      ],
+      order: [["createdAt", "DESC"]],
+    });
+
+    res.json({ invoices });
+  } catch (err) {
+    console.error("getPendingInvoices:", err);
+    res.status(500).json({ error: "Failed to fetch pending invoices" });
+  }
+};
+
+/* ============================================================
+   GENERATE PDF WITH SAFE PATHS
+=========================================================== */
 
 const generateInvoicePDF = async (req, res) => {
   try {
     const { id } = req.params;
-    const where = { id };
-
-    if (req.user.role === 'dealer') {
-      where.dealerId = req.user.dealerId;
-    }
 
     const invoice = await Invoice.findOne({
-      where,
-      include: [{ model: Dealer, as: 'dealer' }]
+      where: { id },
+      include: [{ model: Dealer, as: "dealer" }],
     });
 
-    if (!invoice) {
-      return res.status(404).json({ error: 'Invoice not found' });
-    }
+    if (!invoice) return res.status(404).json({ error: "Invoice not found" });
+
+    const pdfDir = path.join(__dirname, "../../uploads/invoices");
+    ensureDirectory(pdfDir);
+
+    const filename = `invoice-${invoice.invoiceNumber}.pdf`;
+    const filePath = path.join(pdfDir, filename);
 
     const doc = new PDFDocument();
-    const filename = `invoice-${invoice.invoiceNumber}.pdf`;
-    const filepath = path.join(__dirname, '../../uploads', filename);
+    doc.pipe(fs.createWriteStream(filePath));
 
-    doc.pipe(fs.createWriteStream(filepath));
+    doc.fontSize(22).text("TAX INVOICE", { underline: true });
+    doc.moveDown();
 
-    doc.fontSize(20).text('INVOICE', 50, 50);
+    doc.fontSize(12).text(`Invoice No: ${invoice.invoiceNumber}`);
+    doc.text(`Invoice Date: ${invoice.invoiceDate.toDateString()}`);
+    doc.text(`Dealer: ${invoice.dealer.businessName}`);
+    doc.text(`Address: ${invoice.dealer.address}`);
+    doc.text(`City: ${invoice.dealer.city}`);
+    doc.moveDown();
+
+    doc.fontSize(14).text("Amount Details", { underline: true });
     doc.fontSize(12);
-    doc.text(`Invoice Number: ${invoice.invoiceNumber}`, 50, 100);
-    doc.text(`Invoice Date: ${invoice.invoiceDate.toDateString()}`, 50, 120);
-    doc.text(`Due Date: ${invoice.dueDate ? invoice.dueDate.toDateString() : 'N/A'}`, 50, 140);
+    doc.text(`Base Amount: ₹${invoice.baseAmount}`);
+    doc.text(`Tax Amount: ₹${invoice.taxAmount}`);
+    doc.text(`Total Amount: ₹${invoice.totalAmount}`);
+    doc.text(`Paid: ₹${invoice.paidAmount}`);
+    doc.text(`Balance: ₹${invoice.balanceAmount}`);
+    doc.moveDown(2);
 
-    doc.text('Bill To:', 50, 180);
-    doc.text(`${invoice.dealer.businessName}`, 50, 200);
-    doc.text(`${invoice.dealer.address}`, 50, 220);
-    doc.text(`${invoice.dealer.city}, ${invoice.dealer.state} ${invoice.dealer.pincode}`, 50, 240);
-
-    doc.text('Description:', 50, 280);
-    doc.text(invoice.description || 'Invoice for products/services', 50, 300);
-
-    doc.text(`Amount: ₹${invoice.amount}`, 50, 340);
-    doc.text(`Tax Amount: ₹${invoice.taxAmount}`, 50, 360);
-    doc.text(`Total Amount: ₹${invoice.totalAmount}`, 50, 380);
-    doc.text(`Paid Amount: ₹${invoice.paidAmount}`, 50, 400);
-    doc.text(`Balance Amount: ₹${invoice.balanceAmount}`, 50, 420);
-    doc.text(`Status: ${invoice.status.toUpperCase()}`, 50, 440);
-
+    doc.text("Thank you for your business!", { italics: true });
     doc.end();
 
-    await invoice.update({ pdfPath: filepath });
+    await invoice.update({ pdfPath: filePath });
 
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
-    
-    const stream = fs.createReadStream(filepath);
-    stream.pipe(res);
+    res.download(filePath);
 
     await AuditLog.create({
       userId: req.user.id,
-      action: 'DOWNLOAD_INVOICE_PDF',
-      entity: 'Invoice',
+      action: "DOWNLOAD_INVOICE_PDF",
+      entity: "Invoice",
       entityId: invoice.id,
       ipAddress: req.ip,
-      userAgent: req.headers['user-agent']
+      userAgent: req.headers["user-agent"],
+    });
+  } catch (error) {
+    console.error("PDF generation error:", error);
+    res.status(500).json({ error: "Failed to generate invoice PDF" });
+  }
+};
+
+/* ============================================================
+   REJECT INVOICE (Separate endpoint)
+============================================================ */
+const rejectInvoice = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const { id } = req.params;
+    const { reason, remarks } = req.body;
+
+    if (!reason) {
+      return res.status(400).json({ error: "Rejection reason is required" });
+    }
+
+    const invoice = await Invoice.findByPk(id, {
+      include: [{ model: Dealer, as: "dealer" }],
+      transaction: t
+    });
+    if (!invoice) {
+      await t.rollback();
+      return res.status(404).json({ error: "Invoice not found" });
+    }
+
+    const result = await WorkflowService.reject(
+      "invoice",
+      invoice,
+      req.user,
+      { reason, remarks, rollback: true, transaction: t }
+    );
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: "REJECT_INVOICE",
+      entity: "Invoice",
+      entityId: invoice.id,
+      changes: { reason, remarks },
+      ipAddress: req.ip,
+      userAgent: req.headers["user-agent"],
     });
 
-  } catch (error) {
-    console.error('Generate invoice PDF error:', error);
-    res.status(500).json({ error: 'Failed to generate invoice PDF' });
+    await t.commit();
+
+    res.json({
+      message: result.message,
+      invoice: invoice,
+      reason: result.reason
+    });
+  } catch (err) {
+    await t.rollback();
+    console.error("Reject invoice error:", err);
+    res.status(err.message.includes('cannot reject') ? 403 : 500).json({
+      error: "Failed to reject invoice",
+      details: err.message
+    });
+  }
+};
+
+/* ============================================================
+   GET WORKFLOW STATUS
+============================================================ */
+const getWorkflowStatus = async (req, res) => {
+  try {
+    const invoice = await Invoice.findByPk(req.params.id);
+    if (!invoice) {
+      return res.status(404).json({ error: "Invoice not found" });
+    }
+
+    const status = await WorkflowService.getWorkflowStatus("invoice", invoice);
+    res.json({ success: true, workflow: status });
+  } catch (err) {
+    console.error("getWorkflowStatus:", err);
+    res.status(500).json({ error: "Failed to get workflow status", details: err.message });
   }
 };
 
@@ -231,5 +508,9 @@ module.exports = {
   getInvoiceById,
   createInvoice,
   updateInvoice,
-  generateInvoicePDF
+  approveInvoice,
+  rejectInvoice,
+  getPendingInvoices,
+  generateInvoicePDF,
+  getWorkflowStatus,
 };
