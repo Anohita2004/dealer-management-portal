@@ -97,12 +97,46 @@ super_admin (sees all)
 
 ### 👥 User Management
 
+> Hierarchical user management fully matches the role design in `documentr.pdf` – Super/Technical Admin can manage all users, while regional/area/territory managers can only manage users (and dealers) inside their scope.
+
 #### GET `/api/admin/users`
-**Permissions:** `super_admin`, `technical_admin`  
-**Returns:** All users with role details
+**Roles:** `super_admin`, `technical_admin`, `regional_admin`, `regional_manager`, `area_manager`, `territory_manager`  
+**Scoping:**
+- `super_admin`, `technical_admin`: see **all** users  
+- `regional_admin`, `regional_manager`: users in their `regionId` or attached to dealers in their region  
+- `area_manager`: users in their `areaId` or attached to dealers in their area  
+- `territory_manager`: users in their `territoryId` or attached to dealers in their territory  
+
+**Response:**
+```json
+{
+  "users": [
+    {
+      "id": "uuid",
+      "username": "string",
+      "email": "string",
+      "roleId": 1,
+      "roleDetails": { "id": 1, "name": "regional_manager" },
+      "regionId": "uuid|null",
+      "areaId": "uuid|null",
+      "territoryId": "uuid|null",
+      "dealerId": "uuid|null",
+      "dealer": { "id": "uuid", "businessName": "ABC Distributors", "dealerCode": "D001" }
+    }
+  ],
+  "total": 42,
+  "page": 1,
+  "totalPages": 5
+}
+```
 
 #### POST `/api/admin/users`
-**Permissions:** `super_admin`, `technical_admin`  
+**Roles:** `super_admin`, `technical_admin`, `regional_admin`, `regional_manager`, `area_manager`, `territory_manager`  
+**Behavior:**
+- Super/Technical Admin: can set any `regionId`, `areaId`, `territoryId`, `dealerId` (subject to FK validation).
+- Regional/Area/Territory managers: backend **overrides** hierarchy fields so the new user is **forced into the creator’s scope** (region/area/territory).
+- When creating `dealer_admin` or `dealer_staff` users, `dealerId` is **required** and the selected dealer must be inside the creator’s scope.
+
 **Body:**
 ```json
 {
@@ -110,20 +144,23 @@ super_admin (sees all)
   "email": "string",
   "password": "string",
   "roleId": 1,
-  "regionId": "uuid",
-  "areaId": "uuid",
-  "territoryId": "uuid",
-  "dealerId": "uuid",
-  "managerId": "uuid",
-  "salesGroupId": 1
+  "regionId": "uuid|null",
+  "areaId": "uuid|null",
+  "territoryId": "uuid|null",
+  "dealerId": "uuid|null",
+  "managerId": "uuid|null",
+  "salesGroupId": 1,
+  "isActive": true
 }
 ```
 
 #### PUT `/api/admin/users/:id`
-**Permissions:** `super_admin`, `technical_admin`
+**Roles:** `super_admin`, `technical_admin`, `regional_admin`, `regional_manager`, `area_manager`, `territory_manager`  
+**Behavior:** identical scoping rules as `POST /api/admin/users` – hierarchy fields are clamped to creator’s scope; dealer assignments must remain within scope.
 
 #### PATCH `/api/admin/users/:id/role`
-**Permissions:** `super_admin`, `technical_admin`
+**Roles:** `super_admin`, `technical_admin`, `regional_admin`, `regional_manager`, `area_manager`, `territory_manager`  
+**Behavior:** role change is allowed only if the target user is inside the actor’s scope.
 
 ---
 
@@ -525,22 +562,40 @@ requested → area_manager → regional_admin → super_admin → approved (prod
 
 ### 📍 Geography (Regions, Areas, Territories)
 
-#### GET `/api/regions`
-**Scoped:** Regional Admin sees only their region
+#### Regions
 
-#### GET `/api/regions/regions/dashboard/summary`
+##### GET `/api/regions`
+**Description:** List regions (with basic area & dealer info)
+
+##### POST `/api/regions`
+**Description:** Create region (super_admin only)
+
+##### GET `/api/regions/:id`
+**Description:** Get single region with nested areas, territories & dealers
+
+##### PUT `/api/regions/:id`
+**Description:** Update region (super_admin only)
+
+##### DELETE `/api/regions/:id`
+**Description:** Delete region (super_admin only; requires no attached areas/dealers)
+
+##### GET `/api/regions/dashboard/summary`
 **Permissions:** `dashboard.view.regional`  
-**Returns:** Regional dashboard summary
+**Description:** Regional dashboard summary for the logged-in regional admin/manager
 
-#### GET `/api/areas`
-**Scoped:** Regional Admin sees only their region's areas
+#### Areas
 
-#### GET `/api/areas/dashboard/summary`
+##### GET `/api/areas`
+**Description:** List areas
+
+##### GET `/api/areas/dashboard/summary`
 **Permissions:** `dashboard.view.manager`  
-**Returns:** Area dashboard summary
+**Description:** Area dashboard summary
 
-#### GET `/api/territories`
-**Scoped:** Area Manager sees only their area's territories
+#### Territories
+
+##### GET `/api/territories`
+**Description:** List territories
 
 ---
 

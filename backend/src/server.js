@@ -23,13 +23,13 @@ const inventoryRoutes = require('./routes/inventoryRoutes');
 const messageRoutes = require('./routes/messageRoutes');
 const accountsRoutes = require('./routes/accountsRoutes');
 const pricingRoutes = require('./routes/pricingRoutes');
-const regionRoutes = require('./routes/regionRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const productRoutes = require('./routes/productRoutes');
 const managerRoutes = require('./routes/managerRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const rolesRoutes = require('./routes/roles');
 const permissionsRoutes = require('./routes/permissions');
+const regionRoutes = require('./routes/regionRoutes');
 const materialRoutes = require('./routes/materialRoutes');
 const orderRoutes = require('./routes/orderRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
@@ -90,7 +90,8 @@ app.use('/api/managers', managerRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/roles', rolesRoutes);
 app.use('/api/permissions', permissionsRoutes);
-app.use('/api', regionRoutes);
+// Region CRUD + dashboards, mounted under /api/regions
+app.use('/api/regions', regionRoutes);
 app.use('/api/materials', materialRoutes);
 
 app.use('/api/orders', orderRoutes);

@@ -53,14 +53,17 @@ Authorization: Bearer <token>
 
 | Method | Endpoint | Description | Permissions | Roles |
 |--------|----------|-------------|-------------|-------|
-| `GET` | `/api/admin/users` | List all users (scoped by region for regional_admin) | - | `super_admin`, `technical_admin`, `regional_admin` |
-| `GET` | `/api/admin/users/:id` | Get user by ID (scoped by region for regional_admin) | - | `super_admin`, `technical_admin`, `regional_admin` |
-| `POST` | `/api/admin/users` | Create user (scoped by region for regional_admin) | - | `super_admin`, `technical_admin`, `regional_admin` |
-| `PUT` | `/api/admin/users/:id` | Update user (scoped by region for regional_admin) | - | `super_admin`, `technical_admin`, `regional_admin` |
-| `PATCH` | `/api/admin/users/:id/role` | Update user role (scoped by region for regional_admin) | - | `super_admin`, `technical_admin`, `regional_admin` |
-| `DELETE` | `/api/admin/users/:id` | Delete user (scoped by region for regional_admin) | - | `super_admin`, `technical_admin`, `regional_admin` |
+| `GET` | `/api/admin/users` | List users (scoped by creator's hierarchy) | `users.view` | `super_admin`, `technical_admin`, `regional_admin`, `regional_manager`, `area_manager`, `territory_manager` |
+| `GET` | `/api/admin/users/:id` | Get user by ID (scoped by creator's hierarchy) | `users.view` | `super_admin`, `technical_admin`, `regional_admin`, `regional_manager`, `area_manager`, `territory_manager` |
+| `POST` | `/api/admin/users` | Create user (hierarchically scoped) | `users.create` | `super_admin`, `technical_admin`, `regional_admin`, `regional_manager`, `area_manager`, `territory_manager` |
+| `PUT` | `/api/admin/users/:id` | Update user (hierarchically scoped) | `users.edit` | `super_admin`, `technical_admin`, `regional_admin`, `regional_manager`, `area_manager`, `territory_manager` |
+| `PATCH` | `/api/admin/users/:id/role` | Update user role (hierarchically scoped) | `users.edit` | `super_admin`, `technical_admin`, `regional_admin`, `regional_manager`, `area_manager`, `territory_manager` |
+| `DELETE` | `/api/admin/users/:id` | Delete user (hierarchically scoped) | `users.edit` | `super_admin`, `technical_admin`, `regional_admin`, `regional_manager`, `area_manager`, `territory_manager` |
 
-**Note:** `regional_admin` can only manage users in their own region. Users are automatically scoped to the regional admin's region when listing, creating, updating, or deleting.
+**Notes:**
+- Super/Technical Admin can manage all users globally.
+- Regional/Area/Territory managers can only manage users (or dealer-attached users) inside their own region/area/territory.
+- When creating/updating `dealer_admin` / `dealer_staff`, `dealerId` is required and must point to a dealer inside the creator's scope.
 
 **Create User Request:**
 ```json
@@ -354,14 +357,14 @@ requested → area_manager → regional_admin → super_admin → approved (prod
 
 | Method | Endpoint | Description | Permissions | Roles |
 |--------|----------|-------------|-------------|-------|
-| `GET` | `/api/regions` | List regions | - | All authenticated |
-| `POST` | `/api/regions/regions` | Create region | `regions.manage` | All authenticated |
-| `GET` | `/api/regions/regions/:id` | Get region | `regions.view` | All authenticated |
-| `PUT` | `/api/regions/regions/:id` | Update region | `regions.manage` | All authenticated |
-| `DELETE` | `/api/regions/regions/:id` | Delete region | `regions.manage` | All authenticated |
-| `GET` | `/api/regions/regions/dashboard/summary` | Regional dashboard summary | `dashboard.view.regional` | All authenticated |
-| `GET` | `/api/regions/regions/dashboard/areas` | Region areas | `areas.view` | All authenticated |
-| `GET` | `/api/regions/regions/dashboard/approvals` | Region approvals | `documents.view` | All authenticated |
+| `GET` | `/api/regions` | List regions (with areas & dealers) | `regions.view` | All authenticated |
+| `POST` | `/api/regions` | Create region | `regions.manage` | `super_admin` |
+| `GET` | `/api/regions/:id` | Get region (with areas, territories, dealers) | `regions.view` | All authenticated |
+| `PUT` | `/api/regions/:id` | Update region | `regions.manage` | `super_admin` |
+| `DELETE` | `/api/regions/:id` | Delete region | `regions.manage` | `super_admin` |
+| `GET` | `/api/regions/dashboard/summary` | Regional dashboard summary (for logged-in region) | `dashboard.view.regional` | `regional_admin`, `regional_manager` |
+| `GET` | `/api/regions/dashboard/areas` | Region areas (for logged-in region) | `areas.view` | `regional_admin`, `regional_manager` |
+| `GET` | `/api/regions/dashboard/approvals` | Region document approvals (pending) | `documents.view` | `regional_admin`, `regional_manager` |
 
 ### Areas
 
@@ -599,12 +602,12 @@ requested → area_manager → regional_admin → super_admin → approved (prod
 
 | Method | Endpoint | Description | Permissions | Roles |
 |--------|----------|-------------|-------------|-------|
-| `GET` | `/api/managers/summary` | Manager summary | - | `territory_manager`, `area_manager`, `regional_manager` |
-| `GET` | `/api/managers/dealers` | Get assigned dealers | - | `territory_manager`, `area_manager`, `regional_manager` |
-| `GET` | `/api/managers/dealers/:id` | Get dealer by ID | - | `territory_manager`, `area_manager`, `regional_manager` |
-| `GET` | `/api/managers/pricing` | Get pricing requests | - | `territory_manager`, `area_manager`, `regional_manager` |
+| `GET` | `/api/managers/summary` | Manager dashboard summary (scoped) | - | `territory_manager`, `area_manager`, `regional_manager` |
+| `GET` | `/api/managers/dealers` | Get dealers assigned to logged-in manager | - | `territory_manager`, `area_manager`, `regional_manager` |
+| `GET` | `/api/managers/dealers/:id` | Get dealer under logged-in manager | - | `territory_manager`, `area_manager`, `regional_manager` |
+| `GET` | `/api/managers/pricing` | Get pricing requests from dealers under manager | - | `territory_manager`, `area_manager`, `regional_manager` |
 | `PATCH` | `/api/managers/pricing/:id/forward` | Forward pricing to admin | - | `territory_manager`, `area_manager`, `regional_manager` |
-| `POST` | `/api/managers/assign-dealer` | Assign dealer to manager | - | `super_admin`, `key_user` |
+| `POST` | `/api/managers/assign-dealer` | Assign dealer to manager (hierarchically scoped) | - | `super_admin`, `technical_admin`, `regional_admin`, `regional_manager`, `area_manager`, `territory_manager` |
 
 ---
 

@@ -12,33 +12,34 @@ const {
   deleteRegion
 } = require('../controllers/regionController');
 
-// Public routes (with authentication)
+// Mounted at /api/regions in server.js
+// 👉 List regions
 router.get("/", authenticate, getRegions);
 
-// Require permissions for write operations
-router.post("/regions", authenticate, checkPermission('regions.manage'), createRegion);
-router.get("/regions/:id", authenticate, checkPermission('regions.view'), getRegion);
-router.put("/regions/:id", authenticate, checkPermission('regions.manage'), updateRegion);
-router.delete("/regions/:id", authenticate, checkPermission('regions.manage'), deleteRegion);
+// 👉 CRUD (requires permissions)
+router.post("/", authenticate, checkPermission('regions.manage'), createRegion);
+router.get("/:id", authenticate, checkPermission('regions.view'), getRegion);
+router.put("/:id", authenticate, checkPermission('regions.manage'), updateRegion);
+router.delete("/:id", authenticate, checkPermission('regions.manage'), deleteRegion);
 
-// 📌 REGIONAL ADMIN DASHBOARD ROUTES (ADD BELOW CRUD ROUTES)
+// 📌 REGIONAL ADMIN DASHBOARD ROUTES
 
 router.get(
-  "/regions/dashboard/summary",
+  "/dashboard/summary",
   authenticate,
-  checkPermission("dashboard.view.regional"),   // or create new: dashboard.view.regional
+  checkPermission("dashboard.view.regional"),
   require("../controllers/regionController").getRegionDashboardSummary
 );
 
 router.get(
-  "/regions/dashboard/areas",
+  "/dashboard/areas",
   authenticate,
   checkPermission("areas.view"),
   require("../controllers/regionController").getRegionAreas
 );
 
 router.get(
-  "/regions/dashboard/approvals",
+  "/dashboard/approvals",
   authenticate,
   checkPermission("documents.view"),
   require("../controllers/regionController").getRegionApprovals

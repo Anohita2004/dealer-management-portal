@@ -44,7 +44,7 @@ router.get("/my-manager", authenticate, authorize("dealer_admin","dealer_staff")
 router.get(
   "/assigned",
   authenticate,
-  authorize("tm", "am", "sm"),
+  authorize("territory_manager", "area_manager", "regional_manager","dealer_admin","dealer_staff","super_admin","technical_admin","regional_admin"),
   checkPermission("dealer.view"),
   dealerController.getDealersByManager
 );

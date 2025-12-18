@@ -6,12 +6,12 @@
 - `POST /api/auth/logout` - Logout
 
 ## 👥 Users
-- `GET /api/admin/users` - List all users (super_admin, technical_admin)
-- `GET /api/admin/users/:id` - Get user
-- `POST /api/admin/users` - Create user
-- `PUT /api/admin/users/:id` - Update user
-- `PATCH /api/admin/users/:id/role` - Update role
-- `DELETE /api/admin/users/:id` - Delete user
+- `GET /api/admin/users` - List users (scoped by actor's hierarchy – global for super/technical admin; region/area/territory for managers)
+- `GET /api/admin/users/:id` - Get user (hierarchically scoped)
+- `POST /api/admin/users` - Create user (hierarchically scoped; dealer roles require in-scope dealer)
+- `PUT /api/admin/users/:id` - Update user (hierarchically scoped)
+- `PATCH /api/admin/users/:id/role` - Update role (hierarchically scoped)
+- `DELETE /api/admin/users/:id` - Delete user (hierarchically scoped)
 
 ## 🏢 Dealers
 - `GET /api/dealers` - List (scoped)
@@ -97,13 +97,13 @@
 
 ## 📍 Geography
 - `GET /api/regions` - List regions
-- `POST /api/regions/regions` - Create (super_admin)
-- `GET /api/regions/regions/:id` - Get region
-- `PUT /api/regions/regions/:id` - Update
-- `DELETE /api/regions/regions/:id` - Delete
-- `GET /api/regions/regions/dashboard/summary` - Regional dashboard
-- `GET /api/regions/regions/dashboard/areas` - Region areas
-- `GET /api/regions/regions/dashboard/approvals` - Region approvals
+- `POST /api/regions` - Create region (super_admin)
+- `GET /api/regions/:id` - Get region (with areas, territories, dealers)
+- `PUT /api/regions/:id` - Update region
+- `DELETE /api/regions/:id` - Delete region
+- `GET /api/regions/dashboard/summary` - Regional dashboard (for logged-in region)
+- `GET /api/regions/dashboard/areas` - Region areas
+- `GET /api/regions/dashboard/approvals` - Region approvals
 
 - `GET /api/areas` - List areas
 - `POST /api/areas` - Create

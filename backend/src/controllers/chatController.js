@@ -444,7 +444,7 @@ exports.getConversation = async (req, res) => {
 exports.sendMessage = async (req, res) => {
   try {
     const me = req.user;
-    const { recipientId, body } = req.body;
+    const { recipientId, body, subject } = req.body;
 
     if (!recipientId || !body)
       return res.status(400).json({ error: "recipientId and body required" });
@@ -458,6 +458,7 @@ exports.sendMessage = async (req, res) => {
     const msg = await Message.create({
       senderId: me.id,
       recipientId,
+      subject: subject || "Chat",
       body,
       status: "unread",
       messageType: "chat",
