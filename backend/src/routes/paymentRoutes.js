@@ -12,6 +12,7 @@ const {
   approvePayment,
   rejectPayment,
   autoReconcile,
+  getDuePayments,
 } = require("../controllers/paymentController");
 console.log({
   createPaymentRequest,
@@ -36,6 +37,9 @@ router.post(
 );
 
 router.get("/mine", authenticate, authorize("dealer_admin", "dealer_staff"), checkPermission("payments.view"), applyScoping(["Invoice"]), getDealerPayments);
+
+// Get due payments (outstanding invoices)
+router.get("/due", authenticate, authorize("dealer_admin", "dealer_staff", "finance_admin", "super_admin"), checkPermission("payments.view"), getDuePayments);
 
 // -----------------------
 // DEALER ADMIN ROUTES

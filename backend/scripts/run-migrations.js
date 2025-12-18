@@ -31,7 +31,11 @@ async function runMigrations() {
 
 // Run if called directly
 if (require.main === module) {
-  runMigrations();
+  runMigrations()
+    .catch((error) => {
+      console.error('❌ Unhandled error in runMigrations:', error);
+      process.exit(1);
+    });
 }
 
 module.exports = { runMigrations };

@@ -64,7 +64,11 @@ async function testWorkflow() {
 
 // Run if called directly
 if (require.main === module) {
-  testWorkflow();
+  testWorkflow()
+    .catch((error) => {
+      console.error('❌ Unhandled error in testWorkflow:', error);
+      process.exit(1);
+    });
 }
 
 module.exports = { testWorkflow };

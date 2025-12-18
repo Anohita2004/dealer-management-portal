@@ -131,10 +131,127 @@ const getManagerDashboard = async (req, res) => {
 
 const getDealerDashboard = async (req, res) => {
   try {
-    const scope = RBACEngine.getUserScope(req.user);
-    if (!scope.dealerId) return res.status(400).json({ error: "dealerId missing" });
-    const summary = await dashboardSummary({ id: scope.dealerId }, req.user);
-    res.json(summary);
+    // Get dealerId from user directly (for dealer_admin and dealer_staff)
+    let dealerId = req.user.dealerId;
+    if (!dealerId) {
+      // Fallback to scope if dealerId not directly on user
+      const scope = RBACEngine.getUserScope(req.user);
+      if (!scope.dealerId) {
+        return res.status(400).json({ error: "dealerId missing" });
+      }
+      dealerId = scope.dealerId;
+    }
+
+    // Get date range from query params (optional)
+    const { startDate, endDate } = req.query;
+    const dateWhere = {};
+    if (startDate && endDate) {
+      dateWhere.invoiceDate = {
+        [Op.between]: [new Date(startDate), new Date(endDate)]
+      };
+    }
+
+    // Get dealer info
+    const dealer = await Dealer.findByPk(dealerId, {
+      attributes: ['id', 'dealerCode', 'businessName', 'outstandingAmount']
+    });
+
+    if (!dealer) {
+      return res.status(404).json({ error: "Dealer not found" });
+    }
+
+    // Get invoices with optional date filter
+    const invoiceWhere = { dealerId, ...dateWhere };
+    const invoices = await Invoice.findAll({
+      where: invoiceWhere,
+      order: [["invoiceDate", "DESC"]],
+    });
+
+    // Calculate totals
+    const totalSales = invoices.reduce(
+      (sum, inv) => sum + Number(inv.totalAmount || 0),
+      0
+    );
+    const totalPaid = invoices.reduce(
+      (sum, inv) => sum + Number(inv.paidAmount || 0),
+      0
+    );
+    const totalOutstanding = invoices.reduce(
+      (sum, inv) => sum + Number(inv.balanceAmount || 0),
+      0
+    );
+
+    // Count invoices by status
+    const paidInvoices = invoices.filter(inv => inv.status === 'paid').length;
+    const unpaidInvoices = invoices.filter(inv => inv.status === 'unpaid').length;
+    const partialInvoices = invoices.filter(inv => inv.status === 'partial').length;
+    const overdueInvoices = invoices.filter(inv => inv.status === 'overdue').length;
+
+    // Get orders count
+    const ordersCount = await Order.count({
+      where: { dealerId, ...(dateWhere.orderDate ? { orderDate: dateWhere.invoiceDate } : {}) }
+    });
+
+    // Get pending documents
+    const pendingDocs = await Document.count({
+      where: { dealerId, status: "pending" }
+    });
+
+    // Get pending pricing requests
+    const pendingPricing = await PricingUpdate.count({
+      where: { dealerId, status: "pending" }
+    });
+
+    // Get active campaigns for this dealer
+    const activeCampaigns = await Campaign.count({
+      where: {
+        isActive: true,
+        targetAudience: {
+          [Op.contains]: [{ type: 'dealer', entityId: dealerId }]
+        }
+      }
+    });
+
+    // Monthly trend data (if date range provided)
+    let monthlyTrend = [];
+    if (startDate && endDate) {
+      const monthlyData = {};
+      invoices.forEach(inv => {
+        const month = new Date(inv.invoiceDate).toISOString().substring(0, 7); // YYYY-MM
+        if (!monthlyData[month]) {
+          monthlyData[month] = { month, sales: 0, count: 0 };
+        }
+        monthlyData[month].sales += Number(inv.totalAmount || 0);
+        monthlyData[month].count += 1;
+      });
+      monthlyTrend = Object.values(monthlyData).sort((a, b) => a.month.localeCompare(b.month));
+    }
+
+    res.json({
+      dealer: {
+        id: dealer.id,
+        dealerCode: dealer.dealerCode,
+        businessName: dealer.businessName,
+        outstandingAmount: dealer.outstandingAmount
+      },
+      summary: {
+        totalInvoices: invoices.length,
+        totalSales,
+        totalPaid,
+        totalOutstanding,
+        ordersCount,
+        approvalsPending: pendingDocs + pendingPricing,
+        activeCampaigns
+      },
+      invoices: {
+        paid: paidInvoices,
+        unpaid: unpaidInvoices,
+        partial: partialInvoices,
+        overdue: overdueInvoices
+      },
+      monthlyTrend,
+      dateRange: startDate && endDate ? { startDate, endDate } : null
+    });
   } catch (err) {
     console.error("Dealer dashboard error:", err);
     res.status(500).json({ error: "Failed to load dashboard" });

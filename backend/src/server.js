@@ -260,7 +260,32 @@ io.on('connection', (socket) => {
   socket.on('send_message', async (payload) => {
     try {
       const { senderId, recipientId, body, subject = '' } = payload || {};
-      if (!senderId || !recipientId || !body) return;
+      if (!senderId || !recipientId || !body) {
+        socket.emit('message_error', { error: 'missing_required_fields' });
+        return;
+      }
+
+      // Check permissions using chat controller
+      const { getAllowedUsersInternal } = require('./controllers/chatController');
+      const { User, Role } = require('./models');
+      
+      const sender = await User.findByPk(senderId, {
+        include: [{ model: Role, as: 'roleDetails', attributes: ['id', 'name'] }]
+      });
+      
+      if (!sender) {
+        socket.emit('message_error', { error: 'sender_not_found' });
+        return;
+      }
+
+      // Check if sender is allowed to message recipient
+      const allowedUsers = await getAllowedUsersInternal(sender);
+      const isAllowed = allowedUsers.some(u => String(u.id) === String(recipientId));
+      
+      if (!isAllowed) {
+        socket.emit('message_error', { error: 'not_allowed_to_message_user' });
+        return;
+      }
 
       const { Message } = require('./models'); // load models dynamically to avoid cycles
       const saved = await Message.create({

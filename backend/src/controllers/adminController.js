@@ -14,6 +14,94 @@ const {
 const { Op, fn, col, literal } = require('sequelize');
 
 /**
+ * Helper: check if a dealer is within the acting manager's hierarchical scope.
+ * Super / technical admins always return true.
+ */
+function isDealerInManagerScope(manager, dealer) {
+  const role = manager.roleDetails?.name || manager.role;
+
+  if (['super_admin', 'technical_admin'].includes(role)) return true;
+
+  if (['regional_admin', 'regional_manager'].includes(role) && manager.regionId) {
+    return dealer.regionId === manager.regionId;
+  }
+
+  if (role === 'area_manager' && manager.areaId) {
+    return dealer.areaId === manager.areaId;
+  }
+
+  if (role === 'territory_manager' && manager.territoryId) {
+    return dealer.territoryId === manager.territoryId;
+  }
+
+  return false;
+}
+
+/**
+ * Helper: check if a target user is within the acting manager's hierarchical scope.
+ * Uses region/area/territory on the user and, when present, the user's dealer.
+ */
+async function isUserInManagerScope(manager, targetUser) {
+  const role = manager.roleDetails?.name || manager.role;
+
+  // Global admins can manage everyone
+  if (['super_admin', 'technical_admin'].includes(role)) {
+    return true;
+  }
+
+  const getDealerForUser = async () => {
+    if (!targetUser.dealerId) return null;
+    if (targetUser.dealer) return targetUser.dealer;
+    return await Dealer.findByPk(targetUser.dealerId);
+  };
+
+  if (['regional_admin', 'regional_manager'].includes(role) && manager.regionId) {
+    const userInRegion = targetUser.regionId === manager.regionId;
+    let userDealerInRegion = false;
+
+    if (targetUser.dealerId) {
+      const dealer = await getDealerForUser();
+      if (dealer && dealer.regionId === manager.regionId) {
+        userDealerInRegion = true;
+      }
+    }
+
+    return userInRegion || userDealerInRegion;
+  }
+
+  if (role === 'area_manager' && manager.areaId) {
+    const userInArea = targetUser.areaId === manager.areaId;
+    let userDealerInArea = false;
+
+    if (targetUser.dealerId) {
+      const dealer = await getDealerForUser();
+      if (dealer && dealer.areaId === manager.areaId) {
+        userDealerInArea = true;
+      }
+    }
+
+    return userInArea || userDealerInArea;
+  }
+
+  if (role === 'territory_manager' && manager.territoryId) {
+    const userInTerritory = targetUser.territoryId === manager.territoryId;
+    let userDealerInTerritory = false;
+
+    if (targetUser.dealerId) {
+      const dealer = await getDealerForUser();
+      if (dealer && dealer.territoryId === manager.territoryId) {
+        userDealerInTerritory = true;
+      }
+    }
+
+    return userInTerritory || userDealerInTerritory;
+  }
+
+  // Other roles (finance, dealer_admin, etc.) don't have global user-management scope here
+  return false;
+}
+
+/**
  * Block / Unblock Dealer
  */
 const blockDealer = async (req, res) => {
@@ -284,7 +372,7 @@ const reviewPricingUpdate = async (req, res) => {
    ------------------------- */
 
 /**
- * Get all users (paginated optional, scoped by region for regional_admin)
+ * Get all users (paginated, scoped by creator's hierarchy)
  */
 const getAllUsers = async (req, res) => {
   try {
@@ -292,21 +380,44 @@ const getAllUsers = async (req, res) => {
     const offset = (page - 1) * limit;
 
     const creatorRole = req.user.roleDetails?.name || req.user.role;
-    
-    // Build where clause - regional_admin only sees users in their region
+
+    // Build where clause based on creator's hierarchical scope
     const whereClause = {};
-    if (creatorRole === 'regional_admin' && req.user.regionId) {
-      // Regional admin sees users in their region, or users associated with dealers in their region
-      const { Dealer } = require('../models');
+    if (['regional_admin', 'regional_manager'].includes(creatorRole) && req.user.regionId) {
+      // Region-level: users in this region or attached to dealers in this region
       const dealersInRegion = await Dealer.findAll({
         where: { regionId: req.user.regionId },
-        attributes: ['id']
+        attributes: ['id'],
       });
-      const dealerIds = dealersInRegion.map(d => d.id);
-      
+      const dealerIds = dealersInRegion.map((d) => d.id);
+
       whereClause[Op.or] = [
         { regionId: req.user.regionId },
-        ...(dealerIds.length > 0 ? [{ dealerId: { [Op.in]: dealerIds } }] : [])
+        ...(dealerIds.length > 0 ? [{ dealerId: { [Op.in]: dealerIds } }] : []),
+      ];
+    } else if (creatorRole === 'area_manager' && req.user.areaId) {
+      // Area-level: users in this area or attached to dealers in this area
+      const dealersInArea = await Dealer.findAll({
+        where: { areaId: req.user.areaId },
+        attributes: ['id'],
+      });
+      const dealerIds = dealersInArea.map((d) => d.id);
+
+      whereClause[Op.or] = [
+        { areaId: req.user.areaId },
+        ...(dealerIds.length > 0 ? [{ dealerId: { [Op.in]: dealerIds } }] : []),
+      ];
+    } else if (creatorRole === 'territory_manager' && req.user.territoryId) {
+      // Territory-level: users in this territory or attached to dealers in this territory
+      const dealersInTerritory = await Dealer.findAll({
+        where: { territoryId: req.user.territoryId },
+        attributes: ['id'],
+      });
+      const dealerIds = dealersInTerritory.map((d) => d.id);
+
+      whereClause[Op.or] = [
+        { territoryId: req.user.territoryId },
+        ...(dealerIds.length > 0 ? [{ dealerId: { [Op.in]: dealerIds } }] : []),
       ];
     }
     // super_admin and technical_admin see all (no where clause)
@@ -332,7 +443,7 @@ const getAllUsers = async (req, res) => {
 };
 
 /**
- * Get single user by id (scoped by region for regional_admin)
+ * Get single user by id (scoped by creator's hierarchy)
  */
 const getUserById = async (req, res) => {
   try {
@@ -340,28 +451,12 @@ const getUserById = async (req, res) => {
       include: [{ model: Role, as: 'roleDetails' }, { model: Dealer, as: 'dealer' }],
     });
     if (!user) return res.status(404).json({ error: 'User not found' });
-    
-    // Check if regional_admin can access this user
-    const creatorRole = req.user.roleDetails?.name || req.user.role;
-    if (creatorRole === 'regional_admin' && req.user.regionId) {
-      // Check if user belongs to regional admin's region
-      const userInRegion = user.regionId === req.user.regionId;
-      
-      // Also check if user is associated with a dealer in the region
-      let userDealerInRegion = false;
-      if (user.dealerId) {
-        const { Dealer } = require('../models');
-        const dealer = await Dealer.findByPk(user.dealerId);
-        if (dealer && dealer.regionId === req.user.regionId) {
-          userDealerInRegion = true;
-        }
-      }
-      
-      if (!userInRegion && !userDealerInRegion) {
-        return res.status(403).json({ error: 'Access denied - User not in your region' });
-      }
+
+    const inScope = await isUserInManagerScope(req.user, user);
+    if (!inScope) {
+      return res.status(403).json({ error: 'Access denied - User not in your scope' });
     }
-    
+
     return res.json({ user });
   } catch (err) {
     console.error('getUserById:', err);
@@ -487,11 +582,15 @@ const createUser = async (req, res) => {
     }
 
     if (finalDealerId) {
-      const DealerModel = require('../models').Dealer;
-      const dealerExists = await DealerModel.findByPk(finalDealerId, { transaction: t });
+      const dealerExists = await Dealer.findByPk(finalDealerId, { transaction: t });
       if (!dealerExists) {
         await t.rollback();
         return res.status(400).json({ error: 'Invalid dealerId' });
+      }
+      // Ensure dealer is within creator's scope (for regional/area/territory managers)
+      if (!isDealerInManagerScope(req.user, dealerExists)) {
+        await t.rollback();
+        return res.status(403).json({ error: 'dealerId is outside your allowed scope' });
       }
     }
 
@@ -580,22 +679,12 @@ const updateUser = async (req, res) => {
     }
 
     const creatorRole = req.user.roleDetails?.name || req.user.role;
-    
-    // Check if regional_admin can update this user
-    if (creatorRole === 'regional_admin' && req.user.regionId) {
-      const userInRegion = user.regionId === req.user.regionId;
-      let userDealerInRegion = false;
-      if (user.dealerId) {
-        const DealerModel = require('../models').Dealer;
-        const dealer = await DealerModel.findByPk(user.dealerId, { transaction: t });
-        if (dealer && dealer.regionId === req.user.regionId) {
-          userDealerInRegion = true;
-        }
-      }
-      if (!userInRegion && !userDealerInRegion) {
-        await t.rollback();
-        return res.status(403).json({ error: 'Access denied - User not in your region' });
-      }
+
+    // Check whether the acting user is allowed to manage this user
+    const inScope = await isUserInManagerScope(req.user, user);
+    if (!inScope) {
+      await t.rollback();
+      return res.status(403).json({ error: 'Access denied - User not in your scope' });
     }
 
     // Start with what is provided (do not blindly override if admin is super_admin)
@@ -663,11 +752,14 @@ const updateUser = async (req, res) => {
       }
     }
     if (finalDealerId) {
-      const DealerModel = require('../models').Dealer;
-      const dealerExists = await DealerModel.findByPk(finalDealerId, { transaction: t });
+      const dealerExists = await Dealer.findByPk(finalDealerId, { transaction: t });
       if (!dealerExists) {
         await t.rollback();
         return res.status(400).json({ error: 'Invalid dealerId' });
+      }
+      if (!isDealerInManagerScope(req.user, dealerExists)) {
+        await t.rollback();
+        return res.status(403).json({ error: 'dealerId is outside your allowed scope' });
       }
     }
 
@@ -706,7 +798,7 @@ const updateUser = async (req, res) => {
 };
 
 /**
- * Update user role (lightweight, scoped by region for regional_admin)
+ * Update user role (lightweight, scoped by creator's hierarchy)
  */
 const updateUserRole = async (req, res) => {
   try {
@@ -718,22 +810,10 @@ const updateUserRole = async (req, res) => {
 
     const user = await User.findByPk(id);
     if (!user) return res.status(404).json({ error: 'User not found' });
-    
-    // Check if regional_admin can update this user
-    const creatorRole = req.user.roleDetails?.name || req.user.role;
-    if (creatorRole === 'regional_admin' && req.user.regionId) {
-      const userInRegion = user.regionId === req.user.regionId;
-      let userDealerInRegion = false;
-      if (user.dealerId) {
-        const { Dealer } = require('../models');
-        const dealer = await Dealer.findByPk(user.dealerId);
-        if (dealer && dealer.regionId === req.user.regionId) {
-          userDealerInRegion = true;
-        }
-      }
-      if (!userInRegion && !userDealerInRegion) {
-        return res.status(403).json({ error: 'Access denied - User not in your region' });
-      }
+
+    const inScope = await isUserInManagerScope(req.user, user);
+    if (!inScope) {
+      return res.status(403).json({ error: 'Access denied - User not in your scope' });
     }
 
     await user.update({ roleId });
@@ -755,36 +835,21 @@ const updateUserRole = async (req, res) => {
 };
 
 /**
- * Delete user (scoped by region for regional_admin)
+ * Delete user (scoped by creator's hierarchy)
  */
 const deleteUser = async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Check if user exists and regional_admin can access it
+    // Check if user exists and is within actor's scope
     const user = await User.findByPk(id);
     if (!user) return res.status(404).json({ error: 'User not found' });
-    
-    const creatorRole = req.user.roleDetails?.name || req.user.role;
-    if (creatorRole === 'regional_admin' && req.user.regionId) {
-      // Check if user belongs to regional admin's region
-      const userInRegion = user.regionId === req.user.regionId;
-      
-      // Also check if user is associated with a dealer in the region
-      let userDealerInRegion = false;
-      if (user.dealerId) {
-        const { Dealer } = require('../models');
-        const dealer = await Dealer.findByPk(user.dealerId);
-        if (dealer && dealer.regionId === req.user.regionId) {
-          userDealerInRegion = true;
-        }
-      }
-      
-      if (!userInRegion && !userDealerInRegion) {
-        return res.status(403).json({ error: 'Access denied - User not in your region' });
-      }
+
+    const inScope = await isUserInManagerScope(req.user, user);
+    if (!inScope) {
+      return res.status(403).json({ error: 'Access denied - User not in your scope' });
     }
-    
+
     await User.destroy({ where: { id } });
 
     await AuditLog.create({

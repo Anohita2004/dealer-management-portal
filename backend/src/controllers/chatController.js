@@ -1,128 +1,101 @@
-const { User, Message, Role, Dealer, sequelize} = require('../models');
+const { User, Message, Role, Dealer, Territory, Area, Region, sequelize} = require('../models');
 const { Op } = require('sequelize');
 
-
-
 // ------------------------------------------------------------
-// ROLE CHAT RULES BASED ON YOUR REAL ROLES TABLE
+// COMPREHENSIVE CHAT HIERARCHY IMPLEMENTATION
 // ------------------------------------------------------------
-//
-// 1 → super_admin
-// 2 → technical_admin
-// 3 → regional_admin
-// 4 → finance_admin
-// 5 → regional_manager
-// 6 → area_manager
-// 7 → territory_manager
-// 8 → dealer_admin
-// 9 → dealer_staff
-// 10 → inventory_user
-// 11 → accounts_user
-//
-// ------------------------------------------------------------
-// CHAT FLOW BASED ON REAL-WORLD USE
-// ------------------------------------------------------------
-const CHAT_FLOW = {
-  dealer_staff: ["dealer_admin"],
-  dealer_admin: ["area_manager", "regional_manager"],
-
-  area_manager: ["regional_manager"],
-  regional_manager: ["territory_manager"],
-
-  territory_manager: ["regional_admin", "finance_admin"],
-
-  finance_admin: ["technical_admin"],
-  regional_admin: ["technical_admin"],
-  technical_admin: ["super_admin"],
-
-  super_admin: [],
-
-  inventory_user: [],
-  accounts_user: [],
-};
-
-function normalize(role) {
-  return String(role || "").toLowerCase().trim();
-}
-
-// ------------------------------------------------------------
-// FIND USERS BASED ON REAL DB STRUCTURE
-// ------------------------------------------------------------
-async function findTargets(me, targetRoleSlug) {
-  const where = {};
-
-  const targetRole = await Role.findOne({ where: { name: targetRoleSlug } });
-  if (!targetRole) return [];
-
-  where.roleId = targetRole.id;
-
-  // relationship rules ONLY using fields your DB actually contains
-  if (targetRoleSlug.includes("dealer")) {
-    if (!me.dealerId) return [];
-    where.dealerId = me.dealerId;
-  }
-
-  if (targetRoleSlug.includes("regional") || targetRoleSlug.includes("finance")) {
-    if (!me.regionId) return [];
-    where.regionId = me.regionId;
-  }
-
-  return await User.findAll({
-    where,
-    attributes: ["id", "username", "email", "roleId", "dealerId", "regionId"],
-    include: [{ model: Role, as: "roleDetails" }],
-    order: [["username", "ASC"]],
-  });
-}
-
-// ------------------------------------------------------------
-// GET ALLOWED USERS
-// ------------------------------------------------------------
-// src/controllers/chatController.js  (only the getAllowedUsers part / helper functions)
-
-
-
-
 
 /**
- * Helper: load current user fresh including role slug
+ * Helper: Load current user with full details including role
  */
 async function loadCurrentUser(userId) {
   return User.findByPk(userId, {
-    attributes: ['id', 'username', 'dealerId', 'regionId', 'roleId'],
+    attributes: ['id', 'username', 'dealerId', 'regionId', 'areaId', 'territoryId', 'roleId'],
     include: [{ model: Role, as: 'roleDetails', attributes: ['id', 'name'] }]
   });
 }
 
 /**
- * Helper: fetch users by role slug with optional filters
+ * Helper: Fetch users by role slug with optional scoping filters
  */
 async function fetchUsersByRoleSlug(roleSlug, filters = {}) {
   const where = {};
-  if (filters.regionId) where.regionId = filters.regionId;
-  if (filters.dealerId) where.dealerId = filters.dealerId;
-
-  // Find roleId for the slug if exists
+  
+  // Find role by name
   const role = await Role.findOne({ where: { name: roleSlug }, attributes: ['id', 'name'] });
-  if (role) {
-    where.roleId = role.id;
-  } else {
-    // fallback: try to match Users.role text column (legacy)
-    where.role = roleSlug;
+  if (!role) return [];
+  
+  where.roleId = role.id;
+  where.isActive = true; // Only active users
+  
+  // Apply scoping filters
+  if (filters.regionId) where.regionId = filters.regionId;
+  if (filters.areaId) where.areaId = filters.areaId;
+  if (filters.territoryId) where.territoryId = filters.territoryId;
+  if (filters.dealerId) where.dealerId = filters.dealerId;
+  if (filters.dealerIds && filters.dealerIds.length > 0) {
+    where.dealerId = { [Op.in]: filters.dealerIds };
   }
-
-  // Don't return system users that are disabled etc (optional)
-  // where.isActive = true;
-
+  if (filters.excludeDealerIds && filters.excludeDealerIds.length > 0) {
+    where.dealerId = { [Op.notIn]: filters.excludeDealerIds };
+  }
+  
   return User.findAll({
     where,
-    attributes: ['id', 'username', 'roleId', 'dealerId', 'regionId'],
+    attributes: ['id', 'username', 'email', 'roleId', 'dealerId', 'regionId', 'areaId', 'territoryId'],
+    include: [{ model: Role, as: 'roleDetails', attributes: ['id', 'name'] }],
     order: [['username', 'ASC']],
   });
 }
 
 /**
+ * Helper: Get dealers in a specific region
+ */
+async function getDealersInRegion(regionId) {
+  const dealers = await Dealer.findAll({
+    where: { regionId, isActive: true },
+    attributes: ['id']
+  });
+  return dealers.map(d => d.id);
+}
+
+/**
+ * Helper: Get dealers in a specific territory
+ */
+async function getDealersInTerritory(territoryId) {
+  const dealers = await Dealer.findAll({
+    where: { territoryId, isActive: true },
+    attributes: ['id']
+  });
+  return dealers.map(d => d.id);
+}
+
+/**
+ * Helper: Get dealers in a specific area
+ */
+async function getDealersInArea(areaId) {
+  const dealers = await Dealer.findAll({
+    where: { areaId, isActive: true },
+    attributes: ['id']
+  });
+  return dealers.map(d => d.id);
+}
+
+/**
+ * Helper: Get user's assigned territory dealers (for Territory Manager)
+ */
+async function getTerritoryManagerDealers(user) {
+  if (!user.territoryId) return [];
+  return getDealersInTerritory(user.territoryId);
+}
+
+// ------------------------------------------------------------
+// GET ALLOWED USERS - Comprehensive Hierarchy Implementation
+// ------------------------------------------------------------
+
+/**
  * Main: GET /api/chat/allowed-users
+ * Implements the complete chat hierarchy as specified
  */
 exports.getAllowedUsers = async (req, res) => {
   try {
@@ -133,7 +106,7 @@ exports.getAllowedUsers = async (req, res) => {
     const myRoleSlug = me.roleDetails?.name || null;
     if (!myRoleSlug) return res.json({ users: [] });
 
-    // We'll accumulate candidates in this array
+    // Accumulate allowed users
     const results = [];
     const pushUnique = (list) => {
       for (const u of list) {
@@ -143,231 +116,283 @@ exports.getAllowedUsers = async (req, res) => {
       }
     };
 
-    // Admin roles (global contacts)
-    const adminRoles = ['super_admin', 'technical_admin', 'regional_admin', 'finance_admin'];
-
-    // RULES mapping (based on your Option B)
+    // Implement hierarchy based on role
     switch (myRoleSlug) {
       case 'super_admin':
-      case 'technical_admin':
-        // Both can talk to all admins (global) and to everyone else if desired — we'll return all admins + managers + dealers
+        // 1️⃣ SUPER ADMIN - Can message everyone (no restrictions)
         {
-          // all admins (global)
-          const admins = await User.findAll({
-            include: [{ model: Role, as: 'roleDetails', attributes: ['name'] }],
-            where: {
-              [Op.or]: [
-                { roleId: { [Op.in]: sequelize.literal(`(SELECT id FROM roles WHERE name IN ('super_admin','technical_admin','regional_admin','finance_admin'))`) } },
-                { role: 'admin' } // fallback
-              ]
-            },
-            attributes: ['id', 'username', 'roleId', 'dealerId', 'regionId'],
+          const allUsers = await User.findAll({
+            where: { isActive: true },
+            attributes: ['id', 'username', 'email', 'roleId', 'dealerId', 'regionId', 'areaId', 'territoryId'],
+            include: [{ model: Role, as: 'roleDetails', attributes: ['id', 'name'] }],
             order: [['username', 'ASC']],
-            limit: 500
           });
-          pushUnique(admins);
-          // Also include managers and dealer admins (global)
-          const managerRoles = ['regional_manager', 'territory_manager', 'area_manager'];
-          for (const m of managerRoles) {
-            const list = await fetchUsersByRoleSlug(m);
-            pushUnique(list);
-          }
-          const dealers = await fetchUsersByRoleSlug('dealer_admin');
-          const dealerStaff = await fetchUsersByRoleSlug('dealer_staff');
-          pushUnique(dealers);
-          pushUnique(dealerStaff);
+          pushUnique(allUsers);
+        }
+        break;
+
+      case 'technical_admin':
+        // 2️⃣ TECHNICAL ADMIN
+        // CAN: Super Admin, Regional Admin, Regional Manager, Finance Admin, Dealer Admin (only for tech issues)
+        // CANNOT: Dealer staff, Territory manager, Area manager
+        {
+          pushUnique(await fetchUsersByRoleSlug('super_admin'));
+          pushUnique(await fetchUsersByRoleSlug('regional_admin'));
+          pushUnique(await fetchUsersByRoleSlug('regional_manager'));
+          pushUnique(await fetchUsersByRoleSlug('finance_admin'));
+          pushUnique(await fetchUsersByRoleSlug('dealer_admin'));
         }
         break;
 
       case 'regional_admin':
-        // regional_admin: admins (global) + regional_manager in same region
-        {
-          // admins global
-          const admins = await fetchUsersByRoleSlug('technical_admin');
-          pushUnique(admins);
-          pushUnique(await fetchUsersByRoleSlug('super_admin'));
-          pushUnique(await fetchUsersByRoleSlug('finance_admin'));
-          // regional managers in same region
-          if (me.regionId) {
-            pushUnique(await fetchUsersByRoleSlug('regional_manager', { regionId: me.regionId }));
-          }
-        }
-        break;
-
-      case 'finance_admin':
-        // finance_admin -> accounts_user (same region) + admins
+        // 3️⃣ REGIONAL ADMIN
+        // CAN: Super Admin, Technical Admin, Finance Admin, Regional Manager, Area Managers, Territory Managers, Dealer Admins, Dealer Staff (rare but allowed)
         {
           pushUnique(await fetchUsersByRoleSlug('super_admin'));
           pushUnique(await fetchUsersByRoleSlug('technical_admin'));
+          pushUnique(await fetchUsersByRoleSlug('finance_admin'));
+          
           if (me.regionId) {
-            pushUnique(await fetchUsersByRoleSlug('accounts_user', { regionId: me.regionId }));
+            pushUnique(await fetchUsersByRoleSlug('regional_manager', { regionId: me.regionId }));
+            pushUnique(await fetchUsersByRoleSlug('area_manager', { regionId: me.regionId }));
+            pushUnique(await fetchUsersByRoleSlug('territory_manager', { regionId: me.regionId }));
+            
+            // Dealer Admins and Staff in same region
+            const dealerIds = await getDealersInRegion(me.regionId);
+            if (dealerIds.length > 0) {
+              pushUnique(await fetchUsersByRoleSlug('dealer_admin', { dealerIds }));
+              pushUnique(await fetchUsersByRoleSlug('dealer_staff', { dealerIds }));
+            }
           }
         }
         break;
 
       case 'regional_manager':
-        // regional_manager -> territory_manager (same region) + regional_admin (same region) + dealers in region
+        // 4️⃣ REGIONAL MANAGER
+        // CAN: Regional Admin, Technical Admin, Super Admin, Area Managers, Territory Managers, Dealer Admins, Dealer Staff (in their region)
+        // CANNOT: Other regions' users
         {
+          pushUnique(await fetchUsersByRoleSlug('super_admin'));
+          pushUnique(await fetchUsersByRoleSlug('technical_admin'));
+          
           if (me.regionId) {
-            pushUnique(await fetchUsersByRoleSlug('territory_manager', { regionId: me.regionId }));
-            pushUnique(await fetchUsersByRoleSlug('regional_admin', { regionId: me.regionId })); // regional_admin may be global; filtering by region is safe
-            // dealer admins & staff in same region
-            // join via dealer -> users with dealerId that has regionId = me.regionId
-            const dealersInRegion = await Dealer.findAll({ where: { regionId: me.regionId }, attributes: ['id'] });
-            const dealerIds = dealersInRegion.map(d => d.id);
-            if (dealerIds.length) {
-              const dealerAdmins = await User.findAll({
-                where: { roleId: { [Op.in]: sequelize.literal(`(SELECT id FROM roles WHERE name = 'dealer_admin')`) }, dealerId: { [Op.in]: dealerIds } },
-                attributes: ['id','username','roleId','dealerId','regionId']
-              }).catch(()=>[]);
-              pushUnique(dealerAdmins);
-              const dealerStaff = await User.findAll({
-                where: { roleId: { [Op.in]: sequelize.literal(`(SELECT id FROM roles WHERE name = 'dealer_staff')`) }, dealerId: { [Op.in]: dealerIds } },
-                attributes: ['id','username','roleId','dealerId','regionId']
-              }).catch(()=>[]);
-              pushUnique(dealerStaff);
-            }
-          }
-          // also include regional_admin as admin contact (global)
-          pushUnique(await fetchUsersByRoleSlug('regional_admin'));
-        }
-        break;
-
-      case 'territory_manager':
-        // territory_manager -> area_manager (same region) + dealer_admins in same territory (best-effort)
-        {
-          // area managers in same region
-          if (me.regionId) {
+            pushUnique(await fetchUsersByRoleSlug('regional_admin', { regionId: me.regionId }));
             pushUnique(await fetchUsersByRoleSlug('area_manager', { regionId: me.regionId }));
-          }
-          // dealer admins by territory: since territory is stored on dealer row, get dealers in same territory (best-effort)
-          // We'll try to get the territory of a dealer this TM manages (if any), otherwise fallback to same region
-          const myDealer = me.dealerId ? await Dealer.findByPk(me.dealerId) : null;
-          if (myDealer && myDealer.territory) {
-            const dealersSameTerritory = await Dealer.findAll({ where: { territory: myDealer.territory }, attributes: ['id'] });
-            const dids = dealersSameTerritory.map(d => d.id);
-            if (dids.length) {
-              const dd = await User.findAll({ where: { roleId: (await Role.findOne({where:{name:'dealer_admin'}})).id, dealerId: { [Op.in]: dids } }, attributes:['id','username','dealerId','regionId'] });
-              pushUnique(dd);
-            }
-          } else if (me.regionId) {
-            // fallback: dealers in same region
-            const dealersInRegion = await Dealer.findAll({ where: { regionId: me.regionId }, attributes: ['id'] });
-            const dids2 = dealersInRegion.map(d => d.id);
-            if (dids2.length) {
-              const dd2 = await User.findAll({ where: { roleId: (await Role.findOne({where:{name:'dealer_admin'}})).id, dealerId: { [Op.in]: dids2 } }, attributes:['id','username','dealerId','regionId'] });
-              pushUnique(dd2);
+            pushUnique(await fetchUsersByRoleSlug('territory_manager', { regionId: me.regionId }));
+            
+            // Dealer Admins and Staff in same region
+            const dealerIds = await getDealersInRegion(me.regionId);
+            if (dealerIds.length > 0) {
+              pushUnique(await fetchUsersByRoleSlug('dealer_admin', { dealerIds }));
+              pushUnique(await fetchUsersByRoleSlug('dealer_staff', { dealerIds }));
             }
           }
         }
         break;
 
       case 'area_manager':
-        // area_manager -> dealer_admins in same region (since no areaId)
+        // 5️⃣ AREA MANAGER
+        // CAN: Regional Manager, Regional Admin, Territory Manager, Dealer Admins, Dealer Staff, Super Admin (for escalation)
         {
+          pushUnique(await fetchUsersByRoleSlug('super_admin'));
+          
           if (me.regionId) {
-            const dealers = await Dealer.findAll({ where: { regionId: me.regionId }, attributes: ['id'] });
-            const dids = dealers.map(d => d.id);
-            if (dids.length) {
-              const da = await User.findAll({ where: { roleId: (await Role.findOne({where:{name:'dealer_admin'}})).id, dealerId: { [Op.in]: dids } }, attributes:['id','username','dealerId','regionId']});
-              pushUnique(da);
+            pushUnique(await fetchUsersByRoleSlug('regional_manager', { regionId: me.regionId }));
+            pushUnique(await fetchUsersByRoleSlug('regional_admin', { regionId: me.regionId }));
+            pushUnique(await fetchUsersByRoleSlug('territory_manager', { regionId: me.regionId }));
+            
+            // Dealer Admins and Staff in same region/area
+            let dealerIds = [];
+            if (me.areaId) {
+              dealerIds = await getDealersInArea(me.areaId);
+            } else if (me.regionId) {
+              dealerIds = await getDealersInRegion(me.regionId);
+            }
+            if (dealerIds.length > 0) {
+              pushUnique(await fetchUsersByRoleSlug('dealer_admin', { dealerIds }));
+              pushUnique(await fetchUsersByRoleSlug('dealer_staff', { dealerIds }));
             }
           }
-          // include regional_manager as contact
-          pushUnique(await fetchUsersByRoleSlug('regional_manager'));
+        }
+        break;
+
+      case 'territory_manager':
+        // 6️⃣ TERRITORY MANAGER
+        // CAN: Area Manager, Regional Manager, Dealer Admins (in assigned territory), Dealer Staff (for operations), Finance Admin (rare), Super Admin (escalations)
+        // CANNOT: Other territories, Other areas
+        {
+          pushUnique(await fetchUsersByRoleSlug('super_admin'));
+          pushUnique(await fetchUsersByRoleSlug('finance_admin'));
+          
+          if (me.regionId) {
+            pushUnique(await fetchUsersByRoleSlug('regional_manager', { regionId: me.regionId }));
+            pushUnique(await fetchUsersByRoleSlug('area_manager', { regionId: me.regionId }));
+            
+            // Dealer Admins and Staff in assigned territory only
+            if (me.territoryId) {
+              const dealerIds = await getDealersInTerritory(me.territoryId);
+              if (dealerIds.length > 0) {
+                pushUnique(await fetchUsersByRoleSlug('dealer_admin', { dealerIds }));
+                pushUnique(await fetchUsersByRoleSlug('dealer_staff', { dealerIds }));
+              }
+            }
+          }
         }
         break;
 
       case 'dealer_admin':
-        // dealer_admin -> dealer_staff (same dealer) + area_manager + regional manager + admins
+        // 7️⃣ DEALER ADMIN
+        // CAN: Dealer Staff, Territory Manager, Area Manager, Regional Manager, Regional Admin, Finance Admin, Technical Admin, Super Admin
+        // CANNOT: Other dealers unless allowed by special permission
         {
-          if (me.dealerId) {
-            const ds = await User.findAll({ where: { roleId: (await Role.findOne({where:{name:'dealer_staff'}})).id, dealerId: me.dealerId }, attributes:['id','username','dealerId','regionId'] });
-            pushUnique(ds);
-          }
-          // area manager for this dealer (via dealer.managerId)
-          const dealer = me.dealerId ? await Dealer.findByPk(me.dealerId) : null;
-          if (dealer && dealer.managerId) {
-            const am = await User.findByPk(dealer.managerId, { attributes:['id','username','roleId','regionId'] });
-            if (am) pushUnique([am]);
-          }
-          // regional manager for dealer.regionId
-          if (dealer && dealer.regionId) {
-            pushUnique(await fetchUsersByRoleSlug('regional_manager', { regionId: dealer.regionId }));
-          }
-          // admins
-          pushUnique(await fetchUsersByRoleSlug('technical_admin'));
           pushUnique(await fetchUsersByRoleSlug('super_admin'));
+          pushUnique(await fetchUsersByRoleSlug('technical_admin'));
+          pushUnique(await fetchUsersByRoleSlug('regional_admin'));
+          pushUnique(await fetchUsersByRoleSlug('finance_admin'));
+          
+          // Dealer Staff in same dealer
+          if (me.dealerId) {
+            pushUnique(await fetchUsersByRoleSlug('dealer_staff', { dealerId: me.dealerId }));
+            
+            // Get dealer info to find managers
+            const dealer = await Dealer.findByPk(me.dealerId, {
+              attributes: ['id', 'regionId', 'areaId', 'territoryId', 'managerId']
+            });
+            
+            if (dealer) {
+              // Regional Manager in dealer's region
+              if (dealer.regionId) {
+                pushUnique(await fetchUsersByRoleSlug('regional_manager', { regionId: dealer.regionId }));
+              }
+              
+              // Area Manager in dealer's area
+              if (dealer.areaId) {
+                pushUnique(await fetchUsersByRoleSlug('area_manager', { areaId: dealer.areaId }));
+              }
+              
+              // Territory Manager in dealer's territory
+              if (dealer.territoryId) {
+                pushUnique(await fetchUsersByRoleSlug('territory_manager', { territoryId: dealer.territoryId }));
+              }
+            }
+          }
         }
         break;
 
       case 'dealer_staff':
-        // dealer_staff -> dealer_admin (same dealer) + admins + regional manager of dealer region
+        // 8️⃣ DEALER STAFF
+        // CAN: Dealer Admin, Territory Manager, Area Manager, Regional Manager, Regional Admin, Technical Admin (system issues)
+        // CANNOT: Super Admin, Other dealer staff from different dealerships, Other dealer admins
         {
+          pushUnique(await fetchUsersByRoleSlug('technical_admin'));
+          
+          // Dealer Admin in same dealer
           if (me.dealerId) {
-            const dad = await User.findAll({ where: { roleId: (await Role.findOne({where:{name:'dealer_admin'}})).id, dealerId: me.dealerId }, attributes:['id','username','dealerId','regionId'] });
-            pushUnique(dad);
-          }
-          // regional manager of dealer's region
-          if (me.dealerId) {
-            const dealer = await Dealer.findByPk(me.dealerId);
-            if (dealer && dealer.regionId) {
-              pushUnique(await fetchUsersByRoleSlug('regional_manager', { regionId: dealer.regionId }));
+            pushUnique(await fetchUsersByRoleSlug('dealer_admin', { dealerId: me.dealerId }));
+            
+            // Get dealer info to find managers
+            const dealer = await Dealer.findByPk(me.dealerId, {
+              attributes: ['id', 'regionId', 'areaId', 'territoryId']
+            });
+            
+            if (dealer) {
+              // Regional Manager in dealer's region
+              if (dealer.regionId) {
+                pushUnique(await fetchUsersByRoleSlug('regional_manager', { regionId: dealer.regionId }));
+                pushUnique(await fetchUsersByRoleSlug('regional_admin', { regionId: dealer.regionId }));
+              }
+              
+              // Area Manager in dealer's area
+              if (dealer.areaId) {
+                pushUnique(await fetchUsersByRoleSlug('area_manager', { areaId: dealer.areaId }));
+              }
+              
+              // Territory Manager in dealer's territory
+              if (dealer.territoryId) {
+                pushUnique(await fetchUsersByRoleSlug('territory_manager', { territoryId: dealer.territoryId }));
+              }
             }
           }
-          // admins
-          pushUnique(await fetchUsersByRoleSlug('technical_admin'));
+        }
+        break;
+
+      case 'finance_admin':
+        // 9️⃣ FINANCE ADMIN
+        // CAN: Super Admin, Technical Admin, Regional Admin, Dealer Admin, Accounts User, Territory / Area Managers (for clarifications)
+        // CANNOT: Dealer Staff directly (unless needed)
+        {
           pushUnique(await fetchUsersByRoleSlug('super_admin'));
+          pushUnique(await fetchUsersByRoleSlug('technical_admin'));
+          pushUnique(await fetchUsersByRoleSlug('regional_admin'));
+          pushUnique(await fetchUsersByRoleSlug('accounts_user'));
+          
+          // Territory and Area Managers (for clarifications)
+          if (me.regionId) {
+            pushUnique(await fetchUsersByRoleSlug('territory_manager', { regionId: me.regionId }));
+            pushUnique(await fetchUsersByRoleSlug('area_manager', { regionId: me.regionId }));
+            
+            // Dealer Admins in same region
+            const dealerIds = await getDealersInRegion(me.regionId);
+            if (dealerIds.length > 0) {
+              pushUnique(await fetchUsersByRoleSlug('dealer_admin', { dealerIds }));
+            }
+          }
         }
         break;
 
       case 'accounts_user':
-        // accounts_user -> finance_admin + admins + dealer_admin in same region
+        // 🔟 ACCOUNTS USER
+        // CAN: Finance Admin, Dealer Admin, Territory Manager
+        // CANNOT: Super Admin, Technical Admin
         {
           pushUnique(await fetchUsersByRoleSlug('finance_admin'));
-          pushUnique(await fetchUsersByRoleSlug('super_admin'));
+          
           if (me.regionId) {
-            const dealers = await Dealer.findAll({ where: { regionId: me.regionId }, attributes: ['id'] });
-            const dids = dealers.map(d => d.id);
-            if (dids.length) {
-              const dd = await User.findAll({ where: { roleId: (await Role.findOne({where:{name:'dealer_admin'}})).id, dealerId: { [Op.in]: dids } }, attributes:['id','username','dealerId','regionId'] });
-              pushUnique(dd);
+            pushUnique(await fetchUsersByRoleSlug('territory_manager', { regionId: me.regionId }));
+            
+            // Dealer Admins in same region
+            const dealerIds = await getDealersInRegion(me.regionId);
+            if (dealerIds.length > 0) {
+              pushUnique(await fetchUsersByRoleSlug('dealer_admin', { dealerIds }));
             }
           }
         }
         break;
 
       case 'inventory_user':
-        // inventory_user -> admins + dealer_admin in same region
+        // 1️⃣1️⃣ INVENTORY USER
+        // CAN: Dealer Admin, Territory Manager, Area Manager, Regional Manager
         {
-          pushUnique(await fetchUsersByRoleSlug('technical_admin'));
           if (me.regionId) {
-            const dealers = await Dealer.findAll({ where: { regionId: me.regionId }, attributes: ['id'] });
-            const dids = dealers.map(d => d.id);
-            if (dids.length) {
-              pushUnique(await User.findAll({ where: { roleId: (await Role.findOne({where:{name:'dealer_admin'}})).id, dealerId: { [Op.in]: dids } }, attributes:['id','username','dealerId','regionId']}));
+            pushUnique(await fetchUsersByRoleSlug('regional_manager', { regionId: me.regionId }));
+            pushUnique(await fetchUsersByRoleSlug('area_manager', { regionId: me.regionId }));
+            pushUnique(await fetchUsersByRoleSlug('territory_manager', { regionId: me.regionId }));
+            
+            // Dealer Admins in same region
+            const dealerIds = await getDealersInRegion(me.regionId);
+            if (dealerIds.length > 0) {
+              pushUnique(await fetchUsersByRoleSlug('dealer_admin', { dealerIds }));
             }
           }
         }
         break;
 
       default:
-        // fallback: return admins + direct dealer contacts if any
-        pushUnique(await fetchUsersByRoleSlug('super_admin'));
-        if (me.dealerId) {
-          pushUnique(await User.findAll({ where: { roleId: (await Role.findOne({where:{name:'dealer_admin'}})).id, dealerId: me.dealerId }, attributes:['id','username','dealerId','regionId'] }));
-          pushUnique(await User.findAll({ where: { roleId: (await Role.findOne({where:{name:'dealer_staff'}})).id, dealerId: me.dealerId }, attributes:['id','username','dealerId','regionId'] }));
-        }
+        // Fallback: return empty list for unknown roles
         break;
     }
 
-    // format & return
+    // Format & return
     const payload = results.map(u => ({
       id: u.id,
       username: u.username,
+      email: u.email || null,
       roleId: u.roleId,
       dealerId: u.dealerId,
-      regionId: u.regionId
+      regionId: u.regionId,
+      areaId: u.areaId,
+      territoryId: u.territoryId,
+      roleName: u.roleDetails?.name || null
     }));
 
     return res.json({ users: payload });
@@ -446,16 +471,245 @@ exports.sendMessage = async (req, res) => {
 };
 
 // INTERNAL CHECK FOR ALLOWED USERS
+// Uses the same hierarchy logic as getAllowedUsers
 exports.getAllowedUsersInternal = async (me) => {
-  const myRole = me.roleDetails?.name;
-  const allowedSlugs = CHAT_FLOW[myRole] || [];
+  try {
+    // Ensure me has roleDetails loaded
+    if (!me.roleDetails) {
+      me = await loadCurrentUser(me.id);
+      if (!me) return [];
+    }
 
-  let list = [];
-  for (const slug of allowedSlugs) {
-    const found = await findTargets(me, slug);
-    list = list.concat(found.map((u) => ({ id: u.id })));
+    const myRoleSlug = me.roleDetails?.name || null;
+    if (!myRoleSlug) return [];
+
+    const results = [];
+    const pushUnique = (list) => {
+      for (const u of list) {
+        if (!results.some(x => String(x.id) === String(u.id)) && String(u.id) !== String(me.id)) {
+          results.push(u);
+        }
+      }
+    };
+
+    // Use the same switch logic as getAllowedUsers
+    switch (myRoleSlug) {
+      case 'super_admin':
+        {
+          const allUsers = await User.findAll({
+            where: { isActive: true },
+            attributes: ['id'],
+          });
+          pushUnique(allUsers);
+        }
+        break;
+
+      case 'technical_admin':
+        {
+          pushUnique(await fetchUsersByRoleSlug('super_admin'));
+          pushUnique(await fetchUsersByRoleSlug('regional_admin'));
+          pushUnique(await fetchUsersByRoleSlug('regional_manager'));
+          pushUnique(await fetchUsersByRoleSlug('finance_admin'));
+          pushUnique(await fetchUsersByRoleSlug('dealer_admin'));
+        }
+        break;
+
+      case 'regional_admin':
+        {
+          pushUnique(await fetchUsersByRoleSlug('super_admin'));
+          pushUnique(await fetchUsersByRoleSlug('technical_admin'));
+          pushUnique(await fetchUsersByRoleSlug('finance_admin'));
+          
+          if (me.regionId) {
+            pushUnique(await fetchUsersByRoleSlug('regional_manager', { regionId: me.regionId }));
+            pushUnique(await fetchUsersByRoleSlug('area_manager', { regionId: me.regionId }));
+            pushUnique(await fetchUsersByRoleSlug('territory_manager', { regionId: me.regionId }));
+            
+            const dealerIds = await getDealersInRegion(me.regionId);
+            if (dealerIds.length > 0) {
+              pushUnique(await fetchUsersByRoleSlug('dealer_admin', { dealerIds }));
+              pushUnique(await fetchUsersByRoleSlug('dealer_staff', { dealerIds }));
+            }
+          }
+        }
+        break;
+
+      case 'regional_manager':
+        {
+          pushUnique(await fetchUsersByRoleSlug('super_admin'));
+          pushUnique(await fetchUsersByRoleSlug('technical_admin'));
+          
+          if (me.regionId) {
+            pushUnique(await fetchUsersByRoleSlug('regional_admin', { regionId: me.regionId }));
+            pushUnique(await fetchUsersByRoleSlug('area_manager', { regionId: me.regionId }));
+            pushUnique(await fetchUsersByRoleSlug('territory_manager', { regionId: me.regionId }));
+            
+            const dealerIds = await getDealersInRegion(me.regionId);
+            if (dealerIds.length > 0) {
+              pushUnique(await fetchUsersByRoleSlug('dealer_admin', { dealerIds }));
+              pushUnique(await fetchUsersByRoleSlug('dealer_staff', { dealerIds }));
+            }
+          }
+        }
+        break;
+
+      case 'area_manager':
+        {
+          pushUnique(await fetchUsersByRoleSlug('super_admin'));
+          
+          if (me.regionId) {
+            pushUnique(await fetchUsersByRoleSlug('regional_manager', { regionId: me.regionId }));
+            pushUnique(await fetchUsersByRoleSlug('regional_admin', { regionId: me.regionId }));
+            pushUnique(await fetchUsersByRoleSlug('territory_manager', { regionId: me.regionId }));
+            
+            let dealerIds = [];
+            if (me.areaId) {
+              dealerIds = await getDealersInArea(me.areaId);
+            } else if (me.regionId) {
+              dealerIds = await getDealersInRegion(me.regionId);
+            }
+            if (dealerIds.length > 0) {
+              pushUnique(await fetchUsersByRoleSlug('dealer_admin', { dealerIds }));
+              pushUnique(await fetchUsersByRoleSlug('dealer_staff', { dealerIds }));
+            }
+          }
+        }
+        break;
+
+      case 'territory_manager':
+        {
+          pushUnique(await fetchUsersByRoleSlug('super_admin'));
+          pushUnique(await fetchUsersByRoleSlug('finance_admin'));
+          
+          if (me.regionId) {
+            pushUnique(await fetchUsersByRoleSlug('regional_manager', { regionId: me.regionId }));
+            pushUnique(await fetchUsersByRoleSlug('area_manager', { regionId: me.regionId }));
+            
+            if (me.territoryId) {
+              const dealerIds = await getDealersInTerritory(me.territoryId);
+              if (dealerIds.length > 0) {
+                pushUnique(await fetchUsersByRoleSlug('dealer_admin', { dealerIds }));
+                pushUnique(await fetchUsersByRoleSlug('dealer_staff', { dealerIds }));
+              }
+            }
+          }
+        }
+        break;
+
+      case 'dealer_admin':
+        {
+          pushUnique(await fetchUsersByRoleSlug('super_admin'));
+          pushUnique(await fetchUsersByRoleSlug('technical_admin'));
+          pushUnique(await fetchUsersByRoleSlug('regional_admin'));
+          pushUnique(await fetchUsersByRoleSlug('finance_admin'));
+          
+          if (me.dealerId) {
+            pushUnique(await fetchUsersByRoleSlug('dealer_staff', { dealerId: me.dealerId }));
+            
+            const dealer = await Dealer.findByPk(me.dealerId, {
+              attributes: ['id', 'regionId', 'areaId', 'territoryId', 'managerId']
+            });
+            
+            if (dealer) {
+              if (dealer.regionId) {
+                pushUnique(await fetchUsersByRoleSlug('regional_manager', { regionId: dealer.regionId }));
+              }
+              if (dealer.areaId) {
+                pushUnique(await fetchUsersByRoleSlug('area_manager', { areaId: dealer.areaId }));
+              }
+              if (dealer.territoryId) {
+                pushUnique(await fetchUsersByRoleSlug('territory_manager', { territoryId: dealer.territoryId }));
+              }
+            }
+          }
+        }
+        break;
+
+      case 'dealer_staff':
+        {
+          pushUnique(await fetchUsersByRoleSlug('technical_admin'));
+          
+          if (me.dealerId) {
+            pushUnique(await fetchUsersByRoleSlug('dealer_admin', { dealerId: me.dealerId }));
+            
+            const dealer = await Dealer.findByPk(me.dealerId, {
+              attributes: ['id', 'regionId', 'areaId', 'territoryId']
+            });
+            
+            if (dealer) {
+              if (dealer.regionId) {
+                pushUnique(await fetchUsersByRoleSlug('regional_manager', { regionId: dealer.regionId }));
+                pushUnique(await fetchUsersByRoleSlug('regional_admin', { regionId: dealer.regionId }));
+              }
+              if (dealer.areaId) {
+                pushUnique(await fetchUsersByRoleSlug('area_manager', { areaId: dealer.areaId }));
+              }
+              if (dealer.territoryId) {
+                pushUnique(await fetchUsersByRoleSlug('territory_manager', { territoryId: dealer.territoryId }));
+              }
+            }
+          }
+        }
+        break;
+
+      case 'finance_admin':
+        {
+          pushUnique(await fetchUsersByRoleSlug('super_admin'));
+          pushUnique(await fetchUsersByRoleSlug('technical_admin'));
+          pushUnique(await fetchUsersByRoleSlug('regional_admin'));
+          pushUnique(await fetchUsersByRoleSlug('accounts_user'));
+          
+          if (me.regionId) {
+            pushUnique(await fetchUsersByRoleSlug('territory_manager', { regionId: me.regionId }));
+            pushUnique(await fetchUsersByRoleSlug('area_manager', { regionId: me.regionId }));
+            
+            const dealerIds = await getDealersInRegion(me.regionId);
+            if (dealerIds.length > 0) {
+              pushUnique(await fetchUsersByRoleSlug('dealer_admin', { dealerIds }));
+            }
+          }
+        }
+        break;
+
+      case 'accounts_user':
+        {
+          pushUnique(await fetchUsersByRoleSlug('finance_admin'));
+          
+          if (me.regionId) {
+            pushUnique(await fetchUsersByRoleSlug('territory_manager', { regionId: me.regionId }));
+            
+            const dealerIds = await getDealersInRegion(me.regionId);
+            if (dealerIds.length > 0) {
+              pushUnique(await fetchUsersByRoleSlug('dealer_admin', { dealerIds }));
+            }
+          }
+        }
+        break;
+
+      case 'inventory_user':
+        {
+          if (me.regionId) {
+            pushUnique(await fetchUsersByRoleSlug('regional_manager', { regionId: me.regionId }));
+            pushUnique(await fetchUsersByRoleSlug('area_manager', { regionId: me.regionId }));
+            pushUnique(await fetchUsersByRoleSlug('territory_manager', { regionId: me.regionId }));
+            
+            const dealerIds = await getDealersInRegion(me.regionId);
+            if (dealerIds.length > 0) {
+              pushUnique(await fetchUsersByRoleSlug('dealer_admin', { dealerIds }));
+            }
+          }
+        }
+        break;
+
+      default:
+        return [];
+    }
+
+    return results.map(u => ({ id: u.id }));
+  } catch (err) {
+    console.error('getAllowedUsersInternal error:', err);
+    return [];
   }
-  return list;
 };
 
 // ------------------------------------------------------------

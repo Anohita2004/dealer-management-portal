@@ -14,18 +14,25 @@ router.use(authenticate);
 
 // FULL ACCESS ROLES
 const fullAccess = authorize('super_admin', 'technical_admin');
-// REGIONAL ADMIN ACCESS (for user management in their region)
-const regionalAdminAccess = authorize('super_admin', 'technical_admin', 'regional_admin');
+// Scoped user-management access (hierarchical)
+const scopedUserAdminAccess = authorize(
+  'super_admin',
+  'technical_admin',
+  'regional_admin',
+  'regional_manager',
+  'area_manager',
+  'territory_manager'
+);
 
 // ---------------------------------------------------------
 // USER MANAGEMENT
 // ---------------------------------------------------------
-router.get('/users',          regionalAdminAccess, adminController.getAllUsers);
-router.get('/users/:id',      regionalAdminAccess, adminController.getUserById);
-router.post('/users',         regionalAdminAccess, adminController.createUser);
-router.put('/users/:id',      regionalAdminAccess, adminController.updateUser);
-router.patch('/users/:id/role', regionalAdminAccess, adminController.updateUserRole);
-router.delete('/users/:id',   regionalAdminAccess, adminController.deleteUser);
+router.get('/users',            scopedUserAdminAccess, adminController.getAllUsers);
+router.get('/users/:id',        scopedUserAdminAccess, adminController.getUserById);
+router.post('/users',           scopedUserAdminAccess, adminController.createUser);
+router.put('/users/:id',        scopedUserAdminAccess, adminController.updateUser);
+router.patch('/users/:id/role', scopedUserAdminAccess, adminController.updateUserRole);
+router.delete('/users/:id',     scopedUserAdminAccess, adminController.deleteUser);
 
 // ---------------------------------------------------------
 // DEALER MANAGEMENT

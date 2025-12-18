@@ -130,7 +130,9 @@ const ROLE_TO_PERMS = {
     "permissions.view", "permissions.assign",
     "roles.view", "roles.assign.permissions",
     "users.view", "users.edit",
-    "system.logs", "system.config"
+    "system.logs", "system.config",
+    "messages.view", "messages.send",
+    "notifications.view", "notifications.send"
   ],
 
   regional_admin: [
@@ -143,48 +145,61 @@ const ROLE_TO_PERMS = {
     "campaigns.view", "campaigns.create",
     "maps.view", "maps.regions", "maps.heatmap",
     "reports.view", "reports.export",
-    "dashboard.view.regional"
+    "dashboard.view.regional",
+    "messages.view", "messages.send",
+    "notifications.view", "notifications.send"
   ],
 
   regional_manager: [
     "dealer.view", "dealer.update",
-    "users.view", "areas.view", "territories.view",
+    "users.view", "users.create", "users.edit",
+    "areas.view", "territories.view",
     "orders.view", "orders.approve", "orders.reject",
     "invoices.view", "payments.view",
     "documents.view", "documents.verify",
     "campaigns.view",
     "maps.view", "maps.regions", "maps.heatmap",
     "dashboard.view.manager",
-    "teams.view"
+    "teams.view",
+    "messages.view", "messages.send",
+    "notifications.view"
   ],
 
   area_manager: [
     "dealer.view", "dealer.update",
+    "users.view", "users.create", "users.edit",
     "orders.view", "orders.approve", "orders.reject",
     "invoices.view", "payments.view", "payments.approve",
     "documents.view", "documents.verify",
     "pricing.view", "pricing.approve",
     "campaigns.view",
     "maps.view", "maps.heatmap",
-    "dashboard.view.manager"
+    "dashboard.view.manager",
+    "messages.view", "messages.send",
+    "notifications.view"
   ],
 
   territory_manager: [
     "dealer.view", "dealer.update",
+    "users.view", "users.create", "users.edit",
     "orders.view", "orders.approve", "orders.reject",
     "invoices.view", "payments.view",
     "documents.view", "documents.verify",
     "pricing.view", "pricing.approve",
     "campaigns.view",
     "maps.view", "maps.heatmap",
-    "dashboard.view.manager"
+    "dashboard.view.manager",
+    "messages.view", "messages.send",
+    "notifications.view"
   ],
 
   finance_admin: [
     "invoices.view", "invoices.create", "invoices.edit",
     "payments.view", "payments.create", "payments.edit", "payments.approve",
     "pricing.view", "pricing.manage",
-    "reports.view", "reports.export"
+    "reports.view", "reports.export",
+    "messages.view", "messages.send",
+    "notifications.view", "notifications.send"
   ],
 
   dealer_admin: [
@@ -194,7 +209,12 @@ const ROLE_TO_PERMS = {
     "invoices.view", "payments.create", "payments.view",
     "documents.upload", "documents.view", "documents.verify",
     "maps.view",
-    "dashboard.view.dealer"
+    "dashboard.view.dealer",
+    "messages.view", "messages.send",
+    "notifications.view",
+    "campaigns.view",
+    "inventory.view",
+    "reports.view"
   ],
 
   dealer_staff: [
@@ -202,17 +222,26 @@ const ROLE_TO_PERMS = {
     "invoices.view", "payments.create", "payments.view",
     "documents.upload", "documents.view",
     "maps.view",
-    "dashboard.view.dealer"
+    "dashboard.view.dealer",
+    "messages.view", "messages.send",
+    "notifications.view",
+    "campaigns.view",
+    "inventory.view",
+    "reports.view"
   ],
 
   inventory_user: [
     "inventory.view", "inventory.manage", "inventory.adjust",
-    "pricing.view"
+    "pricing.view",
+    "messages.view", "messages.send",
+    "notifications.view"
   ],
 
   accounts_user: [
     "invoices.view", "invoices.edit",
-    "payments.view", "payments.edit"
+    "payments.view", "payments.edit",
+    "messages.view", "messages.send",
+    "notifications.view"
   ]
 };
 

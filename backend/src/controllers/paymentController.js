@@ -323,6 +323,73 @@ const getDealerAdminPending = async (req, res) => {
 };
 
 // ========================================================================
+// GET DUE PAYMENTS (Outstanding Invoices)
+// ========================================================================
+const getDuePayments = async (req, res) => {
+  try {
+    const user = req.user;
+    const where = {};
+
+    // Scope by dealer if user is dealer_admin or dealer_staff
+    if (user.dealerId) {
+      where.dealerId = user.dealerId;
+    }
+
+    // Get invoices with outstanding balance
+    where.balanceAmount = { [Op.gt]: 0 };
+    where.status = { [Op.in]: ["unpaid", "partial", "overdue"] };
+
+    const invoices = await Invoice.findAll({
+      where,
+      include: [
+        {
+          model: Dealer,
+          as: "dealer",
+          attributes: ["id", "dealerCode", "businessName", "outstandingAmount"],
+        },
+      ],
+      order: [["dueDate", "ASC"]],
+    });
+
+    const today = new Date();
+    const duePayments = invoices.map((inv) => {
+      const dueDate = new Date(inv.dueDate);
+      const daysOverdue = Math.floor((today - dueDate) / (1000 * 60 * 60 * 24));
+      
+      return {
+        id: inv.id,
+        invoiceNumber: inv.invoiceNumber,
+        invoiceDate: inv.invoiceDate,
+        dueDate: inv.dueDate,
+        totalAmount: inv.totalAmount,
+        paidAmount: inv.paidAmount,
+        balanceAmount: inv.balanceAmount,
+        status: inv.status,
+        daysOverdue: daysOverdue > 0 ? daysOverdue : 0,
+        isOverdue: daysOverdue > 0,
+        dealer: inv.dealer,
+      };
+    });
+
+    const totalDue = invoices.reduce((sum, inv) => sum + Number(inv.balanceAmount || 0), 0);
+    const overdueCount = invoices.filter((inv) => {
+      const dueDate = new Date(inv.dueDate);
+      return today > dueDate;
+    }).length;
+
+    res.json({
+      duePayments,
+      totalDue,
+      overdueCount,
+      totalCount: invoices.length,
+    });
+  } catch (err) {
+    console.error("getDuePayments error:", err);
+    res.status(500).json({ error: "Failed to fetch due payments" });
+  }
+};
+
+// ========================================================================
 // EXPORTS
 // ========================================================================
 module.exports = {
@@ -333,4 +400,5 @@ module.exports = {
   rejectPayment,
   autoReconcile,
   getDealerAdminPending,
+  getDuePayments,
 };
