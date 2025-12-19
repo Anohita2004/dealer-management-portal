@@ -2,7 +2,7 @@
 
 // Define multi-stage flows based on hierarchy
 const FLOWS = {
-  order: ["territory_manager", "area_manager", "regional_manager"],
+  order: ["dealer_admin", "territory_manager", "area_manager", "regional_manager", "regional_admin"],
   payment: ["dealer_admin", "territory_manager", "area_manager", "regional_manager", "regional_admin", "finance_admin"],
   document: ["dealer_admin", "territory_manager", "area_manager", "regional_manager"],
   pricing: ["territory_manager", "area_manager", "regional_admin", "super_admin"], // For pricing approvals
@@ -13,9 +13,11 @@ const FLOWS = {
 // Map stage → allowed roles (can be same as stage or include higher roles)
 const STAGE_APPROVERS = {
   order: {
+    dealer_admin: ["dealer_admin", "territory_manager", "area_manager", "regional_manager", "regional_admin", "super_admin"],
     territory_manager: ["territory_manager", "area_manager", "regional_manager", "regional_admin", "super_admin"],
     area_manager: ["area_manager", "regional_manager", "regional_admin", "super_admin"],
     regional_manager: ["regional_manager", "regional_admin", "super_admin"],
+    regional_admin: ["regional_admin", "super_admin"],
   },
   payment: {
     dealer_admin: ["dealer_admin", "territory_manager", "area_manager", "super_admin"],

@@ -111,6 +111,71 @@ exports.getMyOrders = async (req, res) => {
 };
 
 // --------------------------------------
+// DEALER ADMIN → PENDING ORDERS FOR APPROVAL
+// --------------------------------------
+exports.getPendingOrdersForApproval = async (req, res) => {
+  try {
+    const userRole = req.user.roleDetails?.name || req.user.role;
+    const dealerId = req.user.dealerId;
+
+    if (userRole === 'dealer_admin' && dealerId) {
+      // Dealer admin sees orders from their dealer that are pending their approval
+      const orders = await Order.findAll({
+        where: {
+          dealerId: dealerId,
+          approvalStage: 'dealer_admin',
+          approvalStatus: 'pending'
+        },
+        include: [
+          { model: OrderItem, as: "items", include: [{ model: Material, as: "material" }] },
+          { model: Dealer, as: "dealer" }
+        ],
+        order: [["createdAt", "DESC"]],
+      });
+
+      return res.json({ orders, count: orders.length });
+    }
+
+    // For other roles, use scoped approach
+    let whereClause = {
+      approvalStatus: 'pending'
+    };
+
+    if (req.scope?.order) {
+      Object.assign(whereClause, req.scope.order);
+    } else {
+      const scopeWhere = await RBACEngine.buildScopeWhereClause(req.user, 'Order');
+      Object.assign(whereClause, scopeWhere);
+    }
+
+    // Filter by current approval stage based on user's role
+    if (userRole === 'territory_manager') {
+      whereClause.approvalStage = 'territory_manager';
+    } else if (userRole === 'area_manager') {
+      whereClause.approvalStage = 'area_manager';
+    } else if (userRole === 'regional_manager') {
+      whereClause.approvalStage = 'regional_manager';
+    } else if (userRole === 'regional_admin') {
+      whereClause.approvalStage = 'regional_admin';
+    }
+
+    const orders = await Order.findAll({
+      where: whereClause,
+      include: [
+        { model: OrderItem, as: "items", include: [{ model: Material, as: "material" }] },
+        { model: Dealer, as: "dealer" },
+      ],
+      order: [["createdAt", "DESC"]],
+    });
+
+    res.json({ orders, count: orders.length });
+  } catch (err) {
+    console.error("getPendingOrdersForApproval:", err);
+    res.status(500).json({ error: "Failed to load pending orders" });
+  }
+};
+
+// --------------------------------------
 // ADMIN / MANAGER → ALL ORDERS (SCOPED)
 // --------------------------------------
 exports.getAllOrders = async (req, res) => {

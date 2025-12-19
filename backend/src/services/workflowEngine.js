@@ -247,7 +247,7 @@ class WorkflowEngine {
       const { Dealer } = require('../models');
       const dealer = await Dealer.findByPk(entity.dealerId, {
         include: [
-          { model: require('../models').Territory, as: 'territory' },
+          { model: require('../models').Territory, as: 'territoryRelation' },
           { model: require('../models').Area, as: 'area' },
           { model: require('../models').Region, as: 'region' }
         ]

@@ -89,7 +89,12 @@ Dealer.associate = (models) => {
       onDelete: "SET NULL",
       onUpdate: "CASCADE",
     });
-Dealer.belongsTo(models.Territory, { foreignKey: 'territoryId' });
+
+    // Use alias 'territoryRelation' to avoid collision with string field 'territory'
+    Dealer.belongsTo(models.Territory, {
+      foreignKey: 'territoryId',
+      as: 'territoryRelation',
+    });
 
     Dealer.belongsTo(models.User, {
       foreignKey: { name: "managerId", allowNull: true },
