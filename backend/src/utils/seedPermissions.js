@@ -218,6 +218,7 @@ const ROLE_TO_PERMS = {
   ],
 
   dealer_staff: [
+    "dealer.view", // view their own dealer profile
     "orders.create", "orders.view",
     "invoices.view", "payments.create", "payments.view",
     "documents.upload", "documents.view",

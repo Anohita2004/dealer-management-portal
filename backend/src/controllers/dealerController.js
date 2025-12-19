@@ -173,14 +173,91 @@ const blockDealer = async (req, res) => {
 ============================================================ */
 const getDealerProfile = async (req, res) => {
   try {
-    if (req.user.role !== "dealer") {
-      return res.status(403).json({ error: "Not authorized" });
+    // Get fresh user data from database to ensure dealerId is current
+    const user = await User.findByPk(req.user.id, {
+      include: [
+        { model: require('../models').Role, as: 'roleDetails' }
+      ],
+      attributes: ['id', 'dealerId', 'username', 'email', 'role', 'roleId', 'regionId', 'areaId', 'territoryId']
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
     }
 
-    const dealer = await Dealer.findByPk(req.user.dealerId);
+    // Check dealerId from database (more reliable than token)
+    const dealerId = user.dealerId || req.user.dealerId;
+    
+    // If debug=true query param, return diagnostic info
+    if (req.query.debug === 'true') {
+      const dealer = dealerId ? await Dealer.findByPk(dealerId, {
+        attributes: ['id', 'dealerCode', 'businessName', 'regionId', 'areaId', 'territoryId', 'managerId']
+      }) : null;
+
+      return res.json({
+        user: {
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          role: user.role,
+          roleId: user.roleId,
+          roleDetails: user.roleDetails,
+          dealerId: user.dealerId,
+          regionId: user.regionId,
+          areaId: user.areaId,
+          territoryId: user.territoryId
+        },
+        dealerInDB: dealer ? {
+          id: dealer.id,
+          dealerCode: dealer.dealerCode,
+          businessName: dealer.businessName,
+          regionId: dealer.regionId,
+          areaId: dealer.areaId,
+          territoryId: dealer.territoryId,
+          managerId: dealer.managerId
+        } : null,
+        tokenData: {
+          dealerId: req.user.dealerId,
+          role: req.user.role,
+          regionId: req.user.regionId,
+          areaId: req.user.areaId,
+          territoryId: req.user.territoryId
+        },
+        diagnosis: {
+          hasDealerIdInDB: !!user.dealerId,
+          hasDealerIdInToken: !!req.user.dealerId,
+          dealerIdMatches: user.dealerId === req.user.dealerId,
+          dealerExists: !!dealer,
+          needsRelogin: user.dealerId && !req.user.dealerId,
+          status: !user.dealerId 
+            ? "❌ No dealerId in database - user needs to be assigned a dealer"
+            : !dealer 
+              ? "❌ DealerId exists but dealer not found - dealer may have been deleted"
+              : user.dealerId !== req.user.dealerId
+                ? "⚠️ DealerId in database but not in token - user needs to log out and log back in"
+                : "✅ Account is properly linked to dealer"
+        }
+      });
+    }
+    
+    if (!dealerId) {
+      console.warn(`User ${user.username} (${user.role}) has no dealerId in database`);
+      return res.status(400).json({ 
+        error: "Your account is not linked to a dealer. Please contact an administrator to assign a dealer to your account.",
+        userId: user.id,
+        dealerIdInDB: user.dealerId,
+        dealerIdInToken: req.user.dealerId,
+        tip: "Add ?debug=true to the URL for detailed diagnostic information"
+      });
+    }
+
+    const dealer = await Dealer.findByPk(dealerId);
 
     if (!dealer) {
-      return res.status(404).json({ error: "Dealer profile not found" });
+      return res.status(404).json({ 
+        error: "Dealer profile not found",
+        dealerId: dealerId
+      });
     }
 
     res.json(dealer);

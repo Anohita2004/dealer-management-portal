@@ -20,7 +20,12 @@ module.exports = (permissionKey) => {
       });
 
       if (!hasPermission) {
-        return res.status(403).json({ error: "Access Denied — Missing Permission" });
+        return res.status(403).json({ 
+          error: "Access Denied — Missing Permission",
+          requiredPermission: permissionKey,
+          userRole: req.user.role || req.user.roleDetails?.name,
+          roleId: req.user.roleId
+        });
       }
 
       next();
