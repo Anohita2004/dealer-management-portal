@@ -29,12 +29,23 @@ router.get(
 );
 
 // ---------------------------
+// PENDING ORDERS FOR APPROVAL
+// ---------------------------
+router.get(
+  "/pending",
+  authenticate,
+  authorize("dealer_admin", "territory_manager", "area_manager", "regional_manager", "regional_admin", "super_admin"),
+  checkPermission("orders.view"),
+  orderController.getPendingOrdersForApproval
+);
+
+// ---------------------------
 // ADMIN / MANAGER VIEW ALL
 // ---------------------------
 router.get(
   "/",
   authenticate,
-  authorize("dealer_admin", "regional_manager", "regional_admin", "super_admin"),
+  authorize("dealer_admin", "territory_manager", "area_manager", "regional_manager", "regional_admin", "super_admin"),
   checkPermission("orders.view"),
   applyScoping(["Order"]),
   orderController.getAllOrders
@@ -46,7 +57,7 @@ router.get(
 router.patch(
   "/:id/status",
   authenticate,
-  authorize("dealer_admin", "regional_manager", "regional_admin", "super_admin"),
+  authorize("dealer_admin", "territory_manager", "area_manager", "regional_manager", "regional_admin", "super_admin"),
   checkPermission("orders.edit"),
   orderController.updateOrderStatus
 );
@@ -57,7 +68,7 @@ router.patch(
 router.patch(
   "/:id/approve",
   authenticate,
-  authorize("dealer_admin", "regional_manager", "regional_admin", "super_admin"),
+  authorize("dealer_admin", "territory_manager", "area_manager", "regional_manager", "regional_admin", "super_admin"),
   checkPermission("orders.approve"),
   orderController.approveOrder
 );
@@ -65,7 +76,7 @@ router.patch(
 router.patch(
   "/:id/reject",
   authenticate,
-  authorize("dealer_admin", "regional_manager", "regional_admin", "super_admin"),
+  authorize("dealer_admin", "territory_manager", "area_manager", "regional_manager", "regional_admin", "super_admin"),
   checkPermission("orders.reject"),
   orderController.rejectOrder
 );

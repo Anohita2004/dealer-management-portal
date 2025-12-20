@@ -9,8 +9,78 @@ const { Dealer, User } = require('../models'); // ✅ needed
 // 🧩 List all dealers
 router.get('/', authenticate, checkPermission('dealer.view'), applyScoping(['Dealer']), dealerController.getAllDealers);
 
-// 🧩 Dealer profile
-router.get('/profile', authenticate, authorize("dealer_admin","dealer_staff"), checkPermission('dealer.view'), dealerController.getDealerProfile);
+// 🧩 Diagnostic endpoint - check user's database state
+router.get('/debug/my-account', authenticate, authorize("dealer_admin","dealer_staff"), async (req, res) => {
+  try {
+    const user = await User.findByPk(req.user.id, {
+      include: [
+        { model: require('../models').Role, as: 'roleDetails' },
+        { model: Dealer, as: 'dealer' }
+      ],
+      attributes: ['id', 'username', 'email', 'role', 'roleId', 'dealerId', 'regionId', 'areaId', 'territoryId', 'isActive']
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const dealer = user.dealerId ? await Dealer.findByPk(user.dealerId, {
+      attributes: ['id', 'dealerCode', 'businessName', 'regionId', 'areaId', 'territoryId', 'managerId']
+    }) : null;
+
+    res.json({
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        roleId: user.roleId,
+        roleDetails: user.roleDetails,
+        dealerId: user.dealerId,
+        regionId: user.regionId,
+        areaId: user.areaId,
+        territoryId: user.territoryId,
+        isActive: user.isActive
+      },
+      dealerInDB: dealer ? {
+        id: dealer.id,
+        dealerCode: dealer.dealerCode,
+        businessName: dealer.businessName,
+        regionId: dealer.regionId,
+        areaId: dealer.areaId,
+        territoryId: dealer.territoryId,
+        managerId: dealer.managerId
+      } : null,
+      tokenData: {
+        dealerId: req.user.dealerId,
+        role: req.user.role,
+        regionId: req.user.regionId,
+        areaId: req.user.areaId,
+        territoryId: req.user.territoryId
+      },
+      diagnosis: {
+        hasDealerIdInDB: !!user.dealerId,
+        hasDealerIdInToken: !!req.user.dealerId,
+        dealerIdMatches: user.dealerId === req.user.dealerId,
+        dealerExists: !!dealer,
+        needsRelogin: user.dealerId && !req.user.dealerId,
+        status: !user.dealerId 
+          ? "❌ No dealerId in database - user needs to be assigned a dealer"
+          : !dealer 
+            ? "❌ DealerId exists but dealer not found - dealer may have been deleted"
+            : user.dealerId !== req.user.dealerId
+              ? "⚠️ DealerId in database but not in token - user needs to log out and log back in"
+              : "✅ Account is properly linked to dealer"
+      }
+    });
+  } catch (err) {
+    console.error("Debug account error:", err);
+    res.status(500).json({ error: "Failed to check account state", details: err.message });
+  }
+});
+
+// 🧩 Dealer profile (self-service - authorize is sufficient, no need for permission check)
+router.get('/profile', authenticate, authorize("dealer_admin","dealer_staff"), dealerController.getDealerProfile);
 
 // ✅ FIX: Place this BEFORE "/:id"
 router.get("/my-manager", authenticate, authorize("dealer_admin","dealer_staff"), async (req, res) => {

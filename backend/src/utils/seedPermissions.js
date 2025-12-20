@@ -205,7 +205,7 @@ const ROLE_TO_PERMS = {
   dealer_admin: [
     "dealer.view", // only their own dealer
     "users.create", "users.edit", // manage staff
-    "orders.create", "orders.view",
+    "orders.create", "orders.view", "orders.approve", "orders.reject", // approve/reject orders from dealer_staff
     "invoices.view", "payments.create", "payments.view",
     "documents.upload", "documents.view", "documents.verify",
     "maps.view",
@@ -218,6 +218,7 @@ const ROLE_TO_PERMS = {
   ],
 
   dealer_staff: [
+    "dealer.view", // view their own dealer profile
     "orders.create", "orders.view",
     "invoices.view", "payments.create", "payments.view",
     "documents.upload", "documents.view",

@@ -135,11 +135,20 @@ const getDealerDashboard = async (req, res) => {
     let dealerId = req.user.dealerId;
     if (!dealerId) {
       // Fallback to scope if dealerId not directly on user
-      const scope = RBACEngine.getUserScope(req.user);
-      if (!scope.dealerId) {
-        return res.status(400).json({ error: "dealerId missing" });
+      try {
+        const scope = RBACEngine.getUserScope(req.user);
+        if (scope && scope.dealerId) {
+          dealerId = scope.dealerId;
+        }
+      } catch (scopeErr) {
+        console.warn("Failed to get user scope:", scopeErr.message);
       }
-      dealerId = scope.dealerId;
+      
+      if (!dealerId) {
+        return res.status(400).json({ 
+          error: "dealerId missing. User must be dealer_admin or dealer_staff with a valid dealerId." 
+        });
+      }
     }
 
     // Get date range from query params (optional)
@@ -187,10 +196,13 @@ const getDealerDashboard = async (req, res) => {
     const partialInvoices = invoices.filter(inv => inv.status === 'partial').length;
     const overdueInvoices = invoices.filter(inv => inv.status === 'overdue').length;
 
-    // Get orders count
-    const ordersCount = await Order.count({
-      where: { dealerId, ...(dateWhere.orderDate ? { orderDate: dateWhere.invoiceDate } : {}) }
+    // Get orders count and list
+    const orders = await Order.findAll({
+      where: { dealerId, ...(dateWhere.orderDate ? { orderDate: dateWhere.invoiceDate } : {}) },
+      order: [["createdAt", "DESC"]],
+      limit: 50 // Limit for dashboard display
     });
+    const ordersCount = orders.length;
 
     // Get pending documents
     const pendingDocs = await Document.count({
@@ -203,26 +215,39 @@ const getDealerDashboard = async (req, res) => {
     });
 
     // Get active campaigns for this dealer
-    const activeCampaigns = await Campaign.count({
-      where: {
-        isActive: true,
-        targetAudience: {
-          [Op.contains]: [{ type: 'dealer', entityId: dealerId }]
+    let activeCampaigns = 0;
+    try {
+      activeCampaigns = await Campaign.count({
+        where: {
+          isActive: true,
+          targetAudience: {
+            [Op.contains]: [{ type: 'dealer', entityId: dealerId }]
+          }
         }
-      }
-    });
+      });
+    } catch (campaignErr) {
+      // If Campaign query fails (e.g., JSONB not supported), just set to 0
+      console.warn("Campaign count query failed, defaulting to 0:", campaignErr.message);
+      activeCampaigns = 0;
+    }
 
     // Monthly trend data (if date range provided)
     let monthlyTrend = [];
     if (startDate && endDate) {
       const monthlyData = {};
       invoices.forEach(inv => {
-        const month = new Date(inv.invoiceDate).toISOString().substring(0, 7); // YYYY-MM
-        if (!monthlyData[month]) {
-          monthlyData[month] = { month, sales: 0, count: 0 };
+        if (!inv.invoiceDate) return; // Skip if invoiceDate is null
+        try {
+          const month = new Date(inv.invoiceDate).toISOString().substring(0, 7); // YYYY-MM
+          if (!monthlyData[month]) {
+            monthlyData[month] = { month, sales: 0, count: 0 };
+          }
+          monthlyData[month].sales += Number(inv.totalAmount || 0);
+          monthlyData[month].count += 1;
+        } catch (dateErr) {
+          // Skip invalid dates
+          console.warn("Invalid invoice date:", inv.invoiceDate);
         }
-        monthlyData[month].sales += Number(inv.totalAmount || 0);
-        monthlyData[month].count += 1;
       });
       monthlyTrend = Object.values(monthlyData).sort((a, b) => a.month.localeCompare(b.month));
     }
@@ -249,12 +274,17 @@ const getDealerDashboard = async (req, res) => {
         partial: partialInvoices,
         overdue: overdueInvoices
       },
+      orders: orders || [], // Array of orders for frontend filtering
       monthlyTrend,
       dateRange: startDate && endDate ? { startDate, endDate } : null
     });
   } catch (err) {
     console.error("Dealer dashboard error:", err);
-    res.status(500).json({ error: "Failed to load dashboard" });
+    console.error("Error stack:", err.stack);
+    res.status(500).json({ 
+      error: "Failed to load dashboard",
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   }
 };
 
