@@ -258,7 +258,10 @@ const approveInvoice = async (req, res) => {
     const { id } = req.params;
     const { action, reason, notes } = req.body;
 
-    if (!["approve", "reject"].includes(action))
+    // Default to "approve" if no action provided (since this is the approve route)
+    const finalAction = action || "approve";
+    
+    if (!["approve", "reject"].includes(finalAction))
       return res.status(400).json({ error: "Invalid action" });
 
     const invoice = await Invoice.findByPk(id, {
@@ -272,7 +275,7 @@ const approveInvoice = async (req, res) => {
 
     // Use workflow service
     let result;
-    if (action === "reject") {
+    if (finalAction === "reject") {
       result = await WorkflowService.reject(
         "invoice",
         invoice,
@@ -290,10 +293,10 @@ const approveInvoice = async (req, res) => {
 
     await AuditLog.create({
       userId: req.user.id,
-      action: action === "approve" ? "APPROVE_INVOICE" : "REJECT_INVOICE",
+      action: finalAction === "approve" ? "APPROVE_INVOICE" : "REJECT_INVOICE",
       entity: "Invoice",
       entityId: invoice.id,
-      changes: { action, reason },
+      changes: { action: finalAction, reason },
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     });
@@ -309,6 +312,17 @@ const approveInvoice = async (req, res) => {
   } catch (err) {
     await t.rollback();
     console.error("Approve invoice error:", err);
+    
+    // If it's a workflow validation error, return 403
+    if (err.message && err.message.includes('cannot approve at stage')) {
+      return res.status(403).json({ 
+        error: "Access Denied — Workflow Validation Failed",
+        message: err.message,
+        userRole: req.user.role || req.user.roleDetails?.name,
+        invoiceId: req.params.id
+      });
+    }
+    
     res.status(500).json({ error: "Failed to update invoice status", details: err.message });
   }
 };

@@ -21,8 +21,9 @@ router.get('/', authenticate, checkPermission('notifications.view'), getUserNoti
 // User: Mark as read
 router.put('/:id/read', authenticate, checkPermission('notifications.view'), markAsRead);
 
-// User: Mark all as read
+// User: Mark all as read (support both paths and methods for frontend compatibility)
 router.put('/read-all', authenticate, checkPermission('notifications.view'), markAllAsRead);
+router.patch('/mark-all-read', authenticate, checkPermission('notifications.view'), markAllAsRead);
 
 // User: Delete notification
 router.delete('/:id', authenticate, checkPermission('notifications.view'), deleteNotification);

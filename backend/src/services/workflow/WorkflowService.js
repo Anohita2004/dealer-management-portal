@@ -100,7 +100,7 @@ class WorkflowService {
     const { remarks, transaction } = options;
 
     // Validate user can approve at current stage
-    if (!WorkflowResolver.validateUserCanApprove(user, entity)) {
+    if (!WorkflowResolver.validateUserCanApprove(user, entity, entityType)) {
       throw new Error(
         `User ${user.roleDetails?.name || user.role} cannot approve at stage ${entity.approvalStage}`
       );
@@ -272,7 +272,7 @@ class WorkflowService {
     const { reason, remarks, rollback = true, transaction } = options;
 
     // Validate user can reject at current stage
-    if (!WorkflowResolver.validateUserCanApprove(user, entity)) {
+    if (!WorkflowResolver.validateUserCanApprove(user, entity, entityType)) {
       throw new Error(
         `User ${user.roleDetails?.name || user.role} cannot reject at stage ${entity.approvalStage}`
       );
@@ -379,60 +379,73 @@ class WorkflowService {
    * @returns {Promise<Object>} Workflow status
    */
   static async getWorkflowStatus(entityType, entity) {
-    const pipeline = WorkflowResolver.getAllStages(entityType);
-    const currentStage = WorkflowResolver.getCurrentStage(entity);
-    const completedStages = WorkflowResolver.getCompletedStages(entity, entityType);
-    const pendingStages = WorkflowResolver.getPendingStages(entity, entityType);
-    const isFinal = WorkflowResolver.isFinalStage(entity, entityType);
+    try {
+      const pipeline = WorkflowResolver.getAllStages(entityType);
+      const currentStage = WorkflowResolver.getCurrentStage(entity);
+      const completedStages = WorkflowResolver.getCompletedStages(entity, entityType);
+      const pendingStages = WorkflowResolver.getPendingStages(entity, entityType);
+      const isFinal = WorkflowResolver.isFinalStage(entity, entityType);
 
-    // Get timeline history
-    const { WorkflowTimeline } = require('../../models');
-    const timeline = await WorkflowTimeline.findAll({
-      where: {
+      // Get timeline history (with error handling for missing association)
+      const { WorkflowTimeline } = require('../../models');
+      let timeline = [];
+      try {
+        timeline = await WorkflowTimeline.findAll({
+          where: {
+            entityType,
+            entityId: entity.id,
+          },
+          include: [
+            {
+              model: require('../../models').User,
+              as: 'actor',
+              attributes: ['id', 'username', 'email'],
+              required: false, // Left join - don't fail if actor doesn't exist
+            },
+          ],
+          order: [['createdAt', 'ASC']],
+        });
+      } catch (timelineErr) {
+        console.warn('Failed to load workflow timeline:', timelineErr.message);
+        // Continue without timeline if there's an error
+        timeline = [];
+      }
+
+      return {
         entityType,
         entityId: entity.id,
-      },
-      include: [
-        {
-          model: require('../../models').User,
-          as: 'actor',
-          attributes: ['id', 'username', 'email'],
-        },
-      ],
-      order: [['createdAt', 'ASC']],
-    });
-
-    return {
-      entityType,
-      entityId: entity.id,
-      pipeline,
-      currentStage,
-      completedStages,
-      pendingStages,
-      isFinal,
-      approvalStatus: entity.approvalStatus,
-      approvedBy: entity.approvedBy,
-      approvedAt: entity.approvedAt,
-      rejectionReason: entity.rejectionReason,
-      currentSlaExpiresAt: entity.currentSlaExpiresAt,
-      timeline: timeline.map((t) => ({
-        id: t.id,
-        stage: t.stage,
-        action: t.action,
-        actor: t.actor
-          ? {
-              id: t.actor.id,
-              username: t.actor.username,
-              email: t.actor.email,
-            }
-          : null,
-        remarks: t.remarks,
-        rejectionReason: t.rejectionReason,
-        timestamp: t.createdAt,
-        slaStart: t.slaStart,
-        slaEnd: t.slaEnd,
-      })),
-    };
+        pipeline,
+        currentStage,
+        completedStages,
+        pendingStages,
+        isFinal,
+        approvalStatus: entity.approvalStatus,
+        approvedBy: entity.approvedBy,
+        approvedAt: entity.approvedAt,
+        rejectionReason: entity.rejectionReason,
+        currentSlaExpiresAt: entity.currentSlaExpiresAt,
+        timeline: timeline.map((t) => ({
+          id: t.id,
+          stage: t.stage,
+          action: t.action,
+          actor: t.actor
+            ? {
+                id: t.actor.id,
+                username: t.actor.username,
+                email: t.actor.email,
+              }
+            : null,
+          remarks: t.remarks,
+          rejectionReason: t.rejectionReason,
+          timestamp: t.createdAt,
+          slaStart: t.slaStart,
+          slaEnd: t.slaEnd,
+        })),
+      };
+    } catch (err) {
+      console.error('getWorkflowStatus error:', err);
+      throw err;
+    }
   }
 
   /**

@@ -12,7 +12,7 @@ const { applyScoping } = require("../middleware/scoping");
 router.post(
   "/",
   authenticate,
-  authorize("dealer_admin", "dealer_staff"),
+  authorize("dealer_admin", "dealer_staff", "sales_executive"),
   checkPermission("orders.create"),
   orderController.placeOrder
 );
@@ -23,7 +23,7 @@ router.post(
 router.get(
   "/my",
   authenticate,
-  authorize("dealer_admin", "dealer_staff"),
+  authorize("dealer_admin", "dealer_staff", "sales_executive"),
   checkPermission("orders.view"),
   orderController.getMyOrders
 );

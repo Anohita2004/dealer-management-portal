@@ -5,7 +5,7 @@ const { authenticate, authorize } = require('../middleware/auth');
 const checkPermission = require('../middleware/checkPermission');
 const { applyScoping } = require('../middleware/scoping');
 
-router.get('/', authenticate, checkPermission('campaigns.view'), applyScoping(['Campaign']), campaignController.getAllCampaigns);
+router.get('/', authenticate, authorize('dealer_admin', 'dealer_staff', 'territory_manager', 'area_manager', 'regional_manager', 'regional_admin', 'super_admin', 'technical_admin'), checkPermission('campaigns.view'), applyScoping(['Campaign']), campaignController.getAllCampaigns);
 router.get(
   "/active",
   authenticate,

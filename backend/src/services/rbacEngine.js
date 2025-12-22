@@ -2,7 +2,7 @@
 // Centralized RBAC Engine with Hierarchical Scoping
 // Combines: Role + Permission + Region + Area + Territory + Dealer
 
-const { User, Role, Permission, Dealer, Region, Area, Territory } = require('../models');
+const { User, Role, Permission, Dealer, Region, Area, Territory, UserDealer } = require('../models');
 const { Op } = require('sequelize');
 
 /**
@@ -150,6 +150,15 @@ class RBACEngine {
     if (['super_admin', 'technical_admin'].includes(roleName)) {
       const allDealers = await Dealer.findAll({ attributes: ['id'] });
       return allDealers.map(d => d.id);
+    }
+
+    // Sales Executive: dealers explicitly assigned via mapping
+    if (roleName === 'sales_executive') {
+      const mappings = await UserDealer.findAll({
+        where: { userId: user.id },
+        attributes: ['dealerId']
+      });
+      return mappings.map((m) => m.dealerId);
     }
 
     const scope = this.getUserScope(user);

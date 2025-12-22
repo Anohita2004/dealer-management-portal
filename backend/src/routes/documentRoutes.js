@@ -14,6 +14,7 @@ const { applyScoping } = require('../middleware/scoping');
 router.get(
   '/',
   authenticate,
+  authorize('dealer_admin', 'dealer_staff', 'territory_manager', 'area_manager', 'regional_manager', 'regional_admin', 'super_admin', 'technical_admin'),
   checkPermission('documents.view'),
   applyScoping(['Dealer']),
   documentController.getAllDocuments

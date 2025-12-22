@@ -67,6 +67,25 @@ router.get(
   materialController.getMaterials
 );
 
+// Dealer-scoped materials for ordering – respects dealer-material mappings
+router.get(
+  "/dealer/:dealerId",
+  authenticate,
+  authorize(
+    "dealer_admin",
+    "dealer_staff",
+    "sales_executive",
+    "territory_manager",
+    "area_manager",
+    "regional_manager",
+    "regional_admin",
+    "super_admin",
+    "technical_admin"
+  ),
+  checkPermission("inventory.view"),
+  materialController.getDealerMaterials
+);
+
 router.get(
   "/:id",
   authenticate,

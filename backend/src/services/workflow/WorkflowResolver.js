@@ -2,6 +2,7 @@
 // Resolves workflow stages, validates users, and determines transitions
 
 const { getPipeline } = require('./pipelines');
+const { STAGE_APPROVERS } = require('../../utils/approvalEngine');
 
 /**
  * WorkflowResolver - Handles stage navigation and validation
@@ -102,10 +103,11 @@ class WorkflowResolver {
    * Validate if user can approve at current stage
    * @param {Object} user - User object
    * @param {Object} entity - Entity object
+   * @param {string} entityType - Optional entity type (if not provided, will be inferred)
    * @param {boolean} allowSuperAdmin - Allow super admin override (default: true)
    * @returns {boolean} True if user can approve
    */
-  static validateUserCanApprove(user, entity, allowSuperAdmin = true) {
+  static validateUserCanApprove(user, entity, entityType = null, allowSuperAdmin = true) {
     const roleName = user.roleDetails?.name || user.role;
     const currentStage = this.getCurrentStage(entity);
 
@@ -116,7 +118,16 @@ class WorkflowResolver {
       return true;
     }
 
-    // User's role must match the current stage
+    // Get entity type if not provided
+    const type = entityType || this.getEntityType(entity);
+
+    // Check if user's role is in the allowed approvers for this stage
+    const allowedRoles = STAGE_APPROVERS[type]?.[currentStage] || [];
+    if (allowedRoles.length > 0) {
+      return allowedRoles.includes(roleName);
+    }
+
+    // Fallback: User's role must match the current stage (for backward compatibility)
     return roleName === currentStage;
   }
 

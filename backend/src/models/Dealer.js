@@ -130,6 +130,14 @@ Dealer.associate = (models) => {
       foreignKey: "areaId",
       as: "area",
     });
+
+    // Dealer → DealerMaterial (dealer-specific material availability)
+    Dealer.hasMany(models.DealerMaterial, {
+      foreignKey: "dealerId",
+      as: "materialMappings",
+      onDelete: "CASCADE",
+      onUpdate: "CASCADE",
+    });
   };
 
   return Dealer;

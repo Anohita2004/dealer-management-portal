@@ -6,6 +6,7 @@
 
 const { PaymentRequest, Invoice, Dealer, AuditLog, sequelize } = require("../models");
 const { Op } = require("sequelize");
+const RBACEngine = require("../services/rbacEngine");
 const { nextStage, isApproverForStage } = require("../utils/approvalEngine");
 
 // ========================================================================
@@ -17,7 +18,7 @@ const { nextStage, isApproverForStage } = require("../utils/approvalEngine");
 const createPaymentRequest = async (req, res) => {
   try {
     // ===== 1. Check user =====
-    if (!req.user || !req.user.dealerId) {
+    if (!req.user) {
       console.warn("Unauthorized attempt to create payment request:", req.ip);
       return res.status(401).json({ error: "Unauthorized: user info missing" });
     }
@@ -28,31 +29,59 @@ const createPaymentRequest = async (req, res) => {
       return res.status(400).json({ error: "Request body is missing" });
     }
 
-    const { invoiceId, amount, paymentMode, utrNumber } = req.body;
+    const { invoiceId, amount, paymentMode, utrNumber, dealerId: bodyDealerId } = req.body;
 
     // ===== 3. Validate required fields =====
     if (!invoiceId || !amount || !paymentMode) {
       return res.status(400).json({ error: "Missing required fields: invoiceId, amount, paymentMode" });
     }
 
-    // ===== 4. Fetch invoice =====
+    // ===== 4. Determine dealer context =====
+    const roleName = req.user.roleDetails?.name || req.user.role;
+    let dealerId = req.user.dealerId || bodyDealerId;
+
+    // For dealer-facing roles, enforce own dealer unless explicitly allowed
+    if (roleName === "dealer_admin" || roleName === "dealer_staff") {
+      if (!req.user.dealerId) {
+        return res.status(400).json({ error: "Your account is not linked to a dealer" });
+      }
+      dealerId = req.user.dealerId;
+    } else if (roleName === "sales_executive") {
+      // Sales Executive must specify a dealer and it must be in their scope
+      if (!dealerId) {
+        return res.status(400).json({ error: "dealerId is required for sales executives" });
+      }
+      const allowedDealers = await RBACEngine.getDealersInScope(req.user);
+      if (!allowedDealers.includes(dealerId)) {
+        return res.status(403).json({ error: "Dealer is out of scope for this user" });
+      }
+    } else if (!dealerId) {
+      // Other roles must still have a dealer context
+      return res.status(400).json({ error: "dealerId is required" });
+    }
+
+    // ===== 5. Fetch invoice and validate dealer =====
     const invoice = await Invoice.findByPk(invoiceId);
     if (!invoice) {
       return res.status(404).json({ error: "Invoice not found" });
     }
 
-    // ===== 5. Validate amount =====
+    if (invoice.dealerId !== dealerId) {
+      return res.status(403).json({ error: "Invoice does not belong to the selected dealer" });
+    }
+
+    // ===== 6. Validate amount =====
     if (Number(amount) !== Number(invoice.balanceAmount)) {
       return res.status(400).json({ error: "Amount mismatch with invoice balance" });
     }
 
-    // ===== 6. Handle proof file =====
+    // ===== 7. Handle proof file =====
     const proofPath = req.file ? req.file.path : null;
 
-    // ===== 7. Create payment request =====
+    // ===== 8. Create payment request =====
     const payment = await PaymentRequest.create({
       invoiceId,
-      dealerId: req.user.dealerId,
+      dealerId,
       amount,
       paymentMode,
       utrNumber: utrNumber || null,
@@ -62,17 +91,17 @@ const createPaymentRequest = async (req, res) => {
       status: "dealer_admin_pending",
     });
 
-    // ===== 8. Log audit =====
+    // ===== 9. Log audit =====
     await AuditLog.create({
       userId: req.user.id,
       action: "CREATE_PAYMENT_REQUEST",
       entity: "PaymentRequest",
       entityId: payment.id,
-      changes: { invoiceId, amount, paymentMode, utrNumber, proofFile: proofPath },
+      changes: { invoiceId, dealerId, amount, paymentMode, utrNumber, proofFile: proofPath },
       ipAddress: req.ip,
     });
 
-    // ===== 9. Return response =====
+    // ===== 10. Return response =====
     res.status(201).json({ message: "Payment request created", payment });
   } catch (err) {
     console.error("createPaymentRequest error:", err);
@@ -85,8 +114,27 @@ const createPaymentRequest = async (req, res) => {
 // ========================================================================
 const getDealerPayments = async (req, res) => {
   try {
+    const roleName = req.user?.roleDetails?.name || req.user?.role;
+
+    let where = {};
+
+    if (roleName === "dealer_admin" || roleName === "dealer_staff") {
+      where.dealerId = req.user.dealerId;
+    } else if (roleName === "sales_executive") {
+      const RBACEngine = require("../services/rbacEngine");
+      const dealerIds = await RBACEngine.getDealersInScope(req.user);
+      if (!dealerIds.length) {
+        return res.json({ payments: [] });
+      }
+      const { Op } = require("sequelize");
+      where.dealerId = { [Op.in]: dealerIds };
+    } else {
+      // Fallback to scope-based behavior for other roles
+      where = {}; // let higher-level routes add scoping if needed
+    }
+
     const payments = await PaymentRequest.findAll({
-      where: { dealerId: req.user.dealerId },
+      where,
       include: ["Invoice"],
       order: [["createdAt", "DESC"]],
     });
@@ -305,20 +353,69 @@ const autoReconcile = async (req, res) => {
 // ========================================================================
 const getDealerAdminPending = async (req, res) => {
   try {
+    // Check if dealer_admin has dealerId
+    if (!req.user.dealerId) {
+      return res.status(400).json({ 
+        error: "Your account is not linked to a dealer. Please contact an administrator." 
+      });
+    }
+
     const data = await PaymentRequest.findAll({
       where: {
         dealerId: req.user.dealerId,
         approvalStage: "dealer_admin",
         approvalStatus: "pending",
       },
-      include: ["Invoice"],
+      include: [
+        { 
+          model: Invoice,
+          attributes: ["id", "invoiceNumber", "totalAmount", "balanceAmount", "status"]
+        },
+        {
+          model: Dealer,
+          attributes: ["id", "businessName", "dealerCode"]
+        }
+      ],
       order: [["createdAt", "DESC"]],
     });
+
+    // Debug info if requested
+    if (req.query.debug === 'true') {
+      // Get all payment requests for this dealer to see what's in the database
+      const allPayments = await PaymentRequest.findAll({
+        where: { dealerId: req.user.dealerId },
+        attributes: ["id", "dealerId", "approvalStage", "approvalStatus", "status", "createdAt"],
+        order: [["createdAt", "DESC"]],
+        limit: 10
+      });
+
+      return res.json({ 
+        pending: data,
+        debug: {
+          dealerAdminDealerId: req.user.dealerId,
+          dealerAdminRole: req.user.role || req.user.roleDetails?.name,
+          count: data.length,
+          query: {
+            dealerId: req.user.dealerId,
+            approvalStage: "dealer_admin",
+            approvalStatus: "pending"
+          },
+          allPaymentsForDealer: allPayments.map(p => ({
+            id: p.id,
+            dealerId: p.dealerId,
+            approvalStage: p.approvalStage,
+            approvalStatus: p.approvalStatus,
+            status: p.status,
+            createdAt: p.createdAt
+          }))
+        }
+      });
+    }
 
     res.json({ pending: data });
   } catch (err) {
     console.error("getDealerAdminPending:", err);
-    res.status(500).json({ error: "Failed to fetch dealer admin pending payments" });
+    res.status(500).json({ error: "Failed to fetch dealer admin pending payments", details: err.message });
   }
 };
 

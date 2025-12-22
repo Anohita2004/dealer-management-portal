@@ -30,13 +30,20 @@ console.log({
 router.post(
   "/request",
   authenticate,
-  authorize("dealer_staff"),
+  authorize("dealer_staff", "sales_executive"),
   checkPermission("payments.create"),
   upload.single("proofFile"),
   createPaymentRequest
 );
 
-router.get("/mine", authenticate, authorize("dealer_admin", "dealer_staff"), checkPermission("payments.view"), applyScoping(["Invoice"]), getDealerPayments);
+router.get(
+  "/mine",
+  authenticate,
+  authorize("dealer_admin", "dealer_staff", "sales_executive"),
+  checkPermission("payments.view"),
+  applyScoping(["Invoice"]),
+  getDealerPayments
+);
 
 // Get due payments (outstanding invoices)
 router.get("/due", authenticate, authorize("dealer_admin", "dealer_staff", "finance_admin", "super_admin"), checkPermission("payments.view"), getDuePayments);
