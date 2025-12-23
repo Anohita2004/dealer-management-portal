@@ -3,15 +3,15 @@ const router = express.Router();
 const campaignController = require('../controllers/campaignController');
 const { authenticate, authorize } = require('../middleware/auth');
 const checkPermission = require('../middleware/checkPermission');
-const { applyScoping } = require('../middleware/scoping');
+const { applyScope } = require('../middleware/rbac');
 
-router.get('/', authenticate, authorize('dealer_admin', 'dealer_staff', 'territory_manager', 'area_manager', 'regional_manager', 'regional_admin', 'super_admin', 'technical_admin'), checkPermission('campaigns.view'), applyScoping(['Campaign']), campaignController.getAllCampaigns);
+router.get('/', authenticate, authorize('dealer_admin', 'dealer_staff', 'territory_manager', 'area_manager', 'regional_manager', 'regional_admin', 'super_admin', 'technical_admin'), checkPermission('campaigns.view'), applyScope(['Campaign']), campaignController.getAllCampaigns);
 router.get(
   "/active",
   authenticate,
   authorize("dealer_admin", "territory_manager", "area_manager", "super_admin"),
   checkPermission("campaigns.view"),
-  applyScoping(['Campaign']),
+  applyScope(['Campaign']),
   campaignController.getActiveCampaigns
 );
 //router.get('/:id', authenticate, campaignController.getCampaignById);
@@ -20,7 +20,7 @@ router.get(
   authenticate,
   authorize("dealer_admin", "territory_manager", "area_manager", "super_admin"),
   checkPermission("campaigns.view"),
-  applyScoping(['Campaign']),
+  applyScope(['Campaign']),
   campaignController.getCampaignById
 );
 router.post('/', authenticate, authorize('super_admin', 'key_user'), checkPermission('campaigns.create'), campaignController.createCampaign);

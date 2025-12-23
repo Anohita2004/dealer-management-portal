@@ -44,7 +44,18 @@ module.exports = (sequelize, DataTypes) => {
       sapCustomerNumber: DataTypes.STRING,
       sapVendorNumber: DataTypes.STRING,
 
-      isActive: { type: DataTypes.BOOLEAN, defaultValue: true },
+      // Onboarding / lifecycle
+      status: {
+        type: DataTypes.ENUM(
+          "pending_approval",
+          "active",
+          "suspended",
+          "terminated"
+        ),
+        allowNull: false,
+        defaultValue: "pending_approval",
+      },
+      isActive: { type: DataTypes.BOOLEAN, defaultValue: false },
       isBlocked: { type: DataTypes.BOOLEAN, defaultValue: false },
       blockReason: DataTypes.TEXT,
       isVerified: { type: DataTypes.BOOLEAN, defaultValue: false },
@@ -61,8 +72,35 @@ module.exports = (sequelize, DataTypes) => {
       verifiedAt: DataTypes.DATE,
       licenses: DataTypes.JSON,
       lat: DataTypes.FLOAT,
-lng: DataTypes.FLOAT,
-territoryId: DataTypes.UUID,
+      lng: DataTypes.FLOAT,
+      territoryId: DataTypes.UUID,
+
+      // Multi-stage approval workflow fields
+      approvalStage: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
+      approvalStatus: {
+        type: DataTypes.ENUM("pending", "approved", "rejected"),
+        allowNull: false,
+        defaultValue: "pending",
+      },
+      approvedBy: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
+      approvedAt: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+      rejectionReason: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+      },
+      currentSlaExpiresAt: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
 
       // ✅ REAL REGION RELATION
       regionId: {

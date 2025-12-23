@@ -62,6 +62,12 @@ module.exports = (sequelize, DataTypes) => {
       as: "dealerMappings",
       foreignKey: "materialId"
     });
+
+    // Material → RegionMaterial (region-level availability, optional)
+    Material.hasMany(models.RegionMaterial, {
+      as: "regionMappings",
+      foreignKey: "materialId"
+    });
   };
 
   return Material;

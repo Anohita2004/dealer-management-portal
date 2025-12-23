@@ -42,7 +42,6 @@ const ensureDirectory = (dirPath) => {
 
 const getAllInvoices = async (req, res) => {
   try {
-    const role = req.user.roleDetails?.name || req.user.role;
     const {
       page = 1,
       limit = 10,
@@ -50,7 +49,7 @@ const getAllInvoices = async (req, res) => {
       status,
       startDate,
       endDate,
-      search
+      search,
     } = req.query;
 
     const offset = (page - 1) * limit;
@@ -69,20 +68,21 @@ const getAllInvoices = async (req, res) => {
     if (search) {
       where[Op.or] = [
         { invoiceNumber: { [Op.like]: `%${search}%` } },
-        { description: { [Op.like]: `%${search}%` } }
+        { description: { [Op.like]: `%${search}%` } },
       ];
     }
 
-    if (req.scope?.invoices) {
-      Object.assign(where, req.scope.invoices);
-    } else if (["dealer_admin", "dealer_staff", "dealer"].includes(role)) {
-      where.dealerId = req.user.dealerId;
-    }
+    // 🔒 Apply hierarchical + role-based scoping for all roles (including sales_executive)
+    const scopeWhere = await RBACEngine.buildScopeWhereClause(
+      req.user,
+      "Invoice"
+    );
+    Object.assign(where, scopeWhere);
 
     const { count, rows } = await Invoice.findAndCountAll({
       where,
       include: [{ model: Dealer, as: "dealer" }],
-      limit: parseInt(limit),
+      limit: parseInt(limit, 10),
       offset,
       order: [["invoiceDate", "DESC"]],
     });
@@ -105,16 +105,16 @@ const getAllInvoices = async (req, res) => {
 
 const getInvoiceById = async (req, res) => {
   try {
-    const role = req.user.roleDetails?.name || req.user.role;
     const { id } = req.params;
 
     const where = { id };
 
-    if (req.scope?.invoices) {
-      Object.assign(where, req.scope.invoices);
-    } else if (["dealer_admin", "dealer_staff", "dealer"].includes(role)) {
-      where.dealerId = req.user.dealerId;
-    }
+    // 🔒 Ensure user can only load invoices within their scoped dealers
+    const scopeWhere = await RBACEngine.buildScopeWhereClause(
+      req.user,
+      "Invoice"
+    );
+    Object.assign(where, scopeWhere);
 
     const invoice = await Invoice.findOne({
       where,
@@ -141,46 +141,61 @@ const createInvoice = async (req, res) => {
     const role = req.user.roleDetails?.name || req.user.role;
     let data = { ...req.body };
 
-    if (role === "dealer_staff") {
-      const { orderId } = data;
-
-      if (!orderId) {
-        return res.status(400).json({ error: "orderId is required" });
-      }
-
-      const order = await Order.findByPk(orderId);
-      if (!order) return res.status(404).json({ error: "Order not found" });
-
-      if (order.dealerId !== req.user.dealerId) {
-        return res.status(403).json({ error: "Order does not belong to your dealer" });
-      }
-
-      if (order.status !== "Approved") {
-        return res
-          .status(400)
-          .json({ error: "Order must be approved before invoice creation" });
-      }
-
-      data.dealerId = order.dealerId;
-      data.orderId = order.id;
-      data.description = data.description || order.description;
-      data.invoiceNumber = data.invoiceNumber || `INV-${Date.now()}`;
-      data.invoiceDate = new Date();
-
-      data.baseAmount = data.baseAmount || order.totalAmount;
-      data.taxAmount = data.taxAmount || 0;
-      data.paidAmount = 0;
+    const { orderId } = data;
+    if (!orderId) {
+      return res.status(400).json({ error: "orderId is required" });
     }
 
-    // Initialize approval workflow for invoices
-    const firstStage = nextStage(null, "invoice");
-    data.approvalStage = firstStage;
-    data.approvalStatus = "pending";
+    const order = await Order.findByPk(orderId, {
+      include: [{ model: Dealer, as: "dealer" }],
+    });
+    if (!order) return res.status(404).json({ error: "Order not found" });
+
+    // Dealer-facing roles must only invoice within their scoped dealers
+    if (["dealer_admin", "dealer_staff"].includes(role)) {
+      if (!req.user.dealerId || order.dealerId !== req.user.dealerId) {
+        return res
+          .status(403)
+          .json({ error: "Order does not belong to your dealer" });
+      }
+    } else if (!["super_admin", "technical_admin"].includes(role)) {
+      // For managers, ensure order's dealer is in their scope
+      const canAccess = await RBACEngine.canAccessResource(req.user, {
+        dealerId: order.dealerId,
+        regionId: order.dealer?.regionId,
+        areaId: order.dealer?.areaId,
+        territoryId: order.dealer?.territoryId,
+      });
+      if (!canAccess) {
+        return res
+          .status(403)
+          .json({ error: "Order is outside your allowed scope" });
+      }
+    }
+
+    if (order.status !== "Approved") {
+      return res
+        .status(400)
+        .json({ error: "Order must be approved before invoice creation" });
+    }
+
+    data.dealerId = order.dealerId;
+    data.orderId = order.id;
+    data.description = data.description || order.description;
+    data.invoiceNumber = data.invoiceNumber || `INV-${Date.now()}`;
+    data.invoiceDate = new Date();
+
+    data.baseAmount = data.baseAmount || order.totalAmount;
+    data.taxAmount = data.taxAmount || 0;
+    data.paidAmount = 0;
 
     const amounts = computeAmounts(data);
     const invoiceData = { ...data, ...amounts };
 
     const invoice = await Invoice.create(invoiceData);
+
+    // Start invoice workflow (dealer_admin → managers)
+    await WorkflowService.startWorkflow("invoice", invoice, req.user);
 
     await AuditLog.create({
       userId: req.user.id,
@@ -387,8 +402,14 @@ const generateInvoicePDF = async (req, res) => {
   try {
     const { id } = req.params;
 
+    // 🔒 Scope PDF downloads the same way as invoice detail
+    const scopeWhere = await RBACEngine.buildScopeWhereClause(
+      req.user,
+      "Invoice"
+    );
+
     const invoice = await Invoice.findOne({
-      where: { id },
+      where: { id, ...scopeWhere },
       include: [{ model: Dealer, as: "dealer" }],
     });
 

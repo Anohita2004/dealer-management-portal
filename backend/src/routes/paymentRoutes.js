@@ -2,7 +2,6 @@ const router = require("express").Router();
 const upload = require("../middleware/upload");
 const { authenticate, authorize } = require("../middleware/auth");
 const checkPermission = require("../middleware/checkPermission");
-const { applyScoping } = require("../middleware/scoping");
 
 const {
   createPaymentRequest,
@@ -14,15 +13,6 @@ const {
   autoReconcile,
   getDuePayments,
 } = require("../controllers/paymentController");
-console.log({
-  createPaymentRequest,
-  getDealerPayments,
-  getDealerAdminPending,
-  getPendingPayments,
-  approvePayment,
-  rejectPayment,
-  autoReconcile,
-});
 
 // -----------------------
 // DEALER STAFF ROUTES
@@ -41,7 +31,6 @@ router.get(
   authenticate,
   authorize("dealer_admin", "dealer_staff", "sales_executive"),
   checkPermission("payments.view"),
-  applyScoping(["Invoice"]),
   getDealerPayments
 );
 

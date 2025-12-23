@@ -25,16 +25,22 @@ module.exports = (sequelize, DataTypes) => {
       as: "users",
     });
 
-    // ✅ Add dealer association
+    // ✅ Dealer association
     Region.hasMany(models.Dealer, {
       foreignKey: "regionId",
       as: "dealers",
     });
 
-    // ✅ Add area association
+    // ✅ Area association
     Region.hasMany(models.Area, {
       foreignKey: "regionId",
       as: "areas",
+    });
+
+    // ✅ Region-material mapping
+    Region.hasMany(models.RegionMaterial, {
+      foreignKey: "regionId",
+      as: "materialMappings",
     });
   };
 

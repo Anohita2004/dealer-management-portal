@@ -4,10 +4,10 @@ const router = express.Router();
 const orderController = require("../controllers/orderController");
 const { authenticate, authorize } = require("../middleware/auth");
 const checkPermission = require("../middleware/checkPermission");
-const { applyScoping } = require("../middleware/scoping");
+const { applyScope } = require("../middleware/rbac");
 
 // ---------------------------
-// DEALER / STAFF CREATE ORDER
+// DEALER / STAFF CREATE ORDER (DRAFT/PENDING)
 // ---------------------------
 router.post(
   "/",
@@ -15,6 +15,17 @@ router.post(
   authorize("dealer_admin", "dealer_staff", "sales_executive"),
   checkPermission("orders.create"),
   orderController.placeOrder
+);
+
+// ---------------------------
+// SUBMIT ORDER FOR APPROVAL
+// ---------------------------
+router.post(
+  "/:id/submit",
+  authenticate,
+  authorize("dealer_admin", "dealer_staff", "sales_executive"),
+  checkPermission("orders.submit"),
+  orderController.submitOrder
 );
 
 // ---------------------------
@@ -47,7 +58,7 @@ router.get(
   authenticate,
   authorize("dealer_admin", "territory_manager", "area_manager", "regional_manager", "regional_admin", "super_admin"),
   checkPermission("orders.view"),
-  applyScoping(["Order"]),
+  applyScope(["Order"]),
   orderController.getAllOrders
 );
 

@@ -7,7 +7,8 @@ const eventBus = require("../services/eventBus");
 const inventoryService = require("../services/inventoryService");
 
 // --------------------------------------
-// PLACE ORDER  (Dealer / Dealer Staff)
+// PLACE ORDER  (Dealer / Dealer Staff / Sales Executive)
+// Creates a draft/pending order; workflow starts on submit.
 // --------------------------------------
 exports.placeOrder = async (req, res) => {
   const t = await sequelize.transaction();
@@ -62,17 +63,12 @@ exports.placeOrder = async (req, res) => {
       {
         dealerId,
         orderNumber: `ORD-${Date.now()}`,
-        status: "Pending",
+        status: "Pending", // draft / pre-submission
         totalAmount: total,
         notes,
       },
       { transaction: t }
     );
-
-    // Start workflow
-    await WorkflowService.startWorkflow("order", order, req.user, {
-      transaction: t,
-    });
 
     for (const it of items) {
       const lineTotal = Number(it.qty) * Number(it.unitPrice || 0);
@@ -107,6 +103,71 @@ exports.placeOrder = async (req, res) => {
     await t.rollback();
     console.error("placeOrder:", err);
     res.status(500).json({ error: "Failed to place order", details: err.message });
+  }
+};
+
+// --------------------------------------
+// SUBMIT ORDER FOR APPROVAL
+// --------------------------------------
+exports.submitOrder = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const { id } = req.params;
+
+    const order = await Order.findByPk(id, { transaction: t });
+    if (!order) {
+      await t.rollback();
+      return res.status(404).json({ error: "Order not found" });
+    }
+
+    // Ensure current user is allowed to act for this dealer
+    const allowedDealers = await RBACEngine.getDealersInScope(req.user);
+    if (!allowedDealers.includes(order.dealerId)) {
+      await t.rollback();
+      return res
+        .status(403)
+        .json({ error: "Dealer is out of scope for this user" });
+    }
+
+    // Prevent double submission / submission after approval or rejection
+    if (order.approvalStage || order.approvalStatus === "approved") {
+      await t.rollback();
+      return res
+        .status(400)
+        .json({ error: "Order is already in approval workflow" });
+    }
+    if (order.approvalStatus === "rejected") {
+      await t.rollback();
+      return res
+        .status(400)
+        .json({ error: "Rejected orders cannot be submitted" });
+    }
+
+    // Mark as pending approval in business status
+    order.status = "Pending Approval";
+    await order.save({ transaction: t });
+
+    // Start workflow from first stage (dealer_admin)
+    await WorkflowService.startWorkflow("order", order, req.user, {
+      transaction: t,
+    });
+
+    await t.commit();
+
+    return res.json({
+      message: "Order submitted for approval",
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      approvalStage: order.approvalStage,
+      approvalStatus: order.approvalStatus,
+      status: order.status,
+    });
+  } catch (err) {
+    await t.rollback();
+    console.error("submitOrder:", err);
+    res
+      .status(500)
+      .json({ error: "Failed to submit order", details: err.message });
   }
 };
 

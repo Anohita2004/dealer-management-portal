@@ -7,7 +7,7 @@
 const { PaymentRequest, Invoice, Dealer, AuditLog, sequelize } = require("../models");
 const { Op } = require("sequelize");
 const RBACEngine = require("../services/rbacEngine");
-const { nextStage, isApproverForStage } = require("../utils/approvalEngine");
+const { WorkflowService } = require("../services/workflow");
 
 // ========================================================================
 // CREATE PAYMENT REQUEST (Dealer Staff)
@@ -86,9 +86,9 @@ const createPaymentRequest = async (req, res) => {
       paymentMode,
       utrNumber: utrNumber || null,
       proofFile: proofPath,
-      approvalStage: "dealer_admin",
+      approvalStage: null,
       approvalStatus: "pending",
-      status: "dealer_admin_pending",
+      status: "dealer_pending",
     });
 
     // ===== 9. Log audit =====
@@ -100,6 +100,9 @@ const createPaymentRequest = async (req, res) => {
       changes: { invoiceId, dealerId, amount, paymentMode, utrNumber, proofFile: proofPath },
       ipAddress: req.ip,
     });
+
+    // Start payment workflow (dealer_admin → managers → finance_admin)
+    await WorkflowService.startWorkflow("payment", payment, req.user);
 
     // ===== 10. Return response =====
     res.status(201).json({ message: "Payment request created", payment });
@@ -121,16 +124,18 @@ const getDealerPayments = async (req, res) => {
     if (roleName === "dealer_admin" || roleName === "dealer_staff") {
       where.dealerId = req.user.dealerId;
     } else if (roleName === "sales_executive") {
-      const RBACEngine = require("../services/rbacEngine");
       const dealerIds = await RBACEngine.getDealersInScope(req.user);
       if (!dealerIds.length) {
         return res.json({ payments: [] });
       }
-      const { Op } = require("sequelize");
       where.dealerId = { [Op.in]: dealerIds };
     } else {
-      // Fallback to scope-based behavior for other roles
-      where = {}; // let higher-level routes add scoping if needed
+      // Other roles: use RBAC scoping on PaymentRequest (by dealerId)
+      const scopeWhere = await RBACEngine.buildScopeWhereClause(
+        req.user,
+        "PaymentRequest"
+      );
+      Object.assign(where, scopeWhere);
     }
 
     const payments = await PaymentRequest.findAll({
@@ -171,11 +176,19 @@ const getPendingPayments = async (req, res) => {
 };
 
 // ========================================================================
-// APPROVE PAYMENT (Multi-Stage)
+// APPROVE / REJECT PAYMENT (Multi-Stage via WorkflowService)
 // ========================================================================
 const approvePayment = async (req, res) => {
   const t = await sequelize.transaction();
   try {
+    const { action, reason, remarks } = req.body;
+    const finalAction = action || "approve";
+
+    if (!["approve", "reject"].includes(finalAction)) {
+      await t.rollback();
+      return res.status(400).json({ error: "Invalid action" });
+    }
+
     const payment = await PaymentRequest.findByPk(req.params.id, {
       include: ["Invoice", "Dealer"],
       transaction: t,
@@ -186,44 +199,40 @@ const approvePayment = async (req, res) => {
       return res.status(404).json({ error: "Payment request not found" });
     }
 
-    const role = req.user.roleDetails?.name || req.user.role;
-    const currentStage = payment.approvalStage;
+    let result;
 
-    if (!isApproverForStage(role, currentStage, "payment")) {
-      await t.rollback();
-      return res.status(403).json({ error: `Not authorized to approve at stage: ${currentStage}` });
-    }
-
-    const next = nextStage(currentStage, "payment");
-
-    if (!next) {
-      // Final approval
-      payment.approvalStage = null;
-      payment.approvalStatus = "approved";
-      payment.status = "approved";
-
-      // Mark invoice paid
-      if (payment.Invoice) {
-        await payment.Invoice.update({ status: "paid", balanceAmount: 0 }, { transaction: t });
-      }
+    if (finalAction === "reject") {
+      result = await WorkflowService.reject("payment", payment, req.user, {
+        reason,
+        remarks,
+        rollback: false,
+        transaction: t,
+      });
     } else {
-      payment.approvalStage = next;
-      payment.approvalStatus = "pending";
-      payment.status = `${next}_pending`;
+      result = await WorkflowService.approve("payment", payment, req.user, {
+        remarks: remarks || reason,
+        transaction: t,
+      });
     }
 
-    payment.approvedBy = req.user.username || req.user.id;
-    payment.approvedAt = new Date();
-
-    await payment.save({ transaction: t });
+    // On final approval, mark invoice paid
+    if (result.isFinal && payment.Invoice) {
+      await payment.Invoice.update(
+        { status: "paid", balanceAmount: 0 },
+        { transaction: t }
+      );
+    }
 
     await AuditLog.create(
       {
         userId: req.user.id,
-        action: "PAYMENT_APPROVED",
+        action:
+          finalAction === "approve"
+            ? "PAYMENT_APPROVED"
+            : "PAYMENT_REJECTED",
         entity: "PaymentRequest",
         entityId: payment.id,
-        changes: { from: currentStage, to: next || "approved" },
+        changes: { action: finalAction, reason, remarks },
         ipAddress: req.ip,
       },
       { transaction: t }
@@ -231,72 +240,43 @@ const approvePayment = async (req, res) => {
 
     await t.commit();
 
-    res.json({
-      message: next ? `Payment moved to next stage: ${next}` : "Payment fully approved",
+    return res.json({
+      message:
+        result.message ||
+        (finalAction === "approve"
+          ? `Payment ${payment.approvalStatus}`
+          : "Payment rejected"),
       payment,
+      stage: result.currentStage,
+      isFinal: result.isFinal,
     });
   } catch (err) {
     await t.rollback();
     console.error("approvePayment:", err);
-    res.status(500).json({ error: "Failed to approve payment" });
+    // Workflow validation errors should surface as 403
+    if (
+      err.message &&
+      err.message.includes("cannot approve at stage")
+    ) {
+      return res.status(403).json({
+        error: "Access Denied — Workflow Validation Failed",
+        message: err.message,
+        userRole: req.user.role || req.user.roleDetails?.name,
+        paymentId: req.params.id,
+      });
+    }
+
+    res
+      .status(500)
+      .json({ error: "Failed to update payment status", details: err.message });
   }
 };
 
-// ========================================================================
-// REJECT PAYMENT (Multi-Stage)
-// ========================================================================
+// Keep rejectPayment for backward compatibility (delegates to approvePayment)
 const rejectPayment = async (req, res) => {
-  const t = await sequelize.transaction();
-  try {
-    const { reason } = req.body;
-
-    const payment = await PaymentRequest.findByPk(req.params.id, {
-      include: ["Invoice", "Dealer"],
-      transaction: t,
-    });
-
-    if (!payment) {
-      await t.rollback();
-      return res.status(404).json({ error: "Payment request not found" });
-    }
-
-    const role = req.user.roleDetails?.name || req.user.role;
-    const currentStage = payment.approvalStage;
-
-    if (!isApproverForStage(role, currentStage, "payment")) {
-      await t.rollback();
-      return res.status(403).json({ error: `Not authorized to reject at stage: ${currentStage}` });
-    }
-
-    payment.approvalStage = null;
-    payment.approvalStatus = "rejected";
-    payment.status = "rejected";
-    payment.rejectionReason = reason || "Rejected by approver";
-    payment.approvedBy = req.user.username || req.user.id;
-    payment.approvedAt = new Date();
-
-    await payment.save({ transaction: t });
-
-    await AuditLog.create(
-      {
-        userId: req.user.id,
-        action: "PAYMENT_REJECTED",
-        entity: "PaymentRequest",
-        entityId: payment.id,
-        changes: { reason },
-        ipAddress: req.ip,
-      },
-      { transaction: t }
-    );
-
-    await t.commit();
-
-    res.json({ message: "Payment rejected", payment });
-  } catch (err) {
-    await t.rollback();
-    console.error("rejectPayment:", err);
-    res.status(500).json({ error: "Failed to reject payment" });
-  }
+  req.body = req.body || {};
+  req.body.action = "reject";
+  return approvePayment(req, res);
 };
 
 // ========================================================================

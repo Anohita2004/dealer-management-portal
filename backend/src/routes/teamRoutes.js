@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../middleware/auth');
 const checkPermission = require('../middleware/checkPermission');
-const { applyScoping } = require('../middleware/scoping');
+const { applyScope } = require('../middleware/rbac');
 
 const {
   createTeam,
@@ -16,14 +16,14 @@ const {
 } = require('../controllers/teamController');
 
 // Team CRUD routes
-router.get('/', authenticate, checkPermission('teams.view'), applyScoping(['Dealer']), getTeams);
-router.post('/', authenticate, checkPermission('teams.manage'), applyScoping(['Dealer']), createTeam);
-router.get('/:id', authenticate, checkPermission('teams.view'), applyScoping(['Dealer']), getTeam);
-router.put('/:id', authenticate, checkPermission('teams.manage'), applyScoping(['Dealer']), updateTeam);
-router.delete('/:id', authenticate, checkPermission('teams.manage'), applyScoping(['Dealer']), deleteTeam);
+router.get('/', authenticate, checkPermission('teams.view'), applyScope(['Dealer']), getTeams);
+router.post('/', authenticate, checkPermission('teams.manage'), applyScope(['Dealer']), createTeam);
+router.get('/:id', authenticate, checkPermission('teams.view'), applyScope(['Dealer']), getTeam);
+router.put('/:id', authenticate, checkPermission('teams.manage'), applyScope(['Dealer']), updateTeam);
+router.delete('/:id', authenticate, checkPermission('teams.manage'), applyScope(['Dealer']), deleteTeam);
 
 // Team member management
-router.post('/:teamId/dealers', authenticate, checkPermission('teams.manage'), applyScoping(['Dealer']), addDealerToTeam);
-router.delete('/:teamId/dealers/:dealerId', authenticate, checkPermission('teams.manage'), applyScoping(['Dealer']), removeDealerFromTeam);
+router.post('/:teamId/dealers', authenticate, checkPermission('teams.manage'), applyScope(['Dealer']), addDealerToTeam);
+router.delete('/:teamId/dealers/:dealerId', authenticate, checkPermission('teams.manage'), applyScope(['Dealer']), removeDealerFromTeam);
 
 module.exports = router;

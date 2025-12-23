@@ -483,6 +483,7 @@ const createUser = async (req, res) => {
       areaId: rawAreaId,
       territoryId: rawTerritoryId,
       dealerId: rawDealerId,
+      managerId: rawManagerId,
       isActive = true
     } = req.body;
 
@@ -491,6 +492,7 @@ const createUser = async (req, res) => {
     const areaId = rawAreaId ? rawAreaId : null;
     const territoryId = rawTerritoryId ? rawTerritoryId : null;
     const dealerId = rawDealerId ? rawDealerId : null;
+    const managerId = rawManagerId ? rawManagerId : null;
 
     // basic duplicate check
     const existing = await User.findOne({ where: { email }, transaction: t });
@@ -554,6 +556,70 @@ const createUser = async (req, res) => {
       finalDealerId = finalDealerId || null;
     }
 
+    // Validate manager relationship for hierarchical roles
+    let finalManagerId = managerId || null;
+    if (['dealer_staff'].includes(roleName)) {
+      // dealer_staff must report to a dealer_admin of the same dealer
+      if (!finalDealerId || !finalManagerId) {
+        await t.rollback();
+        return res.status(400).json({
+          error: 'managerId and dealerId are required for dealer_staff',
+        });
+      }
+
+      const managerUser = await User.findByPk(finalManagerId, {
+        include: [{ model: Role, as: 'roleDetails' }],
+        transaction: t,
+      });
+      const managerRoleName =
+        managerUser?.roleDetails?.name || managerUser?.role;
+
+      if (!managerUser || managerRoleName !== 'dealer_admin') {
+        await t.rollback();
+        return res.status(400).json({
+          error: 'managerId must be a valid dealer_admin for dealer_staff',
+        });
+      }
+
+      if (managerUser.dealerId !== finalDealerId) {
+        await t.rollback();
+        return res.status(400).json({
+          error:
+            'managerId dealer must match dealerId for dealer_staff hierarchy',
+        });
+      }
+    } else if (roleName === 'sales_executive') {
+      // sales_executive should report to a territory/area/regional manager or regional_admin
+      if (!finalManagerId) {
+        await t.rollback();
+        return res.status(400).json({
+          error: 'managerId is required for sales_executive',
+        });
+      }
+
+      const managerUser = await User.findByPk(finalManagerId, {
+        include: [{ model: Role, as: 'roleDetails' }],
+        transaction: t,
+      });
+      const managerRoleName =
+        managerUser?.roleDetails?.name || managerUser?.role;
+
+      const allowedManagerRoles = [
+        'territory_manager',
+        'area_manager',
+        'regional_manager',
+        'regional_admin',
+      ];
+
+      if (!managerUser || !allowedManagerRoles.includes(managerRoleName)) {
+        await t.rollback();
+        return res.status(400).json({
+          error:
+            'managerId must be a territory_manager, area_manager, regional_manager, or regional_admin for sales_executive',
+        });
+      }
+    }
+
     // Validate foreign keys before insert
     if (finalRegionId) {
       const regionExists = await Region.findByPk(finalRegionId, { transaction: t });
@@ -606,6 +672,7 @@ const createUser = async (req, res) => {
         areaId: finalAreaId,
         territoryId: finalTerritoryId,
         dealerId: finalDealerId,
+        managerId: finalManagerId,
         isActive: !!isActive,
       },
       { transaction: t }
@@ -653,6 +720,7 @@ const updateUser = async (req, res) => {
       regionId: rawRegionId,
       areaId: rawAreaId,
       territoryId: rawTerritoryId,
+      managerId: rawManagerId,
       isActive
     } = req.body;
 
@@ -661,6 +729,7 @@ const updateUser = async (req, res) => {
     const areaId = rawAreaId !== undefined ? (rawAreaId || null) : undefined;
     const territoryId = rawTerritoryId !== undefined ? (rawTerritoryId || null) : undefined;
     const dealerId = rawDealerId !== undefined ? (rawDealerId || null) : undefined;
+    const managerId = rawManagerId !== undefined ? (rawManagerId || null) : undefined;
 
     const user = await User.findByPk(id, { transaction: t });
     if (!user) {
@@ -693,6 +762,7 @@ const updateUser = async (req, res) => {
     let finalTerritoryId = territoryId === undefined ? user.territoryId : territoryId;
     let finalDealerId = dealerId === undefined ? user.dealerId : dealerId;
     let finalRoleId = roleId === undefined ? user.roleId : roleId;
+    let finalManagerId = managerId === undefined ? user.managerId : managerId;
 
     // Apply creator scoping if creator is not super/technical admin
     if (!['super_admin', 'technical_admin'].includes(creatorRole)) {
@@ -725,6 +795,64 @@ const updateUser = async (req, res) => {
       finalRegionId = null;
       finalAreaId = null;
       finalTerritoryId = null;
+    }
+
+    // Validate manager relationship for hierarchical roles when provided
+    if (managerId !== undefined && targetRole) {
+      if (targetRole.name === 'dealer_staff') {
+        if (!finalDealerId || !finalManagerId) {
+          await t.rollback();
+          return res.status(400).json({
+            error: 'managerId and dealerId are required for dealer_staff',
+          });
+        }
+        const managerUser = await User.findByPk(finalManagerId, {
+          include: [{ model: Role, as: 'roleDetails' }],
+          transaction: t,
+        });
+        const managerRoleName =
+          managerUser?.roleDetails?.name || managerUser?.role;
+        if (!managerUser || managerRoleName !== 'dealer_admin') {
+          await t.rollback();
+          return res.status(400).json({
+            error:
+              'managerId must be a valid dealer_admin for dealer_staff',
+          });
+        }
+        if (managerUser.dealerId !== finalDealerId) {
+          await t.rollback();
+          return res.status(400).json({
+            error:
+              'managerId dealer must match dealerId for dealer_staff hierarchy',
+          });
+        }
+      } else if (targetRole.name === 'sales_executive') {
+        if (!finalManagerId) {
+          await t.rollback();
+          return res.status(400).json({
+            error: 'managerId is required for sales_executive',
+          });
+        }
+        const managerUser = await User.findByPk(finalManagerId, {
+          include: [{ model: Role, as: 'roleDetails' }],
+          transaction: t,
+        });
+        const managerRoleName =
+          managerUser?.roleDetails?.name || managerUser?.role;
+        const allowedManagerRoles = [
+          'territory_manager',
+          'area_manager',
+          'regional_manager',
+          'regional_admin',
+        ];
+        if (!managerUser || !allowedManagerRoles.includes(managerRoleName)) {
+          await t.rollback();
+          return res.status(400).json({
+            error:
+              'managerId must be a territory_manager, area_manager, regional_manager, or regional_admin for sales_executive',
+          });
+        }
+      }
     }
 
     // Validate foreign keys
@@ -774,6 +902,7 @@ const updateUser = async (req, res) => {
     updatePayload.areaId = finalAreaId;
     updatePayload.territoryId = finalTerritoryId;
     updatePayload.dealerId = finalDealerId;
+    updatePayload.managerId = finalManagerId;
     if (isActive !== undefined) updatePayload.isActive = !!isActive;
 
     // Update

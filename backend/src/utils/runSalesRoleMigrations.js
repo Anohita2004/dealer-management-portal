@@ -1,9 +1,10 @@
 'use strict';
 
 /**
- * Helper script to ensure new RBAC-related tables exist:
+ * Helper script to ensure new RBAC / material mapping tables exist:
  * - user_dealers
  * - dealer_materials
+ * - region_materials
  *
  * Run: node src/utils/runSalesRoleMigrations.js
  */
@@ -11,6 +12,7 @@
 const { sequelize } = require('../config/database');
 const migrationUserDealers = require('../migrations/20251222090000-create-user-dealers');
 const migrationDealerMaterials = require('../migrations/20251222091000-create-dealer-materials');
+const migrationRegionMaterials = require('../migrations/20251222092000-create-region-materials');
 
 async function run() {
   const qi = sequelize.getQueryInterface();
@@ -37,6 +39,18 @@ async function run() {
       console.log('ℹ️ dealer_materials already exists, skipping');
     } else {
       console.error('❌ Error applying dealer_materials migration:', err);
+    }
+  }
+
+  try {
+    console.log('🔄 Ensuring region_materials table exists...');
+    await migrationRegionMaterials.up(qi, SequelizeLib);
+    console.log('✅ region_materials migration applied');
+  } catch (err) {
+    if (err && /region_materials/i.test(String(err)) && /exists/i.test(String(err))) {
+      console.log('ℹ️ region_materials already exists, skipping');
+    } else {
+      console.error('❌ Error applying region_materials migration:', err);
     }
   }
 

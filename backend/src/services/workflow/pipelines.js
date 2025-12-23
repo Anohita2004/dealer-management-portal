@@ -2,6 +2,17 @@
 // Centralized pipeline definitions for all entity types
 
 /**
+ * DEALER_PIPELINE
+ * Dealers flow through: territory_manager → area_manager → regional_manager → regional_admin
+ */
+const DEALER_PIPELINE = [
+  'territory_manager',
+  'area_manager',
+  'regional_manager',
+  'regional_admin',
+];
+
+/**
  * ORDER_PIPELINE
  * Orders flow through: dealer_admin → territory_manager → area_manager → regional_manager → regional_admin
  */
@@ -77,6 +88,7 @@ const CAMPAIGN_PIPELINE = [
  */
 function getPipeline(entityType) {
   const pipelines = {
+    dealer: DEALER_PIPELINE,
     order: ORDER_PIPELINE,
     invoice: INVOICE_PIPELINE,
     payment: PAYMENT_PIPELINE,
@@ -94,6 +106,7 @@ function getPipeline(entityType) {
  */
 function getAllPipelines() {
   return {
+    dealer: DEALER_PIPELINE,
     order: ORDER_PIPELINE,
     invoice: INVOICE_PIPELINE,
     payment: PAYMENT_PIPELINE,
@@ -110,6 +123,7 @@ module.exports = {
   PRICING_PIPELINE,
   DOCUMENT_PIPELINE,
   CAMPAIGN_PIPELINE,
+  DEALER_PIPELINE,
   getPipeline,
   getAllPipelines,
 };

@@ -9,7 +9,10 @@ const {
   getRegions,
   getRegion,
   updateRegion,
-  deleteRegion
+  deleteRegion,
+  getRegionMaterials,
+  assignRegionMaterials,
+  removeRegionMaterial
 } = require('../controllers/regionController');
 
 // Mounted at /api/regions in server.js
@@ -43,6 +46,28 @@ router.get(
   authenticate,
   checkPermission("documents.view"),
   require("../controllers/regionController").getRegionApprovals
+);
+
+// 📌 REGION ↔ MATERIAL ADMIN (optional geography-based availability)
+router.get(
+  "/:id/materials",
+  authenticate,
+  checkPermission("materials.view"),
+  getRegionMaterials
+);
+
+router.post(
+  "/:id/materials",
+  authenticate,
+  checkPermission("materials.manage"),
+  assignRegionMaterials
+);
+
+router.delete(
+  "/:id/materials/:materialId",
+  authenticate,
+  checkPermission("materials.manage"),
+  removeRegionMaterial
 );
 
 module.exports = router;

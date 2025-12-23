@@ -454,6 +454,11 @@ class WorkflowService {
    */
   static _updateEntityStatusOnFinalApproval(entity, entityType) {
     switch (entityType) {
+      case 'dealer':
+        entity.status = 'active';
+        entity.isActive = true;
+        entity.isVerified = true;
+        break;
       case 'order':
         entity.status = 'Approved';
         break;
@@ -481,6 +486,10 @@ class WorkflowService {
    */
   static _updateEntityStatusOnRejection(entity, entityType) {
     switch (entityType) {
+      case 'dealer':
+        entity.status = 'terminated';
+        entity.isActive = false;
+        break;
       case 'order':
         entity.status = 'Rejected';
         break;
