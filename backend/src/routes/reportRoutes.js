@@ -24,7 +24,7 @@ router.get("/dashboard/dealer", authenticate, checkPermission("dashboard.view.de
 router.get(
   "/pending-approvals",
   authenticate,
-  authorize("super_admin", "area_manager", "territory_manager", "regional_manager", "regional_admin"),
+  authorize("super_admin", "area_manager", "territory_manager", "regional_manager", "regional_admin", "dealer_admin"),
   checkPermission("reports.view"),
   reportController.getPendingApprovals
 );

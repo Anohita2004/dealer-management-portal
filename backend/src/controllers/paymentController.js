@@ -140,7 +140,7 @@ const getDealerPayments = async (req, res) => {
 
     const payments = await PaymentRequest.findAll({
       where,
-      include: ["Invoice"],
+      include: ["invoice"],
       order: [["createdAt", "DESC"]],
     });
     res.json({ payments });
@@ -156,15 +156,21 @@ const getDealerPayments = async (req, res) => {
 const getPendingPayments = async (req, res) => {
   try {
     const role = req.user.roleDetails?.name || req.user.role;
-    const stageField = role === "finance_admin" ? "finance_admin" : "dealer_admin";
+
+    // Default: look for the stage matching the user's role
+    // This allows each role to see payments pending at their specific workflow stage
+    const stageField = role;
+
+    // Use RBAC engine to build a scoping where-clause (Region/Area/Territory levels)
+    const scopeWhere = await RBACEngine.buildScopeWhereClause(req.user, "PaymentRequest");
 
     const pending = await PaymentRequest.findAll({
       where: {
+        ...scopeWhere,
         approvalStage: stageField,
         approvalStatus: "pending",
-        ...(role !== "finance_admin" && { dealerId: req.user.dealerId }),
       },
-      include: ["Invoice", "Dealer"],
+      include: ["invoice", "dealer"],
       order: [["createdAt", "DESC"]],
     });
 
@@ -190,7 +196,7 @@ const approvePayment = async (req, res) => {
     }
 
     const payment = await PaymentRequest.findByPk(req.params.id, {
-      include: ["Invoice", "Dealer"],
+      include: ["invoice", "dealer"],
       transaction: t,
     });
 
@@ -213,11 +219,17 @@ const approvePayment = async (req, res) => {
         remarks: remarks || reason,
         transaction: t,
       });
+
+      // Update intermediate status if workflow continues
+      if (result.nextStage) {
+        payment.status = `${result.nextStage}_pending`;
+        await payment.save({ transaction: t });
+      }
     }
 
     // On final approval, mark invoice paid
-    if (result.isFinal && payment.Invoice) {
-      await payment.Invoice.update(
+    if (result.isFinal && payment.invoice) {
+      await payment.invoice.update(
         { status: "paid", balanceAmount: 0 },
         { transaction: t }
       );
@@ -291,7 +303,7 @@ const autoReconcile = async (req, res) => {
         approvalStatus: "pending",
         utrNumber: { [Op.ne]: null },
       },
-      include: ["Invoice"],
+      include: ["invoice"],
       transaction: t,
       lock: t.LOCK.UPDATE,
     });
@@ -300,21 +312,21 @@ const autoReconcile = async (req, res) => {
     const flagged = [];
 
     for (const p of matches) {
-      if (p.Invoice && Number(p.amount) === Number(p.Invoice.balanceAmount)) {
+      if (p.invoice && Number(p.amount) === Number(p.invoice.balanceAmount)) {
         await p.update(
           { approvalStage: null, approvalStatus: "approved", status: "approved", approvedBy: "AUTO-RECONCILE", approvedAt: new Date() },
           { transaction: t }
         );
 
-        await p.Invoice.update({ status: "paid", balanceAmount: 0 }, { transaction: t });
+        await p.invoice.update({ status: "paid", balanceAmount: 0 }, { transaction: t });
 
         autoApproved.push(p.id);
       } else {
         flagged.push({
           paymentRequestId: p.id,
-          invoiceId: p.Invoice?.id,
+          invoiceId: p.invoice?.id,
           paymentAmount: p.amount,
-          invoiceBalance: p.Invoice?.balanceAmount,
+          invoiceBalance: p.invoice?.balanceAmount,
         });
       }
     }
@@ -335,8 +347,8 @@ const getDealerAdminPending = async (req, res) => {
   try {
     // Check if dealer_admin has dealerId
     if (!req.user.dealerId) {
-      return res.status(400).json({ 
-        error: "Your account is not linked to a dealer. Please contact an administrator." 
+      return res.status(400).json({
+        error: "Your account is not linked to a dealer. Please contact an administrator."
       });
     }
 
@@ -347,12 +359,14 @@ const getDealerAdminPending = async (req, res) => {
         approvalStatus: "pending",
       },
       include: [
-        { 
+        {
           model: Invoice,
+          as: "invoice",
           attributes: ["id", "invoiceNumber", "totalAmount", "balanceAmount", "status"]
         },
         {
           model: Dealer,
+          as: "dealer",
           attributes: ["id", "businessName", "dealerCode"]
         }
       ],
@@ -369,7 +383,7 @@ const getDealerAdminPending = async (req, res) => {
         limit: 10
       });
 
-      return res.json({ 
+      return res.json({
         pending: data,
         debug: {
           dealerAdminDealerId: req.user.dealerId,
@@ -432,7 +446,7 @@ const getDuePayments = async (req, res) => {
     const duePayments = invoices.map((inv) => {
       const dueDate = new Date(inv.dueDate);
       const daysOverdue = Math.floor((today - dueDate) / (1000 * 60 * 60 * 24));
-      
+
       return {
         id: inv.id,
         invoiceNumber: inv.invoiceNumber,

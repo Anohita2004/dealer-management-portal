@@ -28,7 +28,8 @@ class WorkflowService {
       throw new Error(`No pipeline defined for entity type: ${entityType}`);
     }
 
-    const firstStage = pipeline[0];
+    // Determine starting stage based on creator role
+    const firstStage = WorkflowResolver.getInitialStage(entityType, creatorUser);
 
     // Set initial stage
     entity.approvalStage = firstStage;
@@ -165,7 +166,7 @@ class WorkflowService {
       );
 
       await entity.save({ transaction });
-      
+
       // Reload entity to get updated values
       await entity.reload({ transaction });
 
@@ -227,7 +228,7 @@ class WorkflowService {
       this._updateEntityStatusOnFinalApproval(entity, entityType);
 
       await entity.save({ transaction });
-      
+
       // Reload entity to get updated values
       await entity.reload({ transaction });
 
@@ -301,7 +302,7 @@ class WorkflowService {
     this._updateEntityStatusOnRejection(entity, entityType);
 
     await entity.save({ transaction });
-    
+
     // Reload entity to get updated values
     await entity.reload({ transaction });
 
@@ -430,10 +431,10 @@ class WorkflowService {
           action: t.action,
           actor: t.actor
             ? {
-                id: t.actor.id,
-                username: t.actor.username,
-                email: t.actor.email,
-              }
+              id: t.actor.id,
+              username: t.actor.username,
+              email: t.actor.email,
+            }
             : null,
           remarks: t.remarks,
           rejectionReason: t.rejectionReason,

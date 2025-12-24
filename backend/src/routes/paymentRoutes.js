@@ -46,12 +46,12 @@ router.post("/dealer/:id/approve", authenticate, authorize("dealer_admin"), chec
 router.post("/dealer/:id/reject", authenticate, authorize("dealer_admin"), checkPermission("payments.approve"), rejectPayment);
 
 // -----------------------
-// FINANCE ADMIN ROUTES
+// FINANCE ADMIN / MANAGER ROUTES
 // -----------------------
-router.get("/pending", authenticate, authorize("dealer_admin", "finance_admin"), checkPermission("payments.view"), getPendingPayments);
+router.get("/pending", authenticate, authorize("dealer_admin", "finance_admin", "territory_manager", "area_manager", "regional_manager", "regional_admin"), checkPermission("payments.view"), getPendingPayments);
 
-router.post("/:id/approve", authenticate, authorize("dealer_admin", "finance_admin"), checkPermission("payments.approve"), approvePayment);
-router.post("/:id/reject", authenticate, authorize("dealer_admin", "finance_admin"), checkPermission("payments.approve"), rejectPayment);
+router.post("/:id/approve", authenticate, authorize("dealer_admin", "finance_admin", "territory_manager", "area_manager", "regional_manager", "regional_admin"), checkPermission("payments.approve"), approvePayment);
+router.post("/:id/reject", authenticate, authorize("dealer_admin", "finance_admin", "territory_manager", "area_manager", "regional_manager", "regional_admin"), checkPermission("payments.approve"), rejectPayment);
 
 // -----------------------
 // AUTO-RECONCILIATION

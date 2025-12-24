@@ -178,7 +178,7 @@ class WorkflowResolver {
    */
   static getEntityType(entity, providedType = null) {
     if (providedType) return providedType;
-    
+
     // Infer from model name or constructor
     const modelName = entity.constructor?.name || '';
     const typeMap = {
@@ -191,6 +191,32 @@ class WorkflowResolver {
     };
 
     return typeMap[modelName] || 'order';
+  }
+
+  /**
+   * Get initial stage for a new entity based on creator
+   * @param {string} entityType - Type of entity
+   * @param {Object} creatorUser - User who created the entity
+   * @returns {string} Initial stage name
+   */
+  static getInitialStage(entityType, creatorUser) {
+    const pipeline = this.getPipeline(entityType);
+    if (!pipeline.length) return null;
+
+    const roleName = creatorUser?.roleDetails?.name || creatorUser?.role;
+
+    // Find the first stage that the creator cannot approve
+    // This allows creators to "skip" stages they are authorized to approve
+    for (const stage of pipeline) {
+      const allowedRoles = STAGE_APPROVERS[entityType]?.[stage] || [];
+      if (!allowedRoles.includes(roleName)) {
+        return stage;
+      }
+    }
+
+    // Fallback if they can approve everything: start at the last stage
+    // or return the first stage if skipping is not desired for admins
+    return pipeline[0];
   }
 
   /**

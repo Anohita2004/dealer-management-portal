@@ -53,8 +53,8 @@ module.exports = (sequelize, DataTypes) => {
   });
 
   PaymentRequest.associate = (models) => {
-    PaymentRequest.belongsTo(models.Invoice, { foreignKey: "invoiceId" });
-    PaymentRequest.belongsTo(models.Dealer, { foreignKey: "dealerId" });
+    PaymentRequest.belongsTo(models.Invoice, { foreignKey: "invoiceId", as: "invoice" });
+    PaymentRequest.belongsTo(models.Dealer, { foreignKey: "dealerId", as: "dealer" });
   };
 
   return PaymentRequest;
