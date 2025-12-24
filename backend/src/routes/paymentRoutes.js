@@ -12,6 +12,8 @@ const {
   rejectPayment,
   autoReconcile,
   getDuePayments,
+  getWorkflowStatus,
+  getPaymentById,
 } = require("../controllers/paymentController");
 
 // -----------------------
@@ -53,9 +55,17 @@ router.get("/pending", authenticate, authorize("dealer_admin", "finance_admin", 
 router.post("/:id/approve", authenticate, authorize("dealer_admin", "finance_admin", "territory_manager", "area_manager", "regional_manager", "regional_admin"), checkPermission("payments.approve"), approvePayment);
 router.post("/:id/reject", authenticate, authorize("dealer_admin", "finance_admin", "territory_manager", "area_manager", "regional_manager", "regional_admin"), checkPermission("payments.approve"), rejectPayment);
 
+// GET PAYMENT WORKFLOW STATUS
+router.get("/:id/workflow", authenticate, authorize("dealer_admin", "finance_admin", "territory_manager", "area_manager", "regional_manager", "regional_admin"), checkPermission("payments.view"), getWorkflowStatus);
+
 // -----------------------
 // AUTO-RECONCILIATION
 // -----------------------
 router.get("/reconcile", authenticate, authorize("finance_admin", "super_admin"), checkPermission("payments.approve"), autoReconcile);
+
+// -----------------------
+// GET SINGLE PAYMENT BY ID (must be last to avoid catching other routes)
+// -----------------------
+router.get("/:id", authenticate, authorize("dealer_admin", "dealer_staff", "finance_admin", "territory_manager", "area_manager", "regional_manager", "regional_admin", "super_admin"), checkPermission("payments.view"), getPaymentById);
 
 module.exports = router;

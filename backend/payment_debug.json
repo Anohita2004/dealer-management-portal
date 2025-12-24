@@ -1,0 +1,63 @@
+{
+  "paymentId": "ddaeb2ff-6a4a-4c6d-b33c-97553c779dda",
+  "approvalStage": "area_manager",
+  "approvalStatus": "pending",
+  "dealerAreaId": "af386483-27b6-4698-8f23-5b314d3262eb",
+  "areaManagers": [
+    {
+      "username": "am_region1",
+      "areaId": null,
+      "match": false
+    },
+    {
+      "username": "area_manager_sa1",
+      "areaId": "4e1a1f55-a4e3-4fbb-8a1e-6fcb8d6940f5",
+      "match": false
+    },
+    {
+      "username": "area_manager_na1",
+      "areaId": "23fa758f-080f-4174-96ea-1592156c3a75",
+      "match": false
+    },
+    {
+      "username": "area_manager_na2",
+      "areaId": "0b880a12-7fad-4af1-b898-972bd499fbca",
+      "match": false
+    },
+    {
+      "username": "area_manager_wa1",
+      "areaId": "f8d5a583-f5ba-492b-bc77-e8440957d55d",
+      "match": false
+    },
+    {
+      "username": "area_manager_wa2",
+      "areaId": "cb7a786f-565a-4841-b767-93fa004be84c",
+      "match": false
+    },
+    {
+      "username": "area_manager_sa2",
+      "areaId": "edb7f046-d12b-48f2-ac71-28dac2800f1a",
+      "match": false
+    },
+    {
+      "username": "area_manager_ea1",
+      "areaId": "af386483-27b6-4698-8f23-5b314d3262eb",
+      "match": true
+    },
+    {
+      "username": "area_manager",
+      "areaId": null,
+      "match": false
+    },
+    {
+      "username": "ajc_kolkata_area_manager",
+      "areaId": "af386483-27b6-4698-8f23-5b314d3262eb",
+      "match": true
+    },
+    {
+      "username": "test_area_manager",
+      "areaId": "8c252631-23e2-4c2c-917d-e7acc77ee2a1",
+      "match": false
+    }
+  ]
+}

@@ -414,6 +414,43 @@ const getDealerAdminPending = async (req, res) => {
 };
 
 // ========================================================================
+// GET PAYMENT BY ID
+// ========================================================================
+const getPaymentById = async (req, res) => {
+  try {
+    const payment = await PaymentRequest.findByPk(req.params.id, {
+      include: [
+        {
+          model: Invoice,
+          as: "invoice",
+          attributes: ["id", "invoiceNumber", "totalAmount", "balanceAmount", "status", "invoiceDate"]
+        },
+        {
+          model: Dealer,
+          as: "dealer",
+          attributes: ["id", "businessName", "dealerCode", "contactPerson", "email", "phoneNumber"]
+        }
+      ]
+    });
+
+    if (!payment) {
+      return res.status(404).json({ error: "Payment request not found" });
+    }
+
+    // Check if user has access to this payment based on RBAC
+    const hasAccess = await RBACEngine.canAccessResource(req.user, { dealerId: payment.dealerId });
+    if (!hasAccess) {
+      return res.status(403).json({ error: "Access denied to this payment request" });
+    }
+
+    res.json(payment);
+  } catch (err) {
+    console.error("getPaymentById:", err);
+    res.status(500).json({ error: "Failed to fetch payment request", details: err.message });
+  }
+};
+
+// ========================================================================
 // GET DUE PAYMENTS (Outstanding Invoices)
 // ========================================================================
 const getDuePayments = async (req, res) => {
@@ -481,6 +518,24 @@ const getDuePayments = async (req, res) => {
 };
 
 // ========================================================================
+// GET WORKFLOW STATUS
+// ========================================================================
+const getWorkflowStatus = async (req, res) => {
+  try {
+    const payment = await PaymentRequest.findByPk(req.params.id);
+    if (!payment) {
+      return res.status(404).json({ error: "Payment request not found" });
+    }
+
+    const status = await WorkflowService.getWorkflowStatus("payment", payment);
+    res.json(status);
+  } catch (err) {
+    console.error("getWorkflowStatus error:", err);
+    res.status(500).json({ error: "Failed to fetch workflow status", details: err.message });
+  }
+};
+
+// ========================================================================
 // EXPORTS
 // ========================================================================
 module.exports = {
@@ -492,4 +547,6 @@ module.exports = {
   autoReconcile,
   getDealerAdminPending,
   getDuePayments,
+  getWorkflowStatus,
+  getPaymentById,
 };
