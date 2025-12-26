@@ -2,7 +2,7 @@
 // Centralized RBAC Engine with Hierarchical Scoping
 // Combines: Role + Permission + Region + Area + Territory + Dealer
 
-const { User, Role, Permission, Dealer, Region, Area, Territory } = require('../models');
+const { User, Role, Permission, Dealer, Region, Area, Territory, UserDealer } = require('../models');
 const { Op } = require('sequelize');
 
 /**
@@ -100,8 +100,8 @@ class RBACEngine {
 
     const roleName = user.roleDetails?.name || user.role;
 
-    // Super Admin & Technical Admin see all
-    if (['super_admin', 'technical_admin'].includes(roleName)) {
+    // Super Admin, Technical Admin, and Finance Admin see all
+    if (['super_admin', 'technical_admin', 'finance_admin'].includes(roleName)) {
       return { all: true };
     }
 
@@ -146,10 +146,19 @@ class RBACEngine {
 
     const roleName = user.roleDetails?.name || user.role;
 
-    // Super Admin & Technical Admin see all dealers
-    if (['super_admin', 'technical_admin'].includes(roleName)) {
+    // Super Admin, Technical Admin, and Finance Admin see all dealers
+    if (['super_admin', 'technical_admin', 'finance_admin'].includes(roleName)) {
       const allDealers = await Dealer.findAll({ attributes: ['id'] });
       return allDealers.map(d => d.id);
+    }
+
+    // Sales Executive: dealers explicitly assigned via mapping
+    if (roleName === 'sales_executive') {
+      const mappings = await UserDealer.findAll({
+        where: { userId: user.id },
+        attributes: ['dealerId']
+      });
+      return mappings.map((m) => m.dealerId);
     }
 
     const scope = this.getUserScope(user);
@@ -183,7 +192,7 @@ class RBACEngine {
 
     const roleName = user.roleDetails?.name || user.role;
 
-    if (['super_admin', 'technical_admin'].includes(roleName)) {
+    if (['super_admin', 'technical_admin', 'finance_admin'].includes(roleName)) {
       const allTerritories = await Territory.findAll({ attributes: ['id'] });
       return allTerritories.map(t => t.id);
     }
@@ -217,7 +226,7 @@ class RBACEngine {
 
     const roleName = user.roleDetails?.name || user.role;
 
-    if (['super_admin', 'technical_admin'].includes(roleName)) {
+    if (['super_admin', 'technical_admin', 'finance_admin'].includes(roleName)) {
       const allAreas = await Area.findAll({ attributes: ['id'] });
       return allAreas.map(a => a.id);
     }
@@ -250,8 +259,8 @@ class RBACEngine {
 
     const roleName = user.roleDetails?.name || user.role;
 
-    // Super Admin & Technical Admin can access all
-    if (['super_admin', 'technical_admin'].includes(roleName)) {
+    // Super Admin, Technical Admin, and Finance Admin can access all
+    if (['super_admin', 'technical_admin', 'finance_admin'].includes(roleName)) {
       return true;
     }
 
@@ -302,8 +311,8 @@ class RBACEngine {
 
     const roleName = user.roleDetails?.name || user.role;
 
-    // Super Admin & Technical Admin see all
-    if (['super_admin', 'technical_admin'].includes(roleName)) {
+    // Super Admin, Technical Admin, and Finance Admin see all
+    if (['super_admin', 'technical_admin', 'finance_admin'].includes(roleName)) {
       return {};
     }
 

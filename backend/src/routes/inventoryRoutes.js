@@ -8,7 +8,7 @@ const checkPermission = require("../middleware/checkPermission");
 router.get(
   "/summary",
   authenticate,
-  authorize("inventory_user", "super_admin", "key_user","dealer_admin", "tm"),
+  authorize("inventory_user", "super_admin", "key_user","dealer_admin", "territory_manager","area_manager","regional_manager","regional_admin","technical_admin"),
   checkPermission("inventory.view"),
   inventoryController.getInventorySummary
 );
@@ -17,7 +17,7 @@ router.get(
 router.get(
   "/details",
   authenticate,
-  authorize("inventory_user", "super_admin"),
+  authorize("inventory_user", "super_admin", "key_user","dealer_admin", "territory_manager","area_manager","regional_manager","regional_admin","technical_admin"),
   checkPermission("inventory.view"),
   inventoryController.getInventoryDetails
 );
@@ -53,7 +53,7 @@ router.delete(
 router.get(
   "/export",
   authenticate,
-  authorize("inventory_user", "super_admin", "key_user"),
+  authorize("inventory_user", "super_admin", "key_user","dealer_admin", "territory_manager","area_manager","regional_manager","regional_admin","technical_admin"),
   checkPermission("inventory.view"),
   inventoryController.exportInventory
 );

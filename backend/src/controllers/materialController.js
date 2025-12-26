@@ -1,6 +1,7 @@
 // src/controllers/materialController.js
-const { Material, MaterialGroup, OrderItem, sequelize } = require('../models');
+const { Material, MaterialGroup, OrderItem, DealerMaterial, sequelize } = require('../models');
 const { Op,fn, col, literal } = require('sequelize');
+const RBACEngine = require('../services/rbacEngine');
 const excelToJson = require("convert-excel-to-json");
 
 
@@ -28,6 +29,43 @@ res.json({ materials: mats });
 console.error('getMaterials:', err);
 res.status(500).json({ error: 'Failed to fetch materials' });
 }
+};
+
+// Dealer-scoped material availability
+exports.getDealerMaterials = async (req, res) => {
+  try {
+    const { dealerId } = req.params;
+    if (!dealerId) {
+      return res.status(400).json({ error: "dealerId is required" });
+    }
+
+    // Ensure user is allowed to see this dealer
+    const allowedDealers = await RBACEngine.getDealersInScope(req.user);
+    if (!allowedDealers.includes(dealerId)) {
+      return res.status(403).json({ error: "Dealer is out of scope for this user" });
+    }
+
+    const mappings = await DealerMaterial.findAll({
+      where: { dealerId, isActive: true },
+      include: [
+        {
+          model: Material,
+          as: "material",
+          include: [{ model: MaterialGroup, as: "group" }],
+        },
+      ],
+      order: [["createdAt", "DESC"]],
+    });
+
+    const materials = mappings
+      .map((m) => m.material)
+      .filter(Boolean);
+
+    res.json({ materials, mappings });
+  } catch (err) {
+    console.error("getDealerMaterials:", err);
+    res.status(500).json({ error: "Failed to fetch dealer materials" });
+  }
 };
 
 

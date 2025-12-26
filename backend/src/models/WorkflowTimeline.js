@@ -19,7 +19,8 @@ module.exports = (sequelize, DataTypes) => {
           'payment',
           'pricing',
           'document',
-          'campaign'
+          'campaign',
+          'dealer'
         ),
         allowNull: false,
       },

@@ -6,7 +6,7 @@ const upload = documentController.upload;   // ← FIX: import Multer upload pro
 
 const { authenticate, authorize } = require('../middleware/auth');
 const checkPermission = require('../middleware/checkPermission');
-const { applyScoping } = require('../middleware/scoping');
+const { applyScope } = require('../middleware/rbac');
 
 // ---------------------------------------------------
 // GET ALL DOCUMENTS (admin + dealer restricted view)
@@ -14,8 +14,9 @@ const { applyScoping } = require('../middleware/scoping');
 router.get(
   '/',
   authenticate,
+  authorize('dealer_admin', 'dealer_staff', 'territory_manager', 'area_manager', 'regional_manager', 'regional_admin', 'super_admin', 'technical_admin'),
   checkPermission('documents.view'),
-  applyScoping(['Dealer']),
+  applyScope(['Dealer']),
   documentController.getAllDocuments
 );
 
@@ -37,7 +38,7 @@ router.get(
   '/:id/download',
   authenticate,
   checkPermission('documents.view'),
-  applyScoping(['Dealer']),
+  applyScope(['Dealer']),
   documentController.downloadDocument
 );
 
@@ -74,7 +75,7 @@ router.get(
   authenticate,
   authorize('territory_manager', 'area_manager', 'regional_manager'),
   checkPermission('documents.view'),
-  applyScoping(['Dealer']),
+  applyScope(['Dealer']),
   documentController.getManagerDocuments
 );
 

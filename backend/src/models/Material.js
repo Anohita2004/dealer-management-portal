@@ -47,12 +47,27 @@ module.exports = (sequelize, DataTypes) => {
   });
 
   Material.associate = (models) => {
-    Material.belongsTo(models.MaterialGroup, { as: 'group', foreignKey: 'materialGroupId' });
-    Material.hasMany(models.OrderItem, {
-  as: "orderItems",
-  foreignKey: "materialId"
-});
+    Material.belongsTo(models.MaterialGroup, {
+      as: 'group',
+      foreignKey: 'materialGroupId'
+    });
 
+    Material.hasMany(models.OrderItem, {
+      as: "orderItems",
+      foreignKey: "materialId"
+    });
+
+    // Material → DealerMaterial (dealer-specific availability)
+    Material.hasMany(models.DealerMaterial, {
+      as: "dealerMappings",
+      foreignKey: "materialId"
+    });
+
+    // Material → RegionMaterial (region-level availability, optional)
+    Material.hasMany(models.RegionMaterial, {
+      as: "regionMappings",
+      foreignKey: "materialId"
+    });
   };
 
   return Material;

@@ -1,4 +1,4 @@
-const { Region, Area, Territory, Dealer, Document, PricingUpdate, Campaign, sequelize } = require("../models");
+const { Region, Area, Territory, Dealer, Document, PricingUpdate, Campaign, Material, RegionMaterial, sequelize } = require("../models");
 
 // =========================================================
 // CREATE REGION
@@ -208,6 +208,92 @@ const getRegionApprovals = async (req, res) => {
   }
 };
 
+// =========================================================
+// REGION ↔ MATERIAL MAPPINGS (ADMIN)
+// =========================================================
+
+// List materials assigned to a region
+const getRegionMaterials = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const region = await Region.findByPk(id);
+    if (!region) {
+      return res.status(404).json({ error: "Region not found" });
+    }
+
+    const mappings = await RegionMaterial.findAll({
+      where: { regionId: id, isActive: true },
+      include: [{ model: Material, as: "material" }],
+      order: [["createdAt", "DESC"]],
+    });
+
+    const materials = mappings.map((m) => m.material).filter(Boolean);
+    return res.json({ materials, mappings });
+  } catch (err) {
+    console.error("getRegionMaterials:", err);
+    return res.status(500).json({ error: "Failed to fetch region materials" });
+  }
+};
+
+// Bulk assign materials to a region
+const assignRegionMaterials = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { materialIds = [] } = req.body;
+
+    const region = await Region.findByPk(id);
+    if (!region) {
+      return res.status(404).json({ error: "Region not found" });
+    }
+
+    if (!Array.isArray(materialIds) || materialIds.length === 0) {
+      return res.status(400).json({ error: "materialIds array is required" });
+    }
+
+    const results = [];
+    for (const materialId of materialIds) {
+      const [mapping] = await RegionMaterial.findOrCreate({
+        where: { regionId: id, materialId },
+        defaults: { isActive: true },
+      });
+      if (!mapping.isActive) {
+        mapping.isActive = true;
+        await mapping.save();
+      }
+      results.push(mapping);
+    }
+
+    return res.status(200).json({ mappings: results });
+  } catch (err) {
+    console.error("assignRegionMaterials:", err);
+    return res.status(500).json({ error: "Failed to assign materials to region" });
+  }
+};
+
+// Remove a single material from a region
+const removeRegionMaterial = async (req, res) => {
+  try {
+    const { id, materialId } = req.params;
+
+    const mapping = await RegionMaterial.findOne({
+      where: { regionId: id, materialId },
+    });
+
+    if (!mapping) {
+      return res.status(404).json({ error: "Region-material mapping not found" });
+    }
+
+    // Soft-deactivate for auditability
+    mapping.isActive = false;
+    await mapping.save();
+
+    return res.json({ message: "Material unassigned from region" });
+  } catch (err) {
+    console.error("removeRegionMaterial:", err);
+    return res.status(500).json({ error: "Failed to unassign material from region" });
+  }
+};
+
 module.exports = {
   createRegion,
   getRegions,
@@ -216,5 +302,8 @@ module.exports = {
   deleteRegion,
   getRegionDashboardSummary,
   getRegionAreas,
-  getRegionApprovals
+  getRegionApprovals,
+  getRegionMaterials,
+  assignRegionMaterials,
+  removeRegionMaterial
 };

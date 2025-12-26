@@ -1,0 +1,170 @@
+{
+  "enum_Campaigns_approvalStage": [
+    "area_manager",
+    "regional_admin",
+    "super_admin"
+  ],
+  "enum_Campaigns_approvalStatus": [
+    "pending",
+    "approved",
+    "rejected"
+  ],
+  "enum_Campaigns_campaignType": [
+    "promotion",
+    "sales_scheme",
+    "seasonal_offer"
+  ],
+  "enum_CreditDebitNotes_noteType": [
+    "credit",
+    "debit"
+  ],
+  "enum_CreditDebitNotes_status": [
+    "pending",
+    "approved",
+    "rejected"
+  ],
+  "enum_Documents_documentType": [
+    "statement",
+    "certificate",
+    "invoice",
+    "credit_note",
+    "debit_note",
+    "other"
+  ],
+  "enum_Documents_status": [
+    "pending",
+    "approved",
+    "rejected"
+  ],
+  "enum_Invoices_status": [
+    "paid",
+    "unpaid",
+    "partial",
+    "overdue"
+  ],
+  "enum_PaymentRequests_approvalStatus": [
+    "pending",
+    "approved",
+    "rejected"
+  ],
+  "enum_PricingUpdates_approvalStatus": [
+    "pending",
+    "approved",
+    "rejected"
+  ],
+  "enum_PricingUpdates_status": [
+    "pending",
+    "approved",
+    "rejected"
+  ],
+  "enum_Users_role": [
+    "dealer",
+    "tm",
+    "am",
+    "sm",
+    "admin",
+    "key_user",
+    "accounts",
+    "inventory"
+  ],
+  "enum_chat_messages_messageType": [
+    "text",
+    "file",
+    "system"
+  ],
+  "enum_chat_messages_status": [
+    "sent",
+    "delivered",
+    "read"
+  ],
+  "enum_conversations_type": [
+    "one_to_one",
+    "group",
+    "role"
+  ],
+  "enum_dealers_approvalStatus": [
+    "pending",
+    "approved",
+    "rejected"
+  ],
+  "enum_dealers_status": [
+    "pending_approval",
+    "active",
+    "suspended",
+    "terminated"
+  ],
+  "enum_documents_approvalStatus": [
+    "pending",
+    "approved",
+    "rejected"
+  ],
+  "enum_documents_documentType": [
+    "statement",
+    "certificate",
+    "invoice",
+    "credit_note",
+    "debit_note",
+    "other"
+  ],
+  "enum_documents_status": [
+    "pending",
+    "approved",
+    "rejected"
+  ],
+  "enum_invoices_approvalStage": [
+    "dealer_admin",
+    "territory_manager",
+    "area_manager",
+    "regional_manager",
+    "regional_admin"
+  ],
+  "enum_invoices_approvalStatus": [
+    "pending",
+    "approved",
+    "rejected"
+  ],
+  "enum_invoices_status": [
+    "paid",
+    "unpaid",
+    "partial",
+    "overdue"
+  ],
+  "enum_messages_messageType": [
+    "chat",
+    "system",
+    "announcement"
+  ],
+  "enum_messages_status": [
+    "unread",
+    "read"
+  ],
+  "enum_orders_approvalStatus": [
+    "pending",
+    "approved",
+    "rejected"
+  ],
+  "enum_orders_status": [
+    "Pending",
+    "Approved",
+    "Rejected",
+    "Pending Approval",
+    "Processing",
+    "Shipped",
+    "Delivered",
+    "Cancelled"
+  ],
+  "enum_workflow_timelines_action": [
+    "submitted",
+    "approved",
+    "rejected"
+  ],
+  "enum_workflow_timelines_entityType": [
+    "order",
+    "invoice",
+    "payment",
+    "pricing",
+    "document",
+    "campaign",
+    "dealer"
+  ]
+}

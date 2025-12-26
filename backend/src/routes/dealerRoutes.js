@@ -3,11 +3,11 @@ const router = express.Router();
 const dealerController = require('../controllers/dealerController');
 const { authenticate, authorize } = require('../middleware/auth');
 const checkPermission = require('../middleware/checkPermission');
-const { applyScoping } = require('../middleware/scoping');
+const { applyScope } = require('../middleware/rbac');
 const { Dealer, User } = require('../models'); // ✅ needed
 
 // 🧩 List all dealers
-router.get('/', authenticate, checkPermission('dealer.view'), applyScoping(['Dealer']), dealerController.getAllDealers);
+router.get('/', authenticate, checkPermission('dealer.view'), applyScope(['Dealer']), dealerController.getAllDealers);
 
 // 🧩 Diagnostic endpoint - check user's database state
 router.get('/debug/my-account', authenticate, authorize("dealer_admin","dealer_staff"), async (req, res) => {
@@ -110,20 +110,71 @@ router.get("/my-manager", authenticate, authorize("dealer_admin","dealer_staff")
 });
 
 
-// 🧩 Manager → Dealers
+// 🧩 Manager / Sales Executive → Dealers
 router.get(
   "/assigned",
   authenticate,
-  authorize("territory_manager", "area_manager", "regional_manager","dealer_admin","dealer_staff","super_admin","technical_admin","regional_admin"),
+  authorize("territory_manager", "area_manager", "regional_manager","dealer_admin","dealer_staff","super_admin","technical_admin","regional_admin","sales_executive"),
   checkPermission("dealer.view"),
   dealerController.getDealersByManager
 );
 
+// 🧩 Dealer ↔ Material mappings (ADMIN ONLY)
+// These are used by admin/inventory UIs to control material availability per dealer.
+router.get(
+  "/:id/materials",
+  authenticate,
+  authorize("super_admin", "technical_admin", "inventory_user", "regional_admin", "area_manager", "territory_manager"),
+  checkPermission("materials.view"),
+  dealerController.getDealerMaterialsAdmin
+);
+
+router.post(
+  "/:id/materials",
+  authenticate,
+  authorize("super_admin", "technical_admin", "inventory_user", "regional_admin", "area_manager", "territory_manager"),
+  checkPermission("materials.manage"),
+  dealerController.assignDealerMaterials
+);
+
+router.delete(
+  "/:id/materials/:materialId",
+  authenticate,
+  authorize("super_admin", "technical_admin", "inventory_user", "regional_admin", "area_manager", "territory_manager"),
+  checkPermission("materials.manage"),
+  dealerController.removeDealerMaterial
+);
+
 // 🧩 Dealer by ID (keep this at the bottom)
-router.get('/:id', authenticate, checkPermission('dealer.view'), applyScoping(['Dealer']), dealerController.getDealerById);
-router.post('/', authenticate, authorize('super_admin', 'key_user'), checkPermission('dealer.create'), dealerController.createDealer);
+router.get('/:id', authenticate, checkPermission('dealer.view'), applyScope(['Dealer']), dealerController.getDealerById);
+
+// Onboarding: create dealer in pending_approval state
+router.post(
+  '/',
+  authenticate,
+  authorize('super_admin', 'key_user', 'regional_admin', 'regional_manager', 'area_manager'),
+  checkPermission('dealer.create'),
+  dealerController.createDealer
+);
+
 router.put('/:id', authenticate, authorize('super_admin', 'key_user'), checkPermission('dealer.update'), dealerController.updateDealer);
 router.put('/:id/block', authenticate, authorize('super_admin'), checkPermission('dealer.update'), dealerController.blockDealer);
 router.put('/:id/verify', authenticate, authorize('super_admin', 'key_user'), checkPermission('dealer.update'), dealerController.verifyDealer);
+
+// Multi-stage dealer onboarding approvals
+router.patch(
+  '/:id/approve',
+  authenticate,
+  authorize('territory_manager', 'area_manager', 'regional_manager', 'regional_admin', 'super_admin'),
+  checkPermission('dealer.update'),
+  dealerController.approveDealer
+);
+router.patch(
+  '/:id/reject',
+  authenticate,
+  authorize('territory_manager', 'area_manager', 'regional_manager', 'regional_admin', 'super_admin'),
+  checkPermission('dealer.update'),
+  dealerController.approveDealer
+);
 
 module.exports = router;

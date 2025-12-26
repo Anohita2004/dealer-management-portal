@@ -6,7 +6,8 @@
 
 const { PaymentRequest, Invoice, Dealer, AuditLog, sequelize } = require("../models");
 const { Op } = require("sequelize");
-const { nextStage, isApproverForStage } = require("../utils/approvalEngine");
+const RBACEngine = require("../services/rbacEngine");
+const { WorkflowService } = require("../services/workflow");
 
 // ========================================================================
 // CREATE PAYMENT REQUEST (Dealer Staff)
@@ -17,7 +18,7 @@ const { nextStage, isApproverForStage } = require("../utils/approvalEngine");
 const createPaymentRequest = async (req, res) => {
   try {
     // ===== 1. Check user =====
-    if (!req.user || !req.user.dealerId) {
+    if (!req.user) {
       console.warn("Unauthorized attempt to create payment request:", req.ip);
       return res.status(401).json({ error: "Unauthorized: user info missing" });
     }
@@ -28,51 +29,82 @@ const createPaymentRequest = async (req, res) => {
       return res.status(400).json({ error: "Request body is missing" });
     }
 
-    const { invoiceId, amount, paymentMode, utrNumber } = req.body;
+    const { invoiceId, amount, paymentMode, utrNumber, dealerId: bodyDealerId } = req.body;
 
     // ===== 3. Validate required fields =====
     if (!invoiceId || !amount || !paymentMode) {
       return res.status(400).json({ error: "Missing required fields: invoiceId, amount, paymentMode" });
     }
 
-    // ===== 4. Fetch invoice =====
+    // ===== 4. Determine dealer context =====
+    const roleName = req.user.roleDetails?.name || req.user.role;
+    let dealerId = req.user.dealerId || bodyDealerId;
+
+    // For dealer-facing roles, enforce own dealer unless explicitly allowed
+    if (roleName === "dealer_admin" || roleName === "dealer_staff") {
+      if (!req.user.dealerId) {
+        return res.status(400).json({ error: "Your account is not linked to a dealer" });
+      }
+      dealerId = req.user.dealerId;
+    } else if (roleName === "sales_executive") {
+      // Sales Executive must specify a dealer and it must be in their scope
+      if (!dealerId) {
+        return res.status(400).json({ error: "dealerId is required for sales executives" });
+      }
+      const allowedDealers = await RBACEngine.getDealersInScope(req.user);
+      if (!allowedDealers.includes(dealerId)) {
+        return res.status(403).json({ error: "Dealer is out of scope for this user" });
+      }
+    } else if (!dealerId) {
+      // Other roles must still have a dealer context
+      return res.status(400).json({ error: "dealerId is required" });
+    }
+
+    // ===== 5. Fetch invoice and validate dealer =====
     const invoice = await Invoice.findByPk(invoiceId);
     if (!invoice) {
       return res.status(404).json({ error: "Invoice not found" });
     }
 
-    // ===== 5. Validate amount =====
+    if (invoice.dealerId !== dealerId) {
+      return res.status(403).json({ error: "Invoice does not belong to the selected dealer" });
+    }
+
+    // ===== 6. Validate amount =====
     if (Number(amount) !== Number(invoice.balanceAmount)) {
       return res.status(400).json({ error: "Amount mismatch with invoice balance" });
     }
 
-    // ===== 6. Handle proof file =====
+    // ===== 7. Handle proof file =====
     const proofPath = req.file ? req.file.path : null;
 
-    // ===== 7. Create payment request =====
+    // ===== 8. Create payment request =====
     const payment = await PaymentRequest.create({
       invoiceId,
-      dealerId: req.user.dealerId,
+      dealerId,
       amount,
       paymentMode,
       utrNumber: utrNumber || null,
       proofFile: proofPath,
-      approvalStage: "dealer_admin",
+      approvalStage: null,
       approvalStatus: "pending",
-      status: "dealer_admin_pending",
+      status: "dealer_pending",
     });
 
-    // ===== 8. Log audit =====
+    // ===== 9. Log audit =====
     await AuditLog.create({
       userId: req.user.id,
       action: "CREATE_PAYMENT_REQUEST",
       entity: "PaymentRequest",
       entityId: payment.id,
-      changes: { invoiceId, amount, paymentMode, utrNumber, proofFile: proofPath },
+      changes: { invoiceId, dealerId, amount, paymentMode, utrNumber, proofFile: proofPath },
       ipAddress: req.ip,
     });
 
-    // ===== 9. Return response =====
+    // Start payment workflow (dealer_admin → managers → finance_admin)
+    await WorkflowService.startWorkflow("payment", payment, req.user);
+
+    // ===== 10. Return response =====
     res.status(201).json({ message: "Payment request created", payment });
   } catch (err) {
     console.error("createPaymentRequest error:", err);
@@ -85,9 +117,30 @@ const createPaymentRequest = async (req, res) => {
 // ========================================================================
 const getDealerPayments = async (req, res) => {
   try {
+    const roleName = req.user?.roleDetails?.name || req.user?.role;
+
+    let where = {};
+
+    if (roleName === "dealer_admin" || roleName === "dealer_staff") {
+      where.dealerId = req.user.dealerId;
+    } else if (roleName === "sales_executive") {
+      const dealerIds = await RBACEngine.getDealersInScope(req.user);
+      if (!dealerIds.length) {
+        return res.json({ payments: [] });
+      }
+      where.dealerId = { [Op.in]: dealerIds };
+    } else {
+      // Other roles: use RBAC scoping on PaymentRequest (by dealerId)
+      const scopeWhere = await RBACEngine.buildScopeWhereClause(
+        req.user,
+        "PaymentRequest"
+      );
+      Object.assign(where, scopeWhere);
+    }
+
     const payments = await PaymentRequest.findAll({
-      where: { dealerId: req.user.dealerId },
-      include: ["Invoice"],
+      where,
+      include: ["invoice"],
       order: [["createdAt", "DESC"]],
     });
     res.json({ payments });
@@ -103,15 +156,21 @@ const getDealerPayments = async (req, res) => {
 const getPendingPayments = async (req, res) => {
   try {
     const role = req.user.roleDetails?.name || req.user.role;
-    const stageField = role === "finance_admin" ? "finance_admin" : "dealer_admin";
+
+    // Default: look for the stage matching the user's role
+    // This allows each role to see payments pending at their specific workflow stage
+    const stageField = role;
+
+    // Use RBAC engine to build a scoping where-clause (Region/Area/Territory levels)
+    const scopeWhere = await RBACEngine.buildScopeWhereClause(req.user, "PaymentRequest");
 
     const pending = await PaymentRequest.findAll({
       where: {
+        ...scopeWhere,
         approvalStage: stageField,
         approvalStatus: "pending",
-        ...(role !== "finance_admin" && { dealerId: req.user.dealerId }),
       },
-      include: ["Invoice", "Dealer"],
+      include: ["invoice", "dealer"],
       order: [["createdAt", "DESC"]],
     });
 
@@ -123,13 +182,21 @@ const getPendingPayments = async (req, res) => {
 };
 
 // ========================================================================
-// APPROVE PAYMENT (Multi-Stage)
+// APPROVE / REJECT PAYMENT (Multi-Stage via WorkflowService)
 // ========================================================================
 const approvePayment = async (req, res) => {
   const t = await sequelize.transaction();
   try {
+    const { action, reason, remarks } = req.body;
+    const finalAction = action || "approve";
+
+    if (!["approve", "reject"].includes(finalAction)) {
+      await t.rollback();
+      return res.status(400).json({ error: "Invalid action" });
+    }
+
     const payment = await PaymentRequest.findByPk(req.params.id, {
-      include: ["Invoice", "Dealer"],
+      include: ["invoice", "dealer"],
       transaction: t,
     });
 
@@ -138,44 +205,46 @@ const approvePayment = async (req, res) => {
       return res.status(404).json({ error: "Payment request not found" });
     }
 
-    const role = req.user.roleDetails?.name || req.user.role;
-    const currentStage = payment.approvalStage;
+    let result;
 
-    if (!isApproverForStage(role, currentStage, "payment")) {
-      await t.rollback();
-      return res.status(403).json({ error: `Not authorized to approve at stage: ${currentStage}` });
-    }
-
-    const next = nextStage(currentStage, "payment");
-
-    if (!next) {
-      // Final approval
-      payment.approvalStage = null;
-      payment.approvalStatus = "approved";
-      payment.status = "approved";
-
-      // Mark invoice paid
-      if (payment.Invoice) {
-        await payment.Invoice.update({ status: "paid", balanceAmount: 0 }, { transaction: t });
-      }
+    if (finalAction === "reject") {
+      result = await WorkflowService.reject("payment", payment, req.user, {
+        reason,
+        remarks,
+        rollback: false,
+        transaction: t,
+      });
     } else {
-      payment.approvalStage = next;
-      payment.approvalStatus = "pending";
-      payment.status = `${next}_pending`;
+      result = await WorkflowService.approve("payment", payment, req.user, {
+        remarks: remarks || reason,
+        transaction: t,
+      });
+
+      // Update intermediate status if workflow continues
+      if (result.nextStage) {
+        payment.status = `${result.nextStage}_pending`;
+        await payment.save({ transaction: t });
+      }
     }
 
-    payment.approvedBy = req.user.username || req.user.id;
-    payment.approvedAt = new Date();
-
-    await payment.save({ transaction: t });
+    // On final approval, mark invoice paid
+    if (result.isFinal && payment.invoice) {
+      await payment.invoice.update(
+        { status: "paid", balanceAmount: 0 },
+        { transaction: t }
+      );
+    }
 
     await AuditLog.create(
       {
         userId: req.user.id,
-        action: "PAYMENT_APPROVED",
+        action:
+          finalAction === "approve"
+            ? "PAYMENT_APPROVED"
+            : "PAYMENT_REJECTED",
         entity: "PaymentRequest",
         entityId: payment.id,
-        changes: { from: currentStage, to: next || "approved" },
+        changes: { action: finalAction, reason, remarks },
         ipAddress: req.ip,
       },
       { transaction: t }
@@ -183,72 +252,43 @@ const approvePayment = async (req, res) => {
 
     await t.commit();
 
-    res.json({
-      message: next ? `Payment moved to next stage: ${next}` : "Payment fully approved",
+    return res.json({
+      message:
+        result.message ||
+        (finalAction === "approve"
+          ? `Payment ${payment.approvalStatus}`
+          : "Payment rejected"),
       payment,
+      stage: result.currentStage,
+      isFinal: result.isFinal,
     });
   } catch (err) {
     await t.rollback();
     console.error("approvePayment:", err);
-    res.status(500).json({ error: "Failed to approve payment" });
+    // Workflow validation errors should surface as 403
+    if (
+      err.message &&
+      err.message.includes("cannot approve at stage")
+    ) {
+      return res.status(403).json({
+        error: "Access Denied — Workflow Validation Failed",
+        message: err.message,
+        userRole: req.user.role || req.user.roleDetails?.name,
+        paymentId: req.params.id,
+      });
+    }
+
+    res
+      .status(500)
+      .json({ error: "Failed to update payment status", details: err.message });
   }
 };
 
-// ========================================================================
-// REJECT PAYMENT (Multi-Stage)
-// ========================================================================
+// Keep rejectPayment for backward compatibility (delegates to approvePayment)
 const rejectPayment = async (req, res) => {
-  const t = await sequelize.transaction();
-  try {
-    const { reason } = req.body;
-
-    const payment = await PaymentRequest.findByPk(req.params.id, {
-      include: ["Invoice", "Dealer"],
-      transaction: t,
-    });
-
-    if (!payment) {
-      await t.rollback();
-      return res.status(404).json({ error: "Payment request not found" });
-    }
-
-    const role = req.user.roleDetails?.name || req.user.role;
-    const currentStage = payment.approvalStage;
-
-    if (!isApproverForStage(role, currentStage, "payment")) {
-      await t.rollback();
-      return res.status(403).json({ error: `Not authorized to reject at stage: ${currentStage}` });
-    }
-
-    payment.approvalStage = null;
-    payment.approvalStatus = "rejected";
-    payment.status = "rejected";
-    payment.rejectionReason = reason || "Rejected by approver";
-    payment.approvedBy = req.user.username || req.user.id;
-    payment.approvedAt = new Date();
-
-    await payment.save({ transaction: t });
-
-    await AuditLog.create(
-      {
-        userId: req.user.id,
-        action: "PAYMENT_REJECTED",
-        entity: "PaymentRequest",
-        entityId: payment.id,
-        changes: { reason },
-        ipAddress: req.ip,
-      },
-      { transaction: t }
-    );
-
-    await t.commit();
-
-    res.json({ message: "Payment rejected", payment });
-  } catch (err) {
-    await t.rollback();
-    console.error("rejectPayment:", err);
-    res.status(500).json({ error: "Failed to reject payment" });
-  }
+  req.body = req.body || {};
+  req.body.action = "reject";
+  return approvePayment(req, res);
 };
 
 // ========================================================================
@@ -263,7 +303,7 @@ const autoReconcile = async (req, res) => {
         approvalStatus: "pending",
         utrNumber: { [Op.ne]: null },
       },
-      include: ["Invoice"],
+      include: ["invoice"],
       transaction: t,
       lock: t.LOCK.UPDATE,
     });
@@ -272,21 +312,21 @@ const autoReconcile = async (req, res) => {
     const flagged = [];
 
     for (const p of matches) {
-      if (p.Invoice && Number(p.amount) === Number(p.Invoice.balanceAmount)) {
+      if (p.invoice && Number(p.amount) === Number(p.invoice.balanceAmount)) {
         await p.update(
           { approvalStage: null, approvalStatus: "approved", status: "approved", approvedBy: "AUTO-RECONCILE", approvedAt: new Date() },
           { transaction: t }
         );
 
-        await p.Invoice.update({ status: "paid", balanceAmount: 0 }, { transaction: t });
+        await p.invoice.update({ status: "paid", balanceAmount: 0 }, { transaction: t });
 
         autoApproved.push(p.id);
       } else {
         flagged.push({
           paymentRequestId: p.id,
-          invoiceId: p.Invoice?.id,
+          invoiceId: p.invoice?.id,
           paymentAmount: p.amount,
-          invoiceBalance: p.Invoice?.balanceAmount,
+          invoiceBalance: p.invoice?.balanceAmount,
         });
       }
     }
@@ -305,20 +345,108 @@ const autoReconcile = async (req, res) => {
 // ========================================================================
 const getDealerAdminPending = async (req, res) => {
   try {
+    // Check if dealer_admin has dealerId
+    if (!req.user.dealerId) {
+      return res.status(400).json({
+        error: "Your account is not linked to a dealer. Please contact an administrator."
+      });
+    }
+
     const data = await PaymentRequest.findAll({
       where: {
         dealerId: req.user.dealerId,
         approvalStage: "dealer_admin",
         approvalStatus: "pending",
       },
-      include: ["Invoice"],
+      include: [
+        {
+          model: Invoice,
+          as: "invoice",
+          attributes: ["id", "invoiceNumber", "totalAmount", "balanceAmount", "status"]
+        },
+        {
+          model: Dealer,
+          as: "dealer",
+          attributes: ["id", "businessName", "dealerCode"]
+        }
+      ],
       order: [["createdAt", "DESC"]],
     });
+
+    // Debug info if requested
+    if (req.query.debug === 'true') {
+      // Get all payment requests for this dealer to see what's in the database
+      const allPayments = await PaymentRequest.findAll({
+        where: { dealerId: req.user.dealerId },
+        attributes: ["id", "dealerId", "approvalStage", "approvalStatus", "status", "createdAt"],
+        order: [["createdAt", "DESC"]],
+        limit: 10
+      });
+
+      return res.json({
+        pending: data,
+        debug: {
+          dealerAdminDealerId: req.user.dealerId,
+          dealerAdminRole: req.user.role || req.user.roleDetails?.name,
+          count: data.length,
+          query: {
+            dealerId: req.user.dealerId,
+            approvalStage: "dealer_admin",
+            approvalStatus: "pending"
+          },
+          allPaymentsForDealer: allPayments.map(p => ({
+            id: p.id,
+            dealerId: p.dealerId,
+            approvalStage: p.approvalStage,
+            approvalStatus: p.approvalStatus,
+            status: p.status,
+            createdAt: p.createdAt
+          }))
+        }
+      });
+    }
 
     res.json({ pending: data });
   } catch (err) {
     console.error("getDealerAdminPending:", err);
-    res.status(500).json({ error: "Failed to fetch dealer admin pending payments" });
+    res.status(500).json({ error: "Failed to fetch dealer admin pending payments", details: err.message });
+  }
+};
+
+// ========================================================================
+// GET PAYMENT BY ID
+// ========================================================================
+const getPaymentById = async (req, res) => {
+  try {
+    const payment = await PaymentRequest.findByPk(req.params.id, {
+      include: [
+        {
+          model: Invoice,
+          as: "invoice",
+          attributes: ["id", "invoiceNumber", "totalAmount", "balanceAmount", "status", "invoiceDate"]
+        },
+        {
+          model: Dealer,
+          as: "dealer",
+          attributes: ["id", "businessName", "dealerCode", "contactPerson", "email", "phoneNumber"]
+        }
+      ]
+    });
+
+    if (!payment) {
+      return res.status(404).json({ error: "Payment request not found" });
+    }
+
+    // Check if user has access to this payment based on RBAC
+    const hasAccess = await RBACEngine.canAccessResource(req.user, { dealerId: payment.dealerId });
+    if (!hasAccess) {
+      return res.status(403).json({ error: "Access denied to this payment request" });
+    }
+
+    res.json(payment);
+  } catch (err) {
+    console.error("getPaymentById:", err);
+    res.status(500).json({ error: "Failed to fetch payment request", details: err.message });
   }
 };
 
@@ -355,7 +483,7 @@ const getDuePayments = async (req, res) => {
     const duePayments = invoices.map((inv) => {
       const dueDate = new Date(inv.dueDate);
       const daysOverdue = Math.floor((today - dueDate) / (1000 * 60 * 60 * 24));
-      
+
       return {
         id: inv.id,
         invoiceNumber: inv.invoiceNumber,
@@ -390,6 +518,24 @@ const getDuePayments = async (req, res) => {
 };
 
 // ========================================================================
+// GET WORKFLOW STATUS
+// ========================================================================
+const getWorkflowStatus = async (req, res) => {
+  try {
+    const payment = await PaymentRequest.findByPk(req.params.id);
+    if (!payment) {
+      return res.status(404).json({ error: "Payment request not found" });
+    }
+
+    const status = await WorkflowService.getWorkflowStatus("payment", payment);
+    res.json(status);
+  } catch (err) {
+    console.error("getWorkflowStatus error:", err);
+    res.status(500).json({ error: "Failed to fetch workflow status", details: err.message });
+  }
+};
+
+// ========================================================================
 // EXPORTS
 // ========================================================================
 module.exports = {
@@ -401,4 +547,6 @@ module.exports = {
   autoReconcile,
   getDealerAdminPending,
   getDuePayments,
+  getWorkflowStatus,
+  getPaymentById,
 };

@@ -2,6 +2,7 @@
 // Resolves workflow stages, validates users, and determines transitions
 
 const { getPipeline } = require('./pipelines');
+const { STAGE_APPROVERS } = require('../../utils/approvalEngine');
 
 /**
  * WorkflowResolver - Handles stage navigation and validation
@@ -102,10 +103,11 @@ class WorkflowResolver {
    * Validate if user can approve at current stage
    * @param {Object} user - User object
    * @param {Object} entity - Entity object
+   * @param {string} entityType - Optional entity type (if not provided, will be inferred)
    * @param {boolean} allowSuperAdmin - Allow super admin override (default: true)
    * @returns {boolean} True if user can approve
    */
-  static validateUserCanApprove(user, entity, allowSuperAdmin = true) {
+  static validateUserCanApprove(user, entity, entityType = null, allowSuperAdmin = true) {
     const roleName = user.roleDetails?.name || user.role;
     const currentStage = this.getCurrentStage(entity);
 
@@ -116,7 +118,16 @@ class WorkflowResolver {
       return true;
     }
 
-    // User's role must match the current stage
+    // Get entity type if not provided
+    const type = entityType || this.getEntityType(entity);
+
+    // Check if user's role is in the allowed approvers for this stage
+    const allowedRoles = STAGE_APPROVERS[type]?.[currentStage] || [];
+    if (allowedRoles.length > 0) {
+      return allowedRoles.includes(roleName);
+    }
+
+    // Fallback: User's role must match the current stage (for backward compatibility)
     return roleName === currentStage;
   }
 
@@ -167,7 +178,7 @@ class WorkflowResolver {
    */
   static getEntityType(entity, providedType = null) {
     if (providedType) return providedType;
-    
+
     // Infer from model name or constructor
     const modelName = entity.constructor?.name || '';
     const typeMap = {
@@ -180,6 +191,32 @@ class WorkflowResolver {
     };
 
     return typeMap[modelName] || 'order';
+  }
+
+  /**
+   * Get initial stage for a new entity based on creator
+   * @param {string} entityType - Type of entity
+   * @param {Object} creatorUser - User who created the entity
+   * @returns {string} Initial stage name
+   */
+  static getInitialStage(entityType, creatorUser) {
+    const pipeline = this.getPipeline(entityType);
+    if (!pipeline.length) return null;
+
+    const roleName = creatorUser?.roleDetails?.name || creatorUser?.role;
+
+    // Find the first stage that the creator cannot approve
+    // This allows creators to "skip" stages they are authorized to approve
+    for (const stage of pipeline) {
+      const allowedRoles = STAGE_APPROVERS[entityType]?.[stage] || [];
+      if (!allowedRoles.includes(roleName)) {
+        return stage;
+      }
+    }
+
+    // Fallback if they can approve everything: start at the last stage
+    // or return the first stage if skipping is not desired for admins
+    return pipeline[0];
   }
 
   /**

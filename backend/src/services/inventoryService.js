@@ -252,7 +252,7 @@ class InventoryService {
       include: [
         { model: Region, as: 'region' },
         { model: Area, as: 'area' },
-        { model: Territory, as: 'territory' }
+        { model: Territory, as: 'territoryRelation' }
       ]
     });
 

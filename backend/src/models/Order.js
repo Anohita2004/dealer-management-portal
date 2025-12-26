@@ -50,7 +50,6 @@ module.exports = (sequelize, DataTypes) => {
       approvalStage: {
         type: DataTypes.STRING, // dealer_admin, regional_manager, etc.
         allowNull: true,
-        defaultValue: "stage1",
       },
 
       approvalStatus: {

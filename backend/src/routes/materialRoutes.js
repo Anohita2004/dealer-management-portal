@@ -41,6 +41,7 @@ router.post(
 router.get(
   "/analytics",
   authenticate,
+  authorize("inventory_user", "super_admin", "key_user","dealer_admin", "territory_manager","area_manager","regional_manager","regional_admin","technical_admin"),
   checkPermission("inventory.view"),
   materialController.analytics
 );
@@ -48,6 +49,7 @@ router.get(
 router.get(
   "/alerts",
   authenticate,
+  authorize("inventory_user", "super_admin", "key_user","dealer_admin", "territory_manager","area_manager","regional_manager","regional_admin","technical_admin"),
   checkPermission("inventory.view"),
   materialController.alerts
 );
@@ -56,6 +58,7 @@ router.get(
 router.get(
   "/template",
   authenticate,
+  authorize("inventory_user", "super_admin", "key_user","dealer_admin", "territory_manager","area_manager","regional_manager","regional_admin","technical_admin"),
   checkPermission("inventory.view"),
   materialController.downloadTemplate
 );
@@ -63,13 +66,34 @@ router.get(
 router.get(
   "/",
   authenticate,
+  authorize("inventory_user", "super_admin", "key_user","dealer_admin", "territory_manager","area_manager","regional_manager","regional_admin","technical_admin"),
   checkPermission("inventory.view"),
   materialController.getMaterials
+);
+
+// Dealer-scoped materials for ordering – respects dealer-material mappings
+router.get(
+  "/dealer/:dealerId",
+  authenticate,
+  authorize(
+    "dealer_admin",
+    "dealer_staff",
+    "sales_executive",
+    "territory_manager",
+    "area_manager",
+    "regional_manager",
+    "regional_admin",
+    "super_admin",
+    "technical_admin"
+  ),
+  checkPermission("inventory.view"),
+  materialController.getDealerMaterials
 );
 
 router.get(
   "/:id",
   authenticate,
+  authorize("inventory_user", "super_admin", "key_user","dealer_admin", "territory_manager","area_manager","regional_manager","regional_admin","technical_admin"),
   checkPermission("inventory.view"),
   materialController.getMaterialById
 );

@@ -1,6 +1,7 @@
-const { Dealer, User, AuditLog } = require('../models');
+const { Dealer, User, Role, AuditLog, DealerMaterial, Material, UserDealer, sequelize } = require('../models');
 const { Op } = require('sequelize');
 const RBACEngine = require('../services/rbacEngine');
+const { WorkflowService } = require('../services/workflow');
 
 /* ============================================================
    GET ALL DEALERS (Admin / Territory Manager / Area Manager)
@@ -85,22 +86,40 @@ const getDealerById = async (req, res) => {
    CREATE DEALER
 ============================================================ */
 const createDealer = async (req, res) => {
+  const t = await sequelize.transaction();
   try {
-    const dealer = await Dealer.create(req.body);
+    const payload = { ...req.body };
 
-    await AuditLog.create({
-      userId: req.user.id,
-      action: "CREATE_DEALER",
-      entity: "Dealer",
-      entityId: dealer.id,
-      changes: req.body,
-      ipAddress: req.ip,
-      userAgent: req.headers["user-agent"]
+    // Ensure new dealer starts in pending_approval state and inactive
+    payload.status = "pending_approval";
+    payload.isActive = false;
+    payload.isVerified = false;
+
+    const dealer = await Dealer.create(payload, { transaction: t });
+
+    // Start dealer onboarding workflow (territory -> area -> regional manager -> regional admin)
+    await WorkflowService.startWorkflow("dealer", dealer, req.user, {
+      transaction: t,
     });
 
-    res.status(201).json(dealer);
+    await AuditLog.create(
+      {
+        userId: req.user.id,
+        action: "CREATE_DEALER",
+        entity: "Dealer",
+        entityId: dealer.id,
+        changes: payload,
+        ipAddress: req.ip,
+        userAgent: req.headers["user-agent"],
+      },
+      { transaction: t }
+    );
 
+    await t.commit();
+
+    res.status(201).json(dealer);
   } catch (error) {
+    await t.rollback();
     console.error("Create dealer error:", error);
     res.status(500).json({ error: "Failed to create dealer" });
   }
@@ -118,7 +137,40 @@ const updateDealer = async (req, res) => {
     }
 
     const oldData = dealer.toJSON();
+
+    // Track potential manager change before update
+    const previousManagerId = dealer.managerId;
+
     await dealer.update(req.body);
+
+    // If managerId changed and the new manager is a sales_executive, sync UserDealer
+    if (req.body.managerId && req.body.managerId !== previousManagerId) {
+      const newManager = await User.findByPk(req.body.managerId, {
+        include: [{ model: Role, as: "roleDetails" }],
+      });
+      const newManagerRole = newManager?.roleDetails?.name || newManager?.role;
+
+      // If previous manager was a sales_executive, remove their mapping
+      if (previousManagerId) {
+        const prevManager = await User.findByPk(previousManagerId, {
+          include: [{ model: Role, as: "roleDetails" }],
+        });
+        const prevRole = prevManager?.roleDetails?.name || prevManager?.role;
+        if (prevManager && prevRole === "sales_executive") {
+          await UserDealer.destroy({
+            where: { userId: previousManagerId, dealerId: dealer.id },
+          });
+        }
+      }
+
+      // If new manager is a sales_executive, create mapping
+      if (newManager && newManagerRole === "sales_executive") {
+        await UserDealer.findOrCreate({
+          where: { userId: newManager.id, dealerId: dealer.id },
+          defaults: { isPrimary: true },
+        });
+      }
+    }
 
     await AuditLog.create({
       userId: req.user.id,
@@ -165,6 +217,169 @@ const blockDealer = async (req, res) => {
   } catch (error) {
     console.error("Block dealer error:", error);
     res.status(500).json({ error: "Failed to block/unblock dealer" });
+  }
+};
+
+/* ============================================================
+   APPROVE / REJECT DEALER (Multi-Stage Onboarding)
+============================================================ */
+const approveDealer = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const { id } = req.params;
+    const { action, reason, remarks } = req.body;
+
+    const finalAction = action || "approve";
+    if (!["approve", "reject"].includes(finalAction)) {
+      await t.rollback();
+      return res.status(400).json({ error: "Invalid action" });
+    }
+
+    const dealer = await Dealer.findByPk(id, { transaction: t });
+    if (!dealer) {
+      await t.rollback();
+      return res.status(404).json({ error: "Dealer not found" });
+    }
+
+    // Scope check: ensure approver can see this dealer
+    const canAccess = await RBACEngine.canAccessResource(req.user, {
+      dealerId: dealer.id,
+      regionId: dealer.regionId,
+      areaId: dealer.areaId,
+      territoryId: dealer.territoryId,
+    });
+    if (!canAccess) {
+      await t.rollback();
+      return res.status(403).json({ error: "Access denied for this dealer" });
+    }
+
+    let result;
+
+    if (finalAction === "reject") {
+      // Reject dealer onboarding
+      result = await WorkflowService.reject("dealer", dealer, req.user, {
+        reason,
+        remarks,
+        rollback: false,
+        transaction: t,
+      });
+    } else {
+      // Approve current stage
+      result = await WorkflowService.approve("dealer", dealer, req.user, {
+        remarks: remarks || reason,
+        transaction: t,
+      });
+
+      // On final approval, ensure dealer is active and has a DealerAdmin user
+      if (result.isFinal) {
+        // Ensure status + flags are set (safety in case of older records)
+        dealer.status = "active";
+        dealer.isActive = true;
+        dealer.isVerified = true;
+
+        // Create dealer_admin user if none exists
+        const existingAdmin = await User.findOne({
+          where: { dealerId: dealer.id },
+          include: [{ model: Role, as: "roleDetails" }],
+          transaction: t,
+        });
+
+        const isDealerAdmin =
+          existingAdmin &&
+          (existingAdmin.roleDetails?.name === "dealer_admin" ||
+            existingAdmin.role === "dealer");
+
+        if (!isDealerAdmin) {
+          const dealerAdminRole = await Role.findOne({
+            where: { name: "dealer_admin" },
+            transaction: t,
+          });
+
+          if (dealerAdminRole) {
+            const baseUsername = dealer.dealerCode || dealer.businessName;
+            const safeUsername = (baseUsername || "dealer")
+              .toLowerCase()
+              .replace(/[^a-z0-9]/g, "");
+
+            const username = `${safeUsername}_${Date.now()}`;
+            const email =
+              dealer.email ||
+              `${safeUsername || "dealer"}_${Date.now()}@example.local`;
+
+            await User.create(
+              {
+                username,
+                email,
+                password: `${safeUsername || "Dealer"}@123`, // will be hashed by hook
+                roleId: dealerAdminRole.id,
+                dealerId: dealer.id,
+                regionId: dealer.regionId,
+                areaId: dealer.areaId,
+                territoryId: dealer.territoryId,
+                managerId: dealer.managerId || null,
+                isActive: true,
+                isBlocked: false,
+              },
+              { transaction: t }
+            );
+          } else {
+            console.warn(
+              "Dealer approved but Role 'dealer_admin' not found; skipping auto user creation"
+            );
+          }
+        }
+
+        await dealer.save({ transaction: t });
+      }
+    }
+
+    await AuditLog.create(
+      {
+        userId: req.user.id,
+        action:
+          finalAction === "approve" ? "APPROVE_DEALER" : "REJECT_DEALER",
+        entity: "Dealer",
+        entityId: dealer.id,
+        changes: { action: finalAction, reason, remarks },
+        ipAddress: req.ip,
+        userAgent: req.headers["user-agent"],
+      },
+      { transaction: t }
+    );
+
+    await t.commit();
+
+    return res.json({
+      message:
+        result?.message ||
+        (finalAction === "approve"
+          ? `Dealer ${dealer.status}`
+          : `Dealer rejected`),
+      dealer,
+      stage: result?.currentStage || dealer.approvalStage,
+      isFinal: !!result?.isFinal,
+      reason: result?.reason || dealer.rejectionReason,
+    });
+  } catch (error) {
+    await t.rollback();
+    console.error("approveDealer error:", error);
+
+    if (
+      error.message &&
+      (error.message.includes("cannot approve at stage") ||
+        error.message.includes("cannot reject at stage"))
+    ) {
+      return res.status(403).json({
+        error: "Access Denied — Workflow Validation Failed",
+        message: error.message,
+        userRole: req.user.role || req.user.roleDetails?.name,
+        dealerId: req.params.id,
+      });
+    }
+
+    res
+      .status(500)
+      .json({ error: "Failed to update dealer status", details: error.message });
   }
 };
 
@@ -294,7 +509,30 @@ const verifyDealer = async (req, res) => {
 ============================================================ */
 const getDealersByManager = async (req, res) => {
   try {
-    if (!["territory_manager", "area_manager", "sm"].includes(req.user.role)) {
+    const roleName = req.user?.roleDetails?.name || req.user?.role;
+
+    // Sales Executive: use user_dealers mapping
+    if (roleName === "sales_executive") {
+      const mappings = await UserDealer.findAll({
+        where: { userId: req.user.id },
+        attributes: ["dealerId"],
+      });
+      const dealerIds = mappings.map((m) => m.dealerId);
+
+      if (!dealerIds.length) {
+        return res.json({ dealers: [] });
+      }
+
+      const dealers = await Dealer.findAll({
+        where: { id: { [Op.in]: dealerIds } },
+        order: [["createdAt", "DESC"]],
+      });
+
+      return res.json({ dealers });
+    }
+
+    // Existing manager hierarchy (TM/AM/RM etc.) via dealer.managerId
+    if (!["territory_manager", "area_manager", "regional_manager", "regional_admin", "dealer_admin", "dealer_staff", "super_admin", "technical_admin"].includes(roleName)) {
       return res.status(403).json({ error: "Access denied" });
     }
 
@@ -312,6 +550,96 @@ const getDealersByManager = async (req, res) => {
 };
 
 /* ============================================================
+   DEALER ↔ MATERIAL MAPPINGS (ADMIN)
+============================================================ */
+
+// Admin: list materials assigned to a dealer
+const getDealerMaterialsAdmin = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const dealer = await Dealer.findByPk(id);
+    if (!dealer) {
+      return res.status(404).json({ error: "Dealer not found" });
+    }
+
+    const mappings = await DealerMaterial.findAll({
+      where: { dealerId: id, isActive: true },
+      include: [{ model: Material, as: "material" }],
+      order: [["createdAt", "DESC"]],
+    });
+
+    const materials = mappings.map((m) => m.material).filter(Boolean);
+
+    return res.json({ materials, mappings });
+  } catch (err) {
+    console.error("getDealerMaterialsAdmin:", err);
+    res.status(500).json({ error: "Failed to fetch dealer materials" });
+  }
+};
+
+// Admin: bulk assign materials to a dealer
+const assignDealerMaterials = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { materialIds = [] } = req.body;
+
+    const dealer = await Dealer.findByPk(id);
+    if (!dealer) {
+      return res.status(404).json({ error: "Dealer not found" });
+    }
+
+    if (!Array.isArray(materialIds) || materialIds.length === 0) {
+      return res.status(400).json({ error: "materialIds array is required" });
+    }
+
+    const results = [];
+    for (const materialId of materialIds) {
+      const [mapping] = await DealerMaterial.findOrCreate({
+        where: { dealerId: id, materialId },
+        defaults: {
+          isActive: true,
+        },
+      });
+
+      if (!mapping.isActive) {
+        mapping.isActive = true;
+        await mapping.save();
+      }
+
+      results.push(mapping);
+    }
+
+    return res.status(200).json({ mappings: results });
+  } catch (err) {
+    console.error("assignDealerMaterials:", err);
+    res.status(500).json({ error: "Failed to assign materials to dealer" });
+  }
+};
+
+// Admin: unassign single material from dealer
+const removeDealerMaterial = async (req, res) => {
+  try {
+    const { id, materialId } = req.params;
+
+    const mapping = await DealerMaterial.findOne({
+      where: { dealerId: id, materialId },
+    });
+
+    if (!mapping) {
+      return res.status(404).json({ error: "Dealer-material mapping not found" });
+    }
+
+    mapping.isActive = false;
+    await mapping.save();
+
+    return res.json({ message: "Material unassigned from dealer" });
+  } catch (err) {
+    console.error("removeDealerMaterial:", err);
+    res.status(500).json({ error: "Failed to unassign material from dealer" });
+  }
+};
+
+/* ============================================================
    EXPORTS
 ============================================================ */
 module.exports = {
@@ -320,7 +648,11 @@ module.exports = {
   createDealer,
   updateDealer,
   blockDealer,
+  approveDealer,
   getDealerProfile,
   verifyDealer,
-  getDealersByManager
+  getDealersByManager,
+  getDealerMaterialsAdmin,
+  assignDealerMaterials,
+  removeDealerMaterial
 };

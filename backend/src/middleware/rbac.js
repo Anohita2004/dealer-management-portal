@@ -88,8 +88,10 @@ const requireAllPermissions = (permissionKeys) => {
 };
 
 /**
- * Middleware to apply automatic scoping based on user's role and hierarchy
- * Adds req.scope with appropriate where clauses for different entity types
+ * Middleware to apply automatic scoping based on user's role and hierarchy.
+ * Uses the centralized RBACEngine (including sales_executive + UserDealer mappings)
+ * and populates both singular and legacy plural keys on req.scope for backward compatibility.
+ *
  * @param {string[]} entityTypes - Array of entity types to scope (e.g., ['Order', 'Invoice', 'Dealer'])
  * @returns {Function} Express middleware
  */
@@ -112,8 +114,25 @@ const applyScope = (entityTypes = []) => {
       req.scope = {};
 
       for (const entityType of entityTypes) {
-        const whereClause = await RBACEngine.buildScopeWhereClause(req.user, entityType);
-        req.scope[entityType.toLowerCase()] = whereClause;
+        const whereClause = await RBACEngine.buildScopeWhereClause(
+          req.user,
+          entityType
+        );
+
+        // Primary key: singular, lowercased entity name (e.g. invoice, dealer)
+        const key = entityType.toLowerCase();
+        req.scope[key] = whereClause;
+
+        // Legacy aliases expected by older controllers/routes
+        if (entityType === 'Dealer') {
+          req.scope.dealers = whereClause;
+        } else if (entityType === 'Order') {
+          req.scope.orders = whereClause;
+        } else if (entityType === 'Invoice') {
+          req.scope.invoices = whereClause;
+        } else if (entityType === 'Campaign') {
+          req.scope.campaigns = whereClause;
+        }
       }
 
       // Also add user's scope info for reference

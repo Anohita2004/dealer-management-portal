@@ -218,7 +218,7 @@ class NotificationService {
       case 'dealer':
         const dealer = await Dealer.findByPk(hierarchyId, {
           include: [
-            { model: Territory, as: 'territory' },
+            { model: Territory, as: 'territoryRelation' },
             { model: Area, as: 'area' },
             { model: Region, as: 'region' }
           ]

@@ -32,6 +32,12 @@ const PERMISSIONS = [
   { key: "territories.view", description: "View territories" },
   { key: "territories.manage", description: "Manage territories" },
 
+  // ===== MATERIALS / INVENTORY MAPPING =====
+  // NOTE: Global material master is handled as inventory, but we keep
+  // separate keys for finer-grained control on admin UIs if needed.
+  { key: "materials.view", description: "View material groups and mappings" },
+  { key: "materials.manage", description: "Manage material groups and mappings" },
+
   // ===== ORDERS & APPROVALS =====
   { key: "orders.view", description: "View orders" },
   { key: "orders.create", description: "Create orders" },
@@ -116,6 +122,7 @@ const ROLES = [
   "regional_manager",
   "area_manager",
   "territory_manager",
+  "sales_executive",
   "finance_admin",
   "dealer_admin",
   "dealer_staff",
@@ -131,6 +138,7 @@ const ROLE_TO_PERMS = {
     "roles.view", "roles.assign.permissions",
     "users.view", "users.edit",
     "system.logs", "system.config",
+    "materials.view", "materials.manage",
     "messages.view", "messages.send",
     "notifications.view", "notifications.send"
   ],
@@ -140,7 +148,7 @@ const ROLE_TO_PERMS = {
     "users.view", "users.create", "users.edit",
     "regions.view", "areas.view", "areas.manage", "territories.view", "territories.manage",
     "orders.view", "orders.approve",
-    "invoices.view", "payments.view", "payments.approve",
+    "invoices.view", "invoices.edit", "payments.view", "payments.approve",
     "documents.view", "documents.verify",
     "campaigns.view", "campaigns.create",
     "maps.view", "maps.regions", "maps.heatmap",
@@ -155,7 +163,7 @@ const ROLE_TO_PERMS = {
     "users.view", "users.create", "users.edit",
     "areas.view", "territories.view",
     "orders.view", "orders.approve", "orders.reject",
-    "invoices.view", "payments.view",
+    "invoices.view", "invoices.edit", "payments.view",
     "documents.view", "documents.verify",
     "campaigns.view",
     "maps.view", "maps.regions", "maps.heatmap",
@@ -165,11 +173,37 @@ const ROLE_TO_PERMS = {
     "notifications.view"
   ],
 
+  sales_executive: [
+    // Dealer visibility & basic CRM-style access for assigned dealers only
+    "dealer.view",
+
+    // Order + payment initiation, but NO approvals
+    "orders.create",
+    "orders.view",
+    "payments.create",
+    "payments.view",
+
+    // Invoices are needed for payment requests
+    "invoices.view",
+
+    // Read-only visibility into inventory / material availability
+    "inventory.view",
+
+    // Dashboards & insights – no configuration or approvals
+    "dashboard.view.manager",
+    "reports.view",
+    "campaigns.view",
+    "maps.view",
+    // Notifications & chat
+    "notifications.view",
+    "messages.view",
+  ],
+
   area_manager: [
     "dealer.view", "dealer.update",
     "users.view", "users.create", "users.edit",
     "orders.view", "orders.approve", "orders.reject",
-    "invoices.view", "payments.view", "payments.approve",
+    "invoices.view", "invoices.edit", "payments.view", "payments.approve",
     "documents.view", "documents.verify",
     "pricing.view", "pricing.approve",
     "campaigns.view",
@@ -183,7 +217,7 @@ const ROLE_TO_PERMS = {
     "dealer.view", "dealer.update",
     "users.view", "users.create", "users.edit",
     "orders.view", "orders.approve", "orders.reject",
-    "invoices.view", "payments.view",
+    "invoices.view", "invoices.edit", "payments.view",
     "documents.view", "documents.verify",
     "pricing.view", "pricing.approve",
     "campaigns.view",
@@ -206,7 +240,7 @@ const ROLE_TO_PERMS = {
     "dealer.view", // only their own dealer
     "users.create", "users.edit", // manage staff
     "orders.create", "orders.view", "orders.approve", "orders.reject", // approve/reject orders from dealer_staff
-    "invoices.view", "payments.create", "payments.view",
+    "invoices.view", "invoices.edit", "payments.create", "payments.view", "payments.approve", // approve/reject invoices and payments
     "documents.upload", "documents.view", "documents.verify",
     "maps.view",
     "dashboard.view.dealer",
@@ -220,7 +254,7 @@ const ROLE_TO_PERMS = {
   dealer_staff: [
     "dealer.view", // view their own dealer profile
     "orders.create", "orders.view",
-    "invoices.view", "payments.create", "payments.view",
+    "invoices.view", "invoices.create", "payments.create", "payments.view",
     "documents.upload", "documents.view",
     "maps.view",
     "dashboard.view.dealer",
@@ -233,6 +267,7 @@ const ROLE_TO_PERMS = {
 
   inventory_user: [
     "inventory.view", "inventory.manage", "inventory.adjust",
+    "materials.view", "materials.manage",
     "pricing.view",
     "messages.view", "messages.send",
     "notifications.view"

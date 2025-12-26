@@ -12,6 +12,7 @@ const {
   Campaign,
   PricingUpdate,   // ✅ The correct model
   Order,
+  PaymentRequest,
   Region,
   Area,
   Territory,
@@ -44,9 +45,10 @@ const dashboardSummary = async (dealerWhere = {}, user = null) => {
     attributes: ["id"],
   });
   const dealerIds = dealers.map((d) => d.id);
+  const dealerIdList = dealerIds.length ? { dealerId: { [Op.in]: dealerIds } } : {};
 
   const [invoiceAgg] = await Invoice.findAll({
-    where: dealerIds.length ? { dealerId: { [Op.in]: dealerIds } } : {},
+    where: dealerIdList,
     attributes: [
       [sequelize.fn("COUNT", sequelize.col("id")), "totalInvoices"],
       [sequelize.fn("SUM", sequelize.col("balanceAmount")), "outstanding"],
@@ -57,19 +59,21 @@ const dashboardSummary = async (dealerWhere = {}, user = null) => {
   const outstanding = Number(invoiceAgg?.outstanding || 0);
   const totalInvoices = Number(invoiceAgg?.totalInvoices || 0);
 
-  const pendingDocs = await Document.count({
-    include: dealerIds.length
-      ? [{ model: Dealer, as: "dealer", where: { id: { [Op.in]: dealerIds } } }]
-      : [{ model: Dealer, as: "dealer" }],
-    where: { status: "pending" },
-  });
+  // Workflow counts based on user's role
+  const roleName = user?.roleDetails?.name || user?.role;
+  const { getPipeline } = require("../services/workflow/pipelines");
 
-  const pendingPricing = await PricingUpdate.count({
-    include: dealerIds.length
-      ? [{ model: Dealer, as: "dealer", where: { id: { [Op.in]: dealerIds } } }]
-      : [{ model: Dealer, as: "dealer" }],
-    where: { status: "pending" },
-  });
+  const workflowCondition = {
+    approvalStage: roleName,
+    approvalStatus: 'pending'
+  };
+
+  const pendingOrders = getPipeline('order').includes(roleName) ? await Order.count({ where: { ...dealerIdList, ...workflowCondition } }) : 0;
+  const pendingInvoices = getPipeline('invoice').includes(roleName) ? await Invoice.count({ where: { ...dealerIdList, ...workflowCondition } }) : 0;
+  const pendingPayments = getPipeline('payment').includes(roleName) ? await PaymentRequest.count({ where: { ...dealerIdList, ...workflowCondition } }) : 0;
+  const pendingDocs = getPipeline('document').includes(roleName) ? await Document.count({ where: { ...dealerIdList, ...workflowCondition } }) : 0;
+  const pendingPricing = getPipeline('pricing').includes(roleName) ? await PricingUpdate.count({ where: { ...dealerIdList, ...workflowCondition } }) : 0;
+  const pendingDealers = getPipeline('dealer').includes(roleName) ? await Dealer.count({ where: { ...(dealerIds.length ? { id: { [Op.in]: dealerIds } } : {}), ...workflowCondition } }) : 0;
 
   const activeCampaigns = await Campaign.count({
     where: {
@@ -84,7 +88,7 @@ const dashboardSummary = async (dealerWhere = {}, user = null) => {
     dealers: dealerIds.length,
     totalInvoices,
     totalOutstanding: outstanding,
-    approvalsPending: pendingDocs + pendingPricing,
+    approvalsPending: pendingOrders + pendingInvoices + pendingPayments + pendingDocs + pendingPricing + pendingDealers,
     activeCampaigns,
   };
 };
@@ -143,10 +147,10 @@ const getDealerDashboard = async (req, res) => {
       } catch (scopeErr) {
         console.warn("Failed to get user scope:", scopeErr.message);
       }
-      
+
       if (!dealerId) {
-        return res.status(400).json({ 
-          error: "dealerId missing. User must be dealer_admin or dealer_staff with a valid dealerId." 
+        return res.status(400).json({
+          error: "dealerId missing. User must be dealer_admin or dealer_staff with a valid dealerId."
         });
       }
     }
@@ -281,7 +285,7 @@ const getDealerDashboard = async (req, res) => {
   } catch (err) {
     console.error("Dealer dashboard error:", err);
     console.error("Error stack:", err.stack);
-    res.status(500).json({ 
+    res.status(500).json({
       error: "Failed to load dashboard",
       details: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
@@ -632,33 +636,86 @@ const getOutstandingReceivablesReport = async (req, res) => {
 // =======================================================
 const getPendingApprovals = async (req, res) => {
   try {
-    const whereDealer = await buildDealerWhere(req);
+    const role = req.user.roleDetails?.name || req.user.role;
+    const { getPipeline } = require("../services/workflow/pipelines");
 
-    const pendingDocs = await Document.findAll({
-      where: { status: "pending" },
-      include: [
-        {
-          model: Dealer,
-          as: "dealer",
-          attributes: ["id", "businessName"],
-          where: Object.keys(whereDealer).length ? whereDealer : undefined,
-        },
-      ],
-    });
+    const workflowCondition = {
+      approvalStage: role,
+      approvalStatus: "pending",
+    };
 
-    const formatted = pendingDocs.map((doc) => ({
-      id: doc.id,
-      dealerId: doc.dealer?.id,
-      dealerName: doc.dealer?.businessName || "Unknown Dealer",
-      documentType: doc.documentType,
-      createdAt: doc.createdAt,
-      status: doc.status,
-    }));
+    // Generic scoping for entities belonging to dealers (Order, Invoice, Payment, etc)
+    const dealerScope = await RBACEngine.buildScopeWhereClause(req.user, "Order");
+    // Specific scoping for Dealer model itself
+    const dealerModelScope = await RBACEngine.buildScopeWhereClause(req.user, "Dealer");
 
-    res.json(formatted);
+    const tasks = [];
+
+    // 1. Orders
+    if (getPipeline('order').includes(role)) {
+      const orders = await Order.findAll({
+        where: { ...dealerScope, ...workflowCondition },
+        include: [{ model: Dealer, as: "dealer", attributes: ["businessName"] }],
+      });
+      tasks.push(...orders.map(o => ({ id: o.id, type: 'order', title: `Order ${o.orderNumber}`, dealerName: o.dealer?.businessName, createdAt: o.createdAt })));
+    }
+
+    // 2. Invoices
+    if (getPipeline('invoice').includes(role)) {
+      const invoices = await Invoice.findAll({
+        where: { ...dealerScope, ...workflowCondition },
+        include: [{ model: Dealer, as: "dealer", attributes: ["businessName"] }],
+      });
+      tasks.push(...invoices.map(i => ({ id: i.id, type: 'invoice', title: `Invoice ${i.invoiceNumber}`, dealerName: i.dealer?.businessName, createdAt: i.createdAt })));
+    }
+
+    // 3. Payments
+    if (getPipeline('payment').includes(role)) {
+      const payments = await PaymentRequest.findAll({
+        where: { ...dealerScope, ...workflowCondition },
+        include: [{ model: Dealer, as: "dealer", attributes: ["businessName"] }],
+      });
+      tasks.push(...payments.map(p => ({ id: p.id, type: 'payment', title: `Payment Request (${p.amount})`, dealerName: p.dealer?.businessName, createdAt: p.createdAt })));
+    }
+
+    // 4. Pricing
+    if (getPipeline('pricing').includes(role)) {
+      const pricing = await PricingUpdate.findAll({
+        where: { ...dealerScope, ...workflowCondition },
+        include: [{ model: Dealer, as: "dealer", attributes: ["businessName"] }],
+      });
+      tasks.push(...pricing.map(p => ({ id: p.id, type: 'pricing', title: `Price Change Request`, dealerName: p.dealer?.businessName, createdAt: p.createdAt })));
+    }
+
+    // 5. Documents
+    if (getPipeline('document').includes(role)) {
+      const docs = await Document.findAll({
+        where: { ...dealerScope, ...workflowCondition },
+        include: [{ model: Dealer, as: "dealer", attributes: ["businessName"] }],
+      });
+      tasks.push(...docs.map(d => ({ id: d.id, type: 'document', title: `${d.documentType} Upload`, dealerName: d.dealer?.businessName, createdAt: d.createdAt })));
+    }
+
+    // 6. Campaigns
+    if (getPipeline('campaign').includes(role)) {
+      const campaigns = await Campaign.findAll({
+        where: workflowCondition,
+      });
+      tasks.push(...campaigns.map(c => ({ id: c.id, type: 'campaign', title: `Campaign: ${c.campaignName}`, dealerName: 'Global/Regional', createdAt: c.createdAt })));
+    }
+
+    // 7. Dealers (Onboarding)
+    if (getPipeline('dealer').includes(role)) {
+      const dealers = await Dealer.findAll({
+        where: { ...dealerModelScope, ...workflowCondition },
+      });
+      tasks.push(...dealers.map(d => ({ id: d.id, type: 'dealer', title: `Dealer Onboarding: ${d.businessName}`, dealerName: d.businessName, createdAt: d.createdAt })));
+    }
+
+    res.json(tasks.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
   } catch (err) {
     console.error("Pending approvals error:", err);
-    res.status(500).json({ error: "Failed to fetch pending approvals" });
+    res.status(500).json({ error: "Failed to fetch pending approvals", details: err.message });
   }
 };
 // =======================================================

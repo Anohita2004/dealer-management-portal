@@ -1,5 +1,5 @@
 // src/controllers/orderController.js
-const { Order, OrderItem, Material, Dealer, sequelize } = require("../models");
+const { Order, OrderItem, Material, Dealer, DealerMaterial, sequelize } = require("../models");
 const { nextStage, isApproverForStage } = require("../utils/approvalEngine");
 const RBACEngine = require("../services/rbacEngine");
 const { WorkflowService } = require("../services/workflow");
@@ -7,14 +7,24 @@ const eventBus = require("../services/eventBus");
 const inventoryService = require("../services/inventoryService");
 
 // --------------------------------------
-// PLACE ORDER  (Dealer / Dealer Staff)
+// PLACE ORDER  (Dealer / Dealer Staff / Sales Executive)
+// Creates a draft/pending order; workflow starts on submit.
 // --------------------------------------
 exports.placeOrder = async (req, res) => {
   const t = await sequelize.transaction();
   try {
-    const dealerId = req.user?.dealerId || req.body.dealerId;
-    if (!dealerId)
+    // Determine dealer context
+    let dealerId = req.user?.dealerId || req.body.dealerId;
+    if (!dealerId) {
       return res.status(400).json({ error: "Missing dealerId" });
+    }
+
+    // Enforce that user is allowed to act for this dealer
+    const allowedDealers = await RBACEngine.getDealersInScope(req.user);
+    if (!allowedDealers.includes(dealerId)) {
+      await t.rollback();
+      return res.status(403).json({ error: "Dealer is out of scope for this user" });
+    }
 
     const { items = [], notes } = req.body;
     if (!items.length)
@@ -29,6 +39,23 @@ exports.placeOrder = async (req, res) => {
           .status(404)
           .json({ error: `Material ${it.materialId} not found` });
       }
+
+      // Ensure material is available for this dealer via mapping table
+      const mapping = await DealerMaterial.findOne({
+        where: {
+          dealerId,
+          materialId: it.materialId,
+          isActive: true,
+        },
+      });
+
+      if (!mapping) {
+        await t.rollback();
+        return res.status(400).json({
+          error: `Material ${it.materialId} is not available for this dealer`,
+        });
+      }
+
       total += Number(it.qty) * Number(it.unitPrice || 0);
     }
 
@@ -36,17 +63,12 @@ exports.placeOrder = async (req, res) => {
       {
         dealerId,
         orderNumber: `ORD-${Date.now()}`,
-        status: "Pending",
+        status: "Pending", // draft / pre-submission
         totalAmount: total,
         notes,
       },
       { transaction: t }
     );
-
-    // Start workflow
-    await WorkflowService.startWorkflow("order", order, req.user, {
-      transaction: t,
-    });
 
     for (const it of items) {
       const lineTotal = Number(it.qty) * Number(it.unitPrice || 0);
@@ -85,20 +107,130 @@ exports.placeOrder = async (req, res) => {
 };
 
 // --------------------------------------
+// SUBMIT ORDER FOR APPROVAL
+// --------------------------------------
+exports.submitOrder = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const { id } = req.params;
+
+    const order = await Order.findByPk(id, { transaction: t });
+    if (!order) {
+      await t.rollback();
+      return res.status(404).json({ error: "Order not found" });
+    }
+
+    // Ensure current user is allowed to act for this dealer
+    const allowedDealers = await RBACEngine.getDealersInScope(req.user);
+    if (!allowedDealers.includes(order.dealerId)) {
+      await t.rollback();
+      return res
+        .status(403)
+        .json({ error: "Dealer is out of scope for this user" });
+    }
+
+    // Prevent double submission / submission after approval or rejection
+    if (order.approvalStage || order.approvalStatus === "approved") {
+      await t.rollback();
+      return res
+        .status(400)
+        .json({ error: "Order is already in approval workflow" });
+    }
+    if (order.approvalStatus === "rejected") {
+      await t.rollback();
+      return res
+        .status(400)
+        .json({ error: "Rejected orders cannot be submitted" });
+    }
+
+    // Mark as pending approval in business status
+    order.status = "Pending Approval";
+    await order.save({ transaction: t });
+
+    // Start workflow from first stage (dealer_admin)
+    await WorkflowService.startWorkflow("order", order, req.user, {
+      transaction: t,
+    });
+
+    await t.commit();
+
+    return res.json({
+      message: "Order submitted for approval",
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      approvalStage: order.approvalStage,
+      approvalStatus: order.approvalStatus,
+      status: order.status,
+    });
+  } catch (err) {
+    await t.rollback();
+    console.error("submitOrder:", err);
+    res
+      .status(500)
+      .json({ error: "Failed to submit order", details: err.message });
+  }
+};
+
+// --------------------------------------
 // DEALER / DEALER STAFF → MY ORDERS
 // --------------------------------------
 exports.getMyOrders = async (req, res) => {
   try {
-    const dealerId = req.user?.dealerId;
+    const roleName = req.user?.roleDetails?.name || req.user?.role;
 
+    // Dealer roles: use their own dealerId
+    if (roleName === "dealer_admin" || roleName === "dealer_staff") {
+      const dealerId = req.user?.dealerId;
+
+      const orders = await Order.findAll({
+        where: { dealerId },
+        include: [
+          {
+            model: OrderItem,
+            as: "items",
+            include: [{ model: Material, as: "material" }],
+          },
+        ],
+        order: [["createdAt", "DESC"]],
+      });
+
+      return res.json({ orders });
+    }
+
+    // Sales Executive: show orders across assigned dealers
+    if (roleName === "sales_executive") {
+      const dealerIds = await RBACEngine.getDealersInScope(req.user);
+      if (!dealerIds.length) {
+        return res.json({ orders: [] });
+      }
+
+      const orders = await Order.findAll({
+        where: { dealerId: { [require("sequelize").Op.in]: dealerIds } },
+        include: [
+          {
+            model: OrderItem,
+            as: "items",
+            include: [{ model: Material, as: "material" }],
+          },
+          { model: Dealer, as: "dealer" },
+        ],
+        order: [["createdAt", "DESC"]],
+      });
+
+      return res.json({ orders });
+    }
+
+    // Other roles: fallback to scoped "all orders" behavior
+    const whereClause = await RBACEngine.buildScopeWhereClause(req.user, "Order");
     const orders = await Order.findAll({
-      where: { dealerId },
+      where: whereClause,
       include: [
         {
           model: OrderItem,
           as: "items",
           include: [{ model: Material, as: "material" }],
         },
+        { model: Dealer, as: "dealer" },
       ],
       order: [["createdAt", "DESC"]],
     });

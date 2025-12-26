@@ -6,6 +6,8 @@ const {
   AccountStatement,
   Product,
   User,
+  Role,
+  UserDealer,
 } = require('../models');
 const { Op } = require('sequelize');
 
@@ -295,8 +297,22 @@ getPricingRequests: async (req, res) => {
         return res.status(403).json({ error: 'Dealer is outside your scope' });
       }
 
+      // Update dealer.managerId for hierarchical manager roles
       dealer.managerId = managerId;
       await dealer.save();
+
+      // If the target manager is a sales_executive, also create a UserDealer mapping
+      const managerUser = await User.findByPk(managerId, {
+        include: [{ model: Role, as: 'roleDetails' }],
+      });
+      const managerRole = managerUser?.roleDetails?.name || managerUser?.role;
+      if (managerUser && managerRole === 'sales_executive') {
+        const [mapping] = await UserDealer.findOrCreate({
+          where: { userId: managerUser.id, dealerId },
+          defaults: { isPrimary: false },
+        });
+        // no-op if already exists
+      }
 
       res.json({ message: 'Dealer assigned successfully', dealer });
     } catch (err) {
