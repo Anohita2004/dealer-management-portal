@@ -38,9 +38,14 @@ const createArea = async (req, res) => {
 // =========================================================
 const getAreas = async (req, res) => {
   try {
-    const filter = req.user.role === "regional_admin" 
-      ? { regionId: req.user.regionId } 
-      : {};
+    const { regionId } = req.query;
+    
+    const filter = {};
+    if (regionId) {
+      filter.regionId = regionId;
+    } else if (req.user.role === "regional_admin") {
+      filter.regionId = req.user.regionId;
+    }
 
     const areas = await Area.findAll({
       where: filter,
@@ -50,7 +55,15 @@ const getAreas = async (req, res) => {
       ]
     });
 
-    res.json({ areas });
+    // Format response to match documentation (id, name, code, regionId)
+    const formattedAreas = areas.map(area => ({
+      id: area.id,
+      name: area.name,
+      code: area.code || area.name.substring(0, 2).toUpperCase(),
+      regionId: area.regionId,
+    }));
+
+    res.json(formattedAreas);
   } catch (err) {
     console.error("getAreas:", err);
     res.status(500).json({ error: "Failed to fetch areas" });

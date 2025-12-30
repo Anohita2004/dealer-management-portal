@@ -11,6 +11,7 @@ const RATE_LIMIT_MS = 10000; // 10 seconds
 
 /**
  * Update truck location (mobile app endpoint)
+ * Drivers can only update location for trucks assigned to them
  */
 exports.updateLocation = async (req, res) => {
   try {
@@ -23,7 +24,7 @@ exports.updateLocation = async (req, res) => {
     }
 
     // Validate coordinates
-    if (!locationService.validateCoordinates(lat, lng)) {
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
       return res.status(400).json({ error: "Invalid coordinates" });
     }
 
@@ -32,7 +33,7 @@ exports.updateLocation = async (req, res) => {
     const lastUpdate = rateLimitMap.get(truckId);
     if (lastUpdate && now - lastUpdate < RATE_LIMIT_MS) {
       return res.status(429).json({
-        error: "Rate limit exceeded. Please wait before sending another update.",
+        error: "Rate limit exceeded. Maximum 1 update per 10 seconds.",
       });
     }
 
@@ -54,6 +55,18 @@ exports.updateLocation = async (req, res) => {
       return res.status(400).json({
         error: "Truck does not have an active assignment",
       });
+    }
+
+    // Driver-specific access check: verify driver owns this truck assignment
+    const userRole = req.user.roleDetails?.name || req.user.role;
+    if (userRole === 'driver') {
+      // Drivers can only update location for their own assignments
+      if (activeAssignment.driverName !== req.user.username && 
+          activeAssignment.driverPhone !== req.user.phoneNumber) {
+        return res.status(403).json({ 
+          error: "Not authorized to update this truck location" 
+        });
+      }
     }
 
     // Update truck location
@@ -121,20 +134,36 @@ exports.updateLocation = async (req, res) => {
 
 /**
  * Get all active truck locations
+ * Drivers see only their own truck locations
  */
 exports.getLiveLocations = async (req, res) => {
   try {
-    // Check permission
-    const canTrack = await RBACEngine.hasPermission(req.user, "fleet.track");
-    if (!canTrack) {
-      return res.status(403).json({ error: "Permission denied" });
+    const userRole = req.user.roleDetails?.name || req.user.role;
+    
+    // Drivers don't need fleet.track permission, they see their own trucks
+    if (userRole !== 'driver') {
+      const canTrack = await RBACEngine.hasPermission(req.user, "fleet.track");
+      if (!canTrack) {
+        return res.status(403).json({ error: "Permission denied" });
+      }
+    }
+
+    // Build where clause
+    const where = {
+      status: { [Op.in]: ["assigned", "picked_up", "in_transit"] },
+    };
+
+    // Driver-specific filtering
+    if (userRole === 'driver') {
+      where[Op.or] = [
+        { driverName: req.user.username },
+        { driverPhone: req.user.phoneNumber },
+      ];
     }
 
     // Get trucks with active assignments
     const activeAssignments = await TruckAssignment.findAll({
-      where: {
-        status: { [Op.in]: ["assigned", "picked_up", "in_transit"] },
-      },
+      where,
       include: [
         {
           model: Truck,
@@ -154,11 +183,11 @@ exports.getLiveLocations = async (req, res) => {
       ],
     });
 
-    // Filter by user's scope
+    // Filter by user's scope (for managers/admins)
     const scopedLocations = [];
     for (const assignment of activeAssignments) {
-      const canAccess = await RBACEngine.canAccessResource(req.user, assignment.order);
-      if (canAccess) {
+      if (userRole === 'driver') {
+        // Drivers see all their assignments (already filtered)
         scopedLocations.push({
           assignmentId: assignment.id,
           orderId: assignment.order.id,
@@ -175,6 +204,27 @@ exports.getLiveLocations = async (req, res) => {
           status: assignment.status,
           driverName: assignment.driverName,
         });
+      } else {
+        // Managers/admins check access through order
+        const canAccess = await RBACEngine.canAccessResource(req.user, assignment.order);
+        if (canAccess) {
+          scopedLocations.push({
+            assignmentId: assignment.id,
+            orderId: assignment.order.id,
+            orderNumber: assignment.order.orderNumber,
+            truck: {
+              id: assignment.truck.id,
+              truckName: assignment.truck.truckName,
+              licenseNumber: assignment.truck.licenseNumber,
+              lat: assignment.truck.currentLat,
+              lng: assignment.truck.currentLng,
+              lastUpdate: assignment.truck.lastLocationUpdate,
+            },
+            warehouse: assignment.warehouse,
+            status: assignment.status,
+            driverName: assignment.driverName,
+          });
+        }
       }
     }
 

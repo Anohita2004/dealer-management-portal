@@ -314,6 +314,26 @@ async function markDelivered(assignmentId) {
       orderId: assignment.orderId,
     });
 
+    // Emit Socket.IO event for real-time updates
+    if (global.io) {
+      global.io.emit("truck:status:change", {
+        truckId: assignment.truckId,
+        assignmentId: assignment.id,
+        status: "delivered",
+        orderId: assignment.orderId,
+      });
+
+      // Notify users tracking this order
+      global.io.to(`order:${assignment.orderId}`).emit("order:tracking:update", {
+        orderId: assignment.orderId,
+        assignment: {
+          id: assignment.id,
+          status: assignment.status,
+        },
+        message: "Delivery completed. GPS tracking stopped.",
+      });
+    }
+
     return assignment;
   } catch (error) {
     await t.rollback();

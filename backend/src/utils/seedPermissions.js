@@ -138,6 +138,7 @@ const ROLES = [
   "dealer_staff",
   "inventory_user",
   "accounts_user",
+  "driver",
 ];
 
 const ROLE_TO_PERMS = {
@@ -293,6 +294,14 @@ const ROLE_TO_PERMS = {
   accounts_user: [
     "invoices.view", "invoices.edit",
     "payments.view", "payments.edit",
+    "messages.view", "messages.send",
+    "notifications.view"
+  ],
+
+  driver: [
+    "fleet.view", // view their own assignments
+    "fleet.track", // track their own truck location
+    "orders.view", // view orders they're assigned to
     "messages.view", "messages.send",
     "notifications.view"
   ]

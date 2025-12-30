@@ -42,9 +42,9 @@ const login = async (req, res) => {
     });
 
     return res.json({
-      message: "OTP generated",
-      userId: user.id,
       otpSent: true,
+      userId: user.id,
+      message: "OTP sent to email",
       otp: process.env.NODE_ENV === "development" ? otp : undefined,
     });
   } catch (err) {
@@ -89,17 +89,22 @@ const verifyOTP = async (req, res) => {
     });
 
     return res.json({
-  token,
-  user: {
-    id: user.id,
-    username: user.username,
-    email: user.email,
-    role: user.roleDetails?.name,
-    roleId: user.roleId,
-    dealerId: user.dealerId || (user.dealer ? user.dealer.id : null),
-    dealer: user.dealer || null,
-  },
-});
+      token,
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+        role: user.roleDetails?.name,
+        roleId: user.roleId,
+        regionId: user.regionId,
+        areaId: user.areaId,
+        territoryId: user.territoryId,
+        dealerId: user.dealerId || (user.dealer ? user.dealer.id : null),
+        dealer: user.dealer || null,
+        isActive: user.isActive,
+      },
+    });
 
   } catch (err) {
     console.error("OTP error:", err);

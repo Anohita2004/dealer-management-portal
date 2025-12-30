@@ -32,6 +32,9 @@ router.get('/users/:id',        scopedUserAdminAccess, adminController.getUserBy
 router.post('/users',           scopedUserAdminAccess, adminController.createUser);
 router.put('/users/:id',        scopedUserAdminAccess, adminController.updateUser);
 router.patch('/users/:id/role', scopedUserAdminAccess, adminController.updateUserRole);
+router.patch('/users/:id/password', scopedUserAdminAccess, adminController.updateUserPassword);
+router.patch('/users/:id/activate', scopedUserAdminAccess, adminController.activateUser);
+router.patch('/users/:id/deactivate', scopedUserAdminAccess, adminController.deactivateUser);
 router.delete('/users/:id',     scopedUserAdminAccess, adminController.deleteUser);
 
 // ---------------------------------------------------------

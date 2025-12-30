@@ -29,6 +29,14 @@ router.get(
   fleetController.getAssignment
 );
 
+// Update assignment (PUT)
+router.put(
+  "/assignments/:id",
+  authenticate,
+  checkPermission("fleet.assign"),
+  fleetController.updateAssignment
+);
+
 // Update assignment status
 router.patch(
   "/assignments/:id/status",
