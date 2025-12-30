@@ -340,6 +340,80 @@ exports.getAllOrders = async (req, res) => {
 };
 
 // --------------------------------------
+// GET SINGLE ORDER BY ID
+// --------------------------------------
+exports.getOrderById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Build where clause with RBAC scoping
+    let whereClause = { id };
+
+    // If scoping middleware populated a scope, honor it
+    if (req.scope?.order) {
+      Object.assign(whereClause, req.scope.order);
+    } else {
+      // Use RBAC engine to build scope
+      const scopeWhere = await RBACEngine.buildScopeWhereClause(req.user, 'Order');
+      Object.assign(whereClause, scopeWhere);
+    }
+
+    const order = await Order.findOne({
+      where: whereClause,
+      include: [
+        {
+          model: Dealer,
+          as: "dealer",
+          attributes: ["id", "businessName", "dealerCode", "address", "phoneNumber", "email"],
+        },
+        {
+          model: OrderItem,
+          as: "items",
+          include: [
+            {
+              model: Material,
+              as: "material",
+              attributes: ["id", "name", "materialNumber", "uom", "description"],
+            },
+          ],
+        },
+        {
+          model: TruckAssignment,
+          as: "truckAssignment",
+          include: [
+            {
+              model: Truck,
+              as: "truck",
+              attributes: ["id", "truckName", "licenseNumber", "status", "currentLat", "currentLng", "lastLocationUpdate"],
+            },
+            {
+              model: Warehouse,
+              as: "warehouse",
+              attributes: ["id", "name", "warehouseCode", "address", "lat", "lng", "city"],
+            },
+          ],
+        },
+      ],
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+
+    // Additional access check through RBAC
+    const canAccess = await RBACEngine.canAccessResource(req.user, order);
+    if (!canAccess) {
+      return res.status(403).json({ error: "Access denied to this order" });
+    }
+
+    res.json(order);
+  } catch (err) {
+    console.error("getOrderById:", err);
+    res.status(500).json({ error: "Failed to fetch order", details: err.message });
+  }
+};
+
+// --------------------------------------
 // STATUS UPDATE (Admin / Manager)
 // --------------------------------------
 exports.updateOrderStatus = async (req, res) => {

@@ -264,7 +264,8 @@ const ROLE_TO_PERMS = {
     "campaigns.view",
     "inventory.view",
     "reports.view",
-    "fleet.track" // track their own orders
+    "fleet.track", // track their own orders
+    "warehouse.view" // view warehouses for order tracking
   ],
 
   dealer_staff: [
@@ -279,7 +280,8 @@ const ROLE_TO_PERMS = {
     "campaigns.view",
     "inventory.view",
     "reports.view",
-    "fleet.track" // track their own orders
+    "fleet.track", // track their own orders
+    "warehouse.view" // view warehouses for order tracking
   ],
 
   inventory_user: [

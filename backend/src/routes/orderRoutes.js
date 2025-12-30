@@ -112,4 +112,16 @@ router.get(
   orderController.getOrderTracking
 );
 
+// ---------------------------
+// GET SINGLE ORDER BY ID
+// (Must be after specific routes like /:id/tracking and /:id/workflow)
+// ---------------------------
+router.get(
+  "/:id",
+  authenticate,
+  checkPermission("orders.view"),
+  applyScope(["Order"]),
+  orderController.getOrderById
+);
+
 module.exports = router;
