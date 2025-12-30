@@ -102,4 +102,26 @@ router.get(
   orderController.getWorkflowStatus
 );
 
+// ---------------------------
+// ORDER TRACKING
+// ---------------------------
+router.get(
+  "/:id/tracking",
+  authenticate,
+  checkPermission("fleet.track"),
+  orderController.getOrderTracking
+);
+
+// ---------------------------
+// GET SINGLE ORDER BY ID
+// (Must be after specific routes like /:id/tracking and /:id/workflow)
+// ---------------------------
+router.get(
+  "/:id",
+  authenticate,
+  checkPermission("orders.view"),
+  applyScope(["Order"]),
+  orderController.getOrderById
+);
+
 module.exports = router;

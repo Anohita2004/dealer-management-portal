@@ -30,7 +30,16 @@ module.exports = {
         order: [["id", "ASC"]],
       });
 
-      res.json(roles);
+      // Format response to match documentation (id, name, displayName)
+      const formattedRoles = roles.map(role => ({
+        id: role.id,
+        name: role.name,
+        displayName: role.displayName || role.name,
+        category: role.category,
+        description: role.description,
+      }));
+
+      res.json(formattedRoles);
     } catch (err) {
       console.error("getRoles:", err);
       res.status(500).json({ error: "Failed to fetch roles" });

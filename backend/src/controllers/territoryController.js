@@ -31,12 +31,16 @@ exports.createTerritory = async (req, res) => {
 // GET TERRITORIES
 exports.getTerritories = async (req, res) => {
   try {
+    const { areaId } = req.query;
     const where = {};
     const role = req.user.roleDetails?.name || req.user.role;
 
-    if (role === "area_manager") where.areaId = req.user.areaId;
-
-    if (role === "regional_admin") {
+    // Support areaId query parameter
+    if (areaId) {
+      where.areaId = areaId;
+    } else if (role === "area_manager") {
+      where.areaId = req.user.areaId;
+    } else if (role === "regional_admin") {
       const areas = await Area.findAll({ where: { regionId: req.user.regionId }, attributes:["id"] });
       where.areaId = { [Op.in]: areas.map(a => a.id) };
     }
@@ -55,7 +59,15 @@ exports.getTerritories = async (req, res) => {
       order:[["name","ASC"]]
     });
 
-    res.json({ territories });
+    // Format response to match documentation (id, name, code, areaId)
+    const formattedTerritories = territories.map(territory => ({
+      id: territory.id,
+      name: territory.name,
+      code: territory.code || territory.name.substring(0, 2).toUpperCase(),
+      areaId: territory.areaId,
+    }));
+
+    res.json(formattedTerritories);
 
   } catch (err) {
     console.error("getTerritories:", err);

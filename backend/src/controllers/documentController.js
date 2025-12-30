@@ -53,7 +53,7 @@ const getAllDocuments = async (req, res) => {
     // Apply scoping first
     if (req.scope?.dealers) {
       Object.assign(where, req.scope.dealers);
-    } else if (["dealer_admin","dealer_staff","dealer"].includes(req.user.role)) {
+    } else if (["dealer_admin", "dealer_staff", "dealer"].includes(req.user.role)) {
       where.dealerId = req.user.dealerId;
     }
 
@@ -94,7 +94,7 @@ const uploadDocument = async (req, res) => {
       mimeType: req.file.mimetype,
       description,
 
-      dealerId: req.user.role === "dealer" ? req.user.dealerId : dealerId,
+      dealerId: dealerId || req.user.dealerId, // Use provided dealerId or fallback to user's dealerId
       uploadedBy: req.user.username,
 
       // Multi-stage workflow defaults
@@ -145,7 +145,7 @@ const downloadDocument = async (req, res) => {
     const where = { id };
     if (req.scope?.dealers) {
       Object.assign(where, req.scope.dealers);
-    } else if (["dealer_admin","dealer_staff","dealer"].includes(req.user.role)) {
+    } else if (["dealer_admin", "dealer_staff", "dealer"].includes(req.user.role)) {
       where.dealerId = req.user.dealerId;
     }
 

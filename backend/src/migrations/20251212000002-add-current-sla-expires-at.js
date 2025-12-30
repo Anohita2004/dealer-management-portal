@@ -3,38 +3,54 @@
 
 module.exports = {
   up: async (queryInterface, Sequelize) => {
+    // Helper function to safely add column
+    const addColumnSafe = async (table, column, options) => {
+      try {
+        await queryInterface.addColumn(table, column, options);
+      } catch (error) {
+        if (error.original && (
+          error.original.code === '42701' || // duplicate column
+          error.message && error.message.includes('already exists')
+        )) {
+          console.log(`⚠️ Column ${column} already exists in ${table}, skipping...`);
+        } else {
+          throw error;
+        }
+      }
+    };
+
     // Add to orders
-    await queryInterface.addColumn('orders', 'currentSlaExpiresAt', {
+    await addColumnSafe('orders', 'currentSlaExpiresAt', {
       type: Sequelize.DATE,
       allowNull: true,
     });
 
     // Add to invoices
-    await queryInterface.addColumn('invoices', 'currentSlaExpiresAt', {
+    await addColumnSafe('invoices', 'currentSlaExpiresAt', {
       type: Sequelize.DATE,
       allowNull: true,
     });
 
     // Add to PaymentRequests
-    await queryInterface.addColumn('PaymentRequests', 'currentSlaExpiresAt', {
+    await addColumnSafe('PaymentRequests', 'currentSlaExpiresAt', {
       type: Sequelize.DATE,
       allowNull: true,
     });
 
     // Add to PricingUpdates
-    await queryInterface.addColumn('PricingUpdates', 'currentSlaExpiresAt', {
+    await addColumnSafe('PricingUpdates', 'currentSlaExpiresAt', {
       type: Sequelize.DATE,
       allowNull: true,
     });
 
     // Add to documents
-    await queryInterface.addColumn('documents', 'currentSlaExpiresAt', {
+    await addColumnSafe('documents', 'currentSlaExpiresAt', {
       type: Sequelize.DATE,
       allowNull: true,
     });
 
     // Add to Campaigns
-    await queryInterface.addColumn('Campaigns', 'currentSlaExpiresAt', {
+    await addColumnSafe('Campaigns', 'currentSlaExpiresAt', {
       type: Sequelize.DATE,
       allowNull: true,
     });

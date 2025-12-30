@@ -34,7 +34,14 @@ const getRegions = async (req, res) => {
       order: [["name", "ASC"]],
     });
 
-    res.json({ regions });
+    // Format response to match documentation (id, name, code)
+    const formattedRegions = regions.map(region => ({
+      id: region.id,
+      name: region.name,
+      code: region.code || region.name.substring(0, 2).toUpperCase(),
+    }));
+
+    res.json(formattedRegions);
   } catch (err) {
     console.error("getRegions:", err);
     res.status(500).json({ error: "Failed to fetch regions" });

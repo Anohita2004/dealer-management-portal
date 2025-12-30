@@ -17,11 +17,43 @@ const checkPermission = require('../middleware/checkPermission');
  * - GET /api/workflow/payment/:id/workflow
  */
 
+// Middleware to map entity type to permission
+const getEntityPermission = (type, action) => {
+  const permissionMap = {
+    order: `orders.${action}`,
+    invoice: `invoices.${action}`,
+    payment: `payments.${action}`,
+    pricing: `pricing.${action}`,
+    document: `documents.${action}`,
+    campaign: `campaigns.${action}`,
+    dealer: `dealer.${action}`,
+  };
+
+  // Default to view permission for workflow status
+  if (action === 'view') {
+    return permissionMap[type] || `${type}s.view`;
+  }
+
+  // For approve/reject, map to appropriate permission
+  if (action === 'approve') {
+    return permissionMap[type] || `${type}s.approve`;
+  }
+
+  if (action === 'reject') {
+    return permissionMap[type] || `${type}s.reject`;
+  }
+
+  return `${type}s.${action}`;
+};
+
 // Approve entity
 router.patch(
   '/:type/:id/approve',
   authenticate,
-  checkPermission('workflow.approve'),
+  (req, res, next) => {
+    const permission = getEntityPermission(req.params.type, 'approve');
+    return checkPermission(permission)(req, res, next);
+  },
   workflowController.approveEntity
 );
 
@@ -29,7 +61,10 @@ router.patch(
 router.patch(
   '/:type/:id/reject',
   authenticate,
-  checkPermission('workflow.reject'),
+  (req, res, next) => {
+    const permission = getEntityPermission(req.params.type, 'reject');
+    return checkPermission(permission)(req, res, next);
+  },
   workflowController.rejectEntity
 );
 
@@ -37,7 +72,10 @@ router.patch(
 router.get(
   '/:type/:id/workflow',
   authenticate,
-  checkPermission('workflow.view'),
+  (req, res, next) => {
+    const permission = getEntityPermission(req.params.type, 'view');
+    return checkPermission(permission)(req, res, next);
+  },
   workflowController.getWorkflowStatus
 );
 

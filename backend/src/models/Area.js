@@ -23,6 +23,8 @@ module.exports = (sequelize, DataTypes) => {
     Area.hasMany(models.Territory, { foreignKey: "areaId", as: "territories" });
 
     Area.hasMany(models.Dealer, { foreignKey: "areaId", as: "dealers" });
+
+    Area.hasMany(models.Warehouse, { foreignKey: "areaId", as: "warehouses" });
   };
 
   return Area;

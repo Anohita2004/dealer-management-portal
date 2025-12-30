@@ -42,6 +42,12 @@ module.exports = (sequelize, DataTypes) => {
       foreignKey: "regionId",
       as: "materialMappings",
     });
+
+    // ✅ Warehouses
+    Region.hasMany(models.Warehouse, {
+      foreignKey: "regionId",
+      as: "warehouses",
+    });
   };
 
   return Region;

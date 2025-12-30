@@ -57,7 +57,13 @@ const getAllInvoices = async (req, res) => {
     const where = {};
 
     if (dealerId) where.dealerId = dealerId;
-    if (status) where.status = status;
+    if (status) {
+      if (['pending', 'approved', 'rejected'].includes(status)) {
+        where.approvalStatus = status;
+      } else {
+        where.status = status;
+      }
+    }
 
     if (startDate && endDate) {
       where.invoiceDate = {
@@ -275,7 +281,7 @@ const approveInvoice = async (req, res) => {
 
     // Default to "approve" if no action provided (since this is the approve route)
     const finalAction = action || "approve";
-    
+
     if (!["approve", "reject"].includes(finalAction))
       return res.status(400).json({ error: "Invalid action" });
 
@@ -327,17 +333,17 @@ const approveInvoice = async (req, res) => {
   } catch (err) {
     await t.rollback();
     console.error("Approve invoice error:", err);
-    
+
     // If it's a workflow validation error, return 403
     if (err.message && err.message.includes('cannot approve at stage')) {
-      return res.status(403).json({ 
+      return res.status(403).json({
         error: "Access Denied — Workflow Validation Failed",
         message: err.message,
         userRole: req.user.role || req.user.roleDetails?.name,
         invoiceId: req.params.id
       });
     }
-    
+
     res.status(500).json({ error: "Failed to update invoice status", details: err.message });
   }
 };

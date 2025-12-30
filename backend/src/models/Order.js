@@ -28,6 +28,7 @@ module.exports = (sequelize, DataTypes) => {
           "Pending Approval",
           "Processing",
           "Shipped",
+          "In Transit",
           "Delivered",
           "Cancelled"
         ),
@@ -76,6 +77,16 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.DATE,
         allowNull: true,
       },
+
+      truckAssignmentId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: {
+          model: "truck_assignments",
+          key: "id",
+        },
+        comment: "Quick lookup for truck assignment",
+      },
     },
     {
       tableName: "orders",
@@ -91,6 +102,11 @@ module.exports = (sequelize, DataTypes) => {
 
     Order.hasMany(models.OrderItem, {
       as: "items",
+      foreignKey: "orderId",
+    });
+
+    Order.hasOne(models.TruckAssignment, {
+      as: "truckAssignment",
       foreignKey: "orderId",
     });
   };

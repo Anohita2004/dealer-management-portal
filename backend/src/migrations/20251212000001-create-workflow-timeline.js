@@ -3,7 +3,9 @@
 
 module.exports = {
   up: async (queryInterface, Sequelize) => {
-    await queryInterface.createTable('workflow_timelines', {
+    // Create table (with error handling for existing table)
+    try {
+      await queryInterface.createTable('workflow_timelines', {
       id: {
         type: Sequelize.UUID,
         defaultValue: Sequelize.UUIDV4,
@@ -73,18 +75,39 @@ module.exports = {
         defaultValue: Sequelize.literal('CURRENT_TIMESTAMP'),
       },
     });
+    } catch (error) {
+      if (error.original && error.original.code === '42P01') {
+        // Table already exists, skip
+        console.log('⚠️ Table workflow_timelines already exists, skipping creation...');
+      } else {
+        throw error;
+      }
+    }
 
-    // Create indexes
-    await queryInterface.addIndex('workflow_timelines', ['entityType', 'entityId'], {
+    // Create indexes (with error handling for existing indexes)
+    const addIndexSafe = async (table, columns, options) => {
+      try {
+        await queryInterface.addIndex(table, columns, options);
+      } catch (error) {
+        if (error.original && error.original.code === '42P07') {
+          // Index already exists, skip
+          console.log(`⚠️ Index ${options.name} already exists, skipping...`);
+        } else {
+          throw error;
+        }
+      }
+    };
+
+    await addIndexSafe('workflow_timelines', ['entityType', 'entityId'], {
       name: 'workflow_timelines_entity_idx',
     });
-    await queryInterface.addIndex('workflow_timelines', ['actorId'], {
+    await addIndexSafe('workflow_timelines', ['actorId'], {
       name: 'workflow_timelines_actor_idx',
     });
-    await queryInterface.addIndex('workflow_timelines', ['stage'], {
+    await addIndexSafe('workflow_timelines', ['stage'], {
       name: 'workflow_timelines_stage_idx',
     });
-    await queryInterface.addIndex('workflow_timelines', ['createdAt'], {
+    await addIndexSafe('workflow_timelines', ['createdAt'], {
       name: 'workflow_timelines_created_at_idx',
     });
   },

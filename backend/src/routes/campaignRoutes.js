@@ -9,7 +9,7 @@ router.get('/', authenticate, authorize('dealer_admin', 'dealer_staff', 'territo
 router.get(
   "/active",
   authenticate,
-  authorize("dealer_admin", "territory_manager", "area_manager", "super_admin"),
+  authorize("dealer_admin", "dealer_staff", "territory_manager", "area_manager", "regional_manager", "regional_admin", "super_admin", "technical_admin"),
   checkPermission("campaigns.view"),
   applyScope(['Campaign']),
   campaignController.getActiveCampaigns

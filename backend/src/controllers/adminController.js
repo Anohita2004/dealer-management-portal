@@ -373,10 +373,17 @@ const reviewPricingUpdate = async (req, res) => {
 
 /**
  * Get all users (paginated, scoped by creator's hierarchy)
+ * Supports filtering by role, isActive, and search
  */
 const getAllUsers = async (req, res) => {
   try {
-    const { page = 1, limit = 100 } = req.query;
+    const { 
+      page = 1, 
+      limit = 10, 
+      role, 
+      isActive, 
+      search 
+    } = req.query;
     const offset = (page - 1) * limit;
 
     const creatorRole = req.user.roleDetails?.name || req.user.role;
@@ -422,16 +429,67 @@ const getAllUsers = async (req, res) => {
     }
     // super_admin and technical_admin see all (no where clause)
 
+    // Add role filter
+    if (role) {
+      // Find role by name
+      const roleRecord = await Role.findOne({ where: { name: role } });
+      if (roleRecord) {
+        whereClause.roleId = roleRecord.id;
+      }
+    }
+
+    // Add isActive filter
+    if (isActive !== undefined) {
+      whereClause.isActive = isActive === 'true' || isActive === true;
+    }
+
+    // Add search filter (username/email)
+    if (search) {
+      whereClause[Op.or] = [
+        ...(whereClause[Op.or] || []),
+        { username: { [Op.iLike]: `%${search}%` } },
+        { email: { [Op.iLike]: `%${search}%` } },
+      ];
+    }
+
     const { count, rows } = await User.findAndCountAll({
       where: whereClause,
-      include: [{ model: Role, as: 'roleDetails' }, { model: Dealer, as: 'dealer' }],
+      include: [
+        { model: Role, as: 'roleDetails' }, 
+        { model: Dealer, as: 'dealer' },
+        { model: Region, as: 'region', attributes: ['id', 'name'] },
+      ],
       order: [['createdAt', 'DESC']],
       limit: parseInt(limit, 10),
       offset: parseInt(offset, 10),
     });
 
+    // Format response to match documentation
+    const formattedUsers = rows.map(user => ({
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      phoneNumber: user.phoneNumber,
+      role: user.roleDetails?.name,
+      roleId: user.roleId,
+      roleDetails: user.roleDetails ? {
+        id: user.roleDetails.id,
+        name: user.roleDetails.name,
+      } : null,
+      regionId: user.regionId,
+      region: user.region ? {
+        id: user.region.id,
+        name: user.region.name,
+      } : null,
+      areaId: user.areaId,
+      territoryId: user.territoryId,
+      isActive: user.isActive,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+    }));
+
     return res.json({
-      users: rows,
+      users: formattedUsers,
       total: count,
       page: parseInt(page, 10),
       totalPages: Math.ceil(count / limit),
@@ -494,18 +552,62 @@ const createUser = async (req, res) => {
     const dealerId = rawDealerId ? rawDealerId : null;
     const managerId = rawManagerId ? rawManagerId : null;
 
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      await t.rollback();
+      return res.status(400).json({ 
+        error: 'Invalid email format',
+        field: 'email',
+        details: 'Email must be in valid format (e.g., user@example.com)'
+      });
+    }
+
     // basic duplicate check
-    const existing = await User.findOne({ where: { email }, transaction: t });
+    const existing = await User.findOne({ 
+      where: { 
+        [Op.or]: [
+          { email },
+          { username }
+        ]
+      }, 
+      transaction: t 
+    });
     if (existing) {
       await t.rollback();
-      return res.status(400).json({ error: 'Email already exists' });
+      const field = existing.email === email ? 'email' : 'username';
+      return res.status(409).json({ 
+        error: `${field === 'email' ? 'Email' : 'Username'} already exists`,
+        field
+      });
     }
 
     // role validation
-    const targetRole = await Role.findByPk(roleId, { transaction: t });
+    let targetRole = await Role.findByPk(roleId, { transaction: t });
     if (!targetRole) {
       await t.rollback();
       return res.status(400).json({ error: 'Invalid roleId' });
+    }
+
+    // Ensure driver role exists if creating a driver user (auto-create if missing)
+    if (targetRole.name === 'driver') {
+      // Double-check by name in case roleId was wrong but name matches
+      const driverRoleByName = await Role.findOne({ 
+        where: { name: 'driver' },
+        transaction: t 
+      });
+      if (!driverRoleByName) {
+        // Create driver role if it doesn't exist
+        const newRole = await Role.create({
+          name: 'driver',
+          displayName: 'Driver',
+          category: 'fleet',
+        }, { transaction: t });
+        targetRole = newRole;
+        console.log(`⚠️ Created missing driver role. Please run seedPermissions.js to ensure proper permissions.`);
+      } else {
+        targetRole = driverRoleByName;
+      }
     }
 
     const creatorRole = req.user.roleDetails?.name || req.user.role;
@@ -979,7 +1081,8 @@ const deleteUser = async (req, res) => {
       return res.status(403).json({ error: 'Access denied - User not in your scope' });
     }
 
-    await User.destroy({ where: { id } });
+    // Soft delete (set isActive to false) instead of hard delete
+    await user.update({ isActive: false });
 
     await AuditLog.create({
       userId: req.user.id,
@@ -989,10 +1092,125 @@ const deleteUser = async (req, res) => {
       ipAddress: req.ip,
     });
 
-    return res.json({ message: 'User deleted successfully' });
+    return res.json({ message: 'Driver deleted successfully' });
   } catch (err) {
     console.error('deleteUser:', err);
     return res.status(500).json({ error: 'Failed to delete user' });
+  }
+};
+
+/**
+ * Update driver/user password (separate endpoint for security)
+ */
+const updateUserPassword = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { password } = req.body;
+
+    if (!password || password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
+    const user = await User.findByPk(id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const inScope = await isUserInManagerScope(req.user, user);
+    if (!inScope) {
+      return res.status(403).json({ error: 'Access denied - User not in your scope' });
+    }
+
+    // Update password (model hooks should hash it)
+    user.password = password;
+    await user.save();
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: 'UPDATE_USER_PASSWORD',
+      entity: 'User',
+      entityId: id,
+      ipAddress: req.ip,
+    });
+
+    return res.json({ message: 'Password updated successfully' });
+  } catch (err) {
+    console.error('updateUserPassword error:', err);
+    return res.status(500).json({ error: 'Failed to update password' });
+  }
+};
+
+/**
+ * Activate driver account
+ */
+const activateUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const user = await User.findByPk(id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const inScope = await isUserInManagerScope(req.user, user);
+    if (!inScope) {
+      return res.status(403).json({ error: 'Access denied - User not in your scope' });
+    }
+
+    await user.update({ isActive: true });
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: 'ACTIVATE_USER',
+      entity: 'User',
+      entityId: id,
+      ipAddress: req.ip,
+    });
+
+    return res.json({
+      message: 'Driver activated successfully',
+      user: {
+        id: user.id,
+        isActive: true,
+      },
+    });
+  } catch (err) {
+    console.error('activateUser error:', err);
+    return res.status(500).json({ error: 'Failed to activate user' });
+  }
+};
+
+/**
+ * Deactivate driver account
+ */
+const deactivateUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const user = await User.findByPk(id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const inScope = await isUserInManagerScope(req.user, user);
+    if (!inScope) {
+      return res.status(403).json({ error: 'Access denied - User not in your scope' });
+    }
+
+    await user.update({ isActive: false });
+
+    await AuditLog.create({
+      userId: req.user.id,
+      action: 'DEACTIVATE_USER',
+      entity: 'User',
+      entityId: id,
+      ipAddress: req.ip,
+    });
+
+    return res.json({
+      message: 'Driver deactivated successfully',
+      user: {
+        id: user.id,
+        isActive: false,
+      },
+    });
+  } catch (err) {
+    console.error('deactivateUser error:', err);
+    return res.status(500).json({ error: 'Failed to deactivate user' });
   }
 };
 
@@ -1137,7 +1355,10 @@ module.exports = {
   createUser,
   updateUser,
   updateUserRole,
+  updateUserPassword,
   deleteUser,
+  activateUser,
+  deactivateUser,
   getAdminReport,
   assignRegion,
 };
