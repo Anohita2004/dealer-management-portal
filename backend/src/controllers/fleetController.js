@@ -1,8 +1,9 @@
 // src/controllers/fleetController.js
-const { TruckAssignment, Order, Truck, Warehouse, User } = require("../models");
+const { TruckAssignment, Order, Truck, Warehouse, User, Dealer } = require("../models");
 const { Op } = require("sequelize");
 const RBACEngine = require("../services/rbacEngine");
 const fleetService = require("../services/fleetService");
+const notificationService = require("../services/notificationService");
 
 /**
  * Assign truck to order
@@ -416,14 +417,89 @@ exports.markPickup = async (req, res) => {
     // Update order status
     await assignment.order.update({ status: 'In Transit' });
 
-    // Fetch full details
+    // Fetch full details with dealer info for notifications
     const fullAssignment = await TruckAssignment.findByPk(updatedAssignment.id, {
       include: [
-        { model: Order, as: "order" },
+        { 
+          model: Order, 
+          as: "order",
+          include: [{
+            model: Dealer,
+            as: "dealer",
+            attributes: ["id", "businessName", "regionId", "areaId", "territoryId"],
+          }],
+        },
         { model: Truck, as: "truck" },
         { model: Warehouse, as: "warehouse" },
       ],
     });
+
+    // Notify superadmin and respective admins about pickup
+    try {
+      // Notify superadmin
+      await notificationService.createRoleNotification({
+        roleName: "super_admin",
+        title: "Order Picked Up - Live Tracking Active",
+        message: `Driver ${fullAssignment.driverName} (${fullAssignment.driverPhone || 'N/A'}) has picked up order ${fullAssignment.order.orderNumber} from ${fullAssignment.warehouse.name}. Live GPS tracking is now active.`,
+        type: "fleet",
+        priority: "high",
+        relatedId: fullAssignment.orderId,
+        relatedType: "order",
+        actionUrl: `/orders/${fullAssignment.orderId}/tracking`,
+      });
+
+      // Notify regional/area/territory managers based on order's dealer hierarchy
+      if (fullAssignment.order.dealer) {
+        const dealer = fullAssignment.order.dealer;
+        
+        // Notify territory manager if territory exists
+        if (dealer.territoryId) {
+          await notificationService.createHierarchyBroadcast({
+            hierarchyLevel: "territory",
+            hierarchyId: dealer.territoryId,
+            title: "Order Picked Up - Tracking Active",
+            message: `Order ${fullAssignment.order.orderNumber} picked up by driver ${fullAssignment.driverName}. Live tracking available.`,
+            type: "fleet",
+            priority: "normal",
+            relatedId: fullAssignment.orderId,
+            relatedType: "order",
+            actionUrl: `/orders/${fullAssignment.orderId}/tracking`,
+            includeManagers: false, // Only notify users in this territory
+          });
+        }
+
+        // Notify area manager if area exists
+        if (dealer.areaId) {
+          await notificationService.createRoleNotification({
+            roleName: "area_manager",
+            title: "Order Picked Up",
+            message: `Order ${fullAssignment.order.orderNumber} picked up. Driver: ${fullAssignment.driverName} (${fullAssignment.driverPhone || 'N/A'}).`,
+            type: "fleet",
+            relatedId: fullAssignment.orderId,
+            relatedType: "order",
+            actionUrl: `/orders/${fullAssignment.orderId}/tracking`,
+            scope: { areaId: dealer.areaId },
+          });
+        }
+
+        // Notify regional manager if region exists
+        if (dealer.regionId) {
+          await notificationService.createRoleNotification({
+            roleName: "regional_manager",
+            title: "Order Picked Up - Live Tracking",
+            message: `Order ${fullAssignment.order.orderNumber} picked up. Driver: ${fullAssignment.driverName} (${fullAssignment.driverPhone || 'N/A'}). Live GPS tracking active.`,
+            type: "fleet",
+            relatedId: fullAssignment.orderId,
+            relatedType: "order",
+            actionUrl: `/orders/${fullAssignment.orderId}/tracking`,
+            scope: { regionId: dealer.regionId },
+          });
+        }
+      }
+    } catch (notifError) {
+      console.error("Error sending pickup notifications:", notifError);
+      // Don't fail the request if notifications fail
+    }
 
     // Emit Socket.IO event
     if (global.io) {
@@ -431,6 +507,7 @@ exports.markPickup = async (req, res) => {
         assignmentId: fullAssignment.id,
         orderId: fullAssignment.orderId,
         truckId: fullAssignment.truckId,
+        driverPhone: fullAssignment.driverPhone,
         message: 'GPS tracking is now active',
       });
     }
@@ -442,7 +519,7 @@ exports.markPickup = async (req, res) => {
       order: {
         status: fullAssignment.order.status,
       },
-      message: 'Pickup confirmed. GPS tracking is now active.',
+      message: 'Pickup confirmed. GPS tracking is now active. Admins have been notified.',
     });
   } catch (error) {
     console.error("Mark pickup error:", error);
@@ -492,14 +569,89 @@ exports.markDelivered = async (req, res) => {
     // Update order status
     await assignment.order.update({ status: 'Delivered' });
 
-    // Fetch full details
+    // Fetch full details with dealer info for notifications
     const fullAssignment = await TruckAssignment.findByPk(updatedAssignment.id, {
       include: [
-        { model: Order, as: "order" },
+        { 
+          model: Order, 
+          as: "order",
+          include: [{
+            model: Dealer,
+            as: "dealer",
+            attributes: ["id", "businessName", "regionId", "areaId", "territoryId"],
+          }],
+        },
         { model: Truck, as: "truck" },
         { model: Warehouse, as: "warehouse" },
       ],
     });
+
+    // Notify superadmin and respective admins about delivery
+    try {
+      // Notify superadmin
+      await notificationService.createRoleNotification({
+        roleName: "super_admin",
+        title: "Order Delivered",
+        message: `Driver ${fullAssignment.driverName} (${fullAssignment.driverPhone || 'N/A'}) has successfully delivered order ${fullAssignment.order.orderNumber} to ${fullAssignment.order.dealer?.businessName || 'dealer'}. GPS tracking stopped.`,
+        type: "fleet",
+        priority: "high",
+        relatedId: fullAssignment.orderId,
+        relatedType: "order",
+        actionUrl: `/orders/${fullAssignment.orderId}`,
+      });
+
+      // Notify regional/area/territory managers based on order's dealer hierarchy
+      if (fullAssignment.order.dealer) {
+        const dealer = fullAssignment.order.dealer;
+        
+        // Notify territory manager if territory exists
+        if (dealer.territoryId) {
+          await notificationService.createHierarchyBroadcast({
+            hierarchyLevel: "territory",
+            hierarchyId: dealer.territoryId,
+            title: "Order Delivered",
+            message: `Order ${fullAssignment.order.orderNumber} has been successfully delivered by driver ${fullAssignment.driverName}.`,
+            type: "fleet",
+            priority: "normal",
+            relatedId: fullAssignment.orderId,
+            relatedType: "order",
+            actionUrl: `/orders/${fullAssignment.orderId}`,
+            includeManagers: false,
+          });
+        }
+
+        // Notify area manager if area exists
+        if (dealer.areaId) {
+          await notificationService.createRoleNotification({
+            roleName: "area_manager",
+            title: "Order Delivered",
+            message: `Order ${fullAssignment.order.orderNumber} delivered successfully by driver ${fullAssignment.driverName} (${fullAssignment.driverPhone || 'N/A'}).`,
+            type: "fleet",
+            relatedId: fullAssignment.orderId,
+            relatedType: "order",
+            actionUrl: `/orders/${fullAssignment.orderId}`,
+            scope: { areaId: dealer.areaId },
+          });
+        }
+
+        // Notify regional manager if region exists
+        if (dealer.regionId) {
+          await notificationService.createRoleNotification({
+            roleName: "regional_manager",
+            title: "Order Delivered",
+            message: `Order ${fullAssignment.order.orderNumber} delivered successfully. Driver: ${fullAssignment.driverName} (${fullAssignment.driverPhone || 'N/A'}).`,
+            type: "fleet",
+            relatedId: fullAssignment.orderId,
+            relatedType: "order",
+            actionUrl: `/orders/${fullAssignment.orderId}`,
+            scope: { regionId: dealer.regionId },
+          });
+        }
+      }
+    } catch (notifError) {
+      console.error("Error sending delivery notifications:", notifError);
+      // Don't fail the request if notifications fail
+    }
 
     res.json({
       id: fullAssignment.id,
@@ -508,7 +660,7 @@ exports.markDelivered = async (req, res) => {
       order: {
         status: fullAssignment.order.status,
       },
-      message: 'Delivery confirmed. GPS tracking stopped.',
+      message: 'Delivery confirmed. GPS tracking stopped. Admins have been notified.',
     });
   } catch (error) {
     console.error("Mark delivered error:", error);

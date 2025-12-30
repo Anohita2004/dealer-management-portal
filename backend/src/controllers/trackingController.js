@@ -89,12 +89,14 @@ exports.updateLocation = async (req, res) => {
     // Update rate limit
     rateLimitMap.set(truckId, now);
 
-    // Emit Socket.IO event
+    // Emit Socket.IO event with driver phone number for map tracking
     if (global.io) {
       global.io.emit("truck:location:update", {
         truckId: truck.id,
         assignmentId: activeAssignment.id,
         orderId: activeAssignment.orderId,
+        driverPhone: activeAssignment.driverPhone,
+        driverName: activeAssignment.driverName,
         lat,
         lng,
         speed,
@@ -108,6 +110,8 @@ exports.updateLocation = async (req, res) => {
         assignment: {
           id: activeAssignment.id,
           status: activeAssignment.status,
+          driverPhone: activeAssignment.driverPhone,
+          driverName: activeAssignment.driverName,
         },
         currentLocation: {
           lat,
@@ -122,6 +126,9 @@ exports.updateLocation = async (req, res) => {
     res.json({
       success: true,
       truckId: truck.id,
+      assignmentId: activeAssignment.id,
+      driverPhone: activeAssignment.driverPhone,
+      driverName: activeAssignment.driverName,
       lat,
       lng,
       timestamp: historyEntry.timestamp,
@@ -153,12 +160,13 @@ exports.getLiveLocations = async (req, res) => {
       status: { [Op.in]: ["assigned", "picked_up", "in_transit"] },
     };
 
-    // Driver-specific filtering
+    // Driver-specific filtering: filter by driver's phone number or username
     if (userRole === 'driver') {
-      where[Op.or] = [
-        { driverName: req.user.username },
-        { driverPhone: req.user.phoneNumber },
-      ];
+      const driverConditions = [{ driverName: req.user.username }];
+      if (req.user.phoneNumber) {
+        driverConditions.push({ driverPhone: req.user.phoneNumber });
+      }
+      where[Op.or] = driverConditions;
     }
 
     // Get trucks with active assignments
@@ -203,6 +211,7 @@ exports.getLiveLocations = async (req, res) => {
           warehouse: assignment.warehouse,
           status: assignment.status,
           driverName: assignment.driverName,
+          driverPhone: assignment.driverPhone, // Include phone number for map tracking
         });
       } else {
         // Managers/admins check access through order
@@ -223,6 +232,7 @@ exports.getLiveLocations = async (req, res) => {
             warehouse: assignment.warehouse,
             status: assignment.status,
             driverName: assignment.driverName,
+            driverPhone: assignment.driverPhone, // Include phone number for map tracking
           });
         }
       }
@@ -297,7 +307,7 @@ exports.getOrderTracking = async (req, res) => {
         id: order.truckAssignment.id,
         status: order.truckAssignment.status,
         driverName: order.truckAssignment.driverName,
-        driverPhone: order.truckAssignment.driverPhone,
+        driverPhone: order.truckAssignment.driverPhone, // Phone number for map tracking
         assignedAt: order.truckAssignment.assignedAt,
         pickupAt: order.truckAssignment.pickupAt,
         deliveredAt: order.truckAssignment.deliveredAt,
