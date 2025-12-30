@@ -1,5 +1,5 @@
 // src/services/fleetService.js
-const { Truck, TruckAssignment, Order, sequelize } = require("../models");
+const { Truck, TruckAssignment, Order, Warehouse, sequelize } = require("../models");
 const eventBus = require("./eventBus");
 const notificationService = require("./notificationService");
 
@@ -170,7 +170,11 @@ async function markPickup(assignmentId) {
 
   try {
     const assignment = await TruckAssignment.findByPk(assignmentId, {
-      include: [{ model: Order, as: "order" }],
+      include: [
+        { model: Order, as: "order" },
+        { model: Truck, as: "truck" },
+        { model: Warehouse, as: "warehouse" },
+      ],
       transaction: t,
     });
 
@@ -201,13 +205,54 @@ async function markPickup(assignmentId) {
 
     await t.commit();
 
+    // Notify superadmin and managers about pickup
+    await notificationService.createRoleNotification({
+      roleName: "super_admin",
+      title: "Truck Picked Up Order - GPS Tracking Active",
+      message: `Truck ${assignment.truck?.truckName || "N/A"} (${assignment.truck?.licenseNumber || "N/A"}) picked up order ${assignment.order?.orderNumber || "N/A"} from ${assignment.warehouse?.name || "warehouse"}. Live GPS location tracking is now active via mobile device.`,
+      type: "fleet",
+      actionUrl: `/fleet/assignments/${assignment.id}`,
+      priority: "high",
+    });
+
+    // Notify regional/area managers
+    await notificationService.createRoleNotification({
+      roleName: "regional_manager",
+      title: "Truck Picked Up - Tracking Active",
+      message: `Order ${assignment.order?.orderNumber || "N/A"} picked up. Live tracking available.`,
+      type: "fleet",
+      actionUrl: `/orders/${assignment.orderId}/tracking`,
+    });
+
     // Emit events
     await eventBus.emit("truck:status:change", {
       truckId: assignment.truckId,
       assignmentId: assignment.id,
       status: "picked_up",
       orderId: assignment.orderId,
+      message: "Location tracking is now active. Mobile app should start sending GPS updates.",
     });
+
+    // Emit Socket.IO event for real-time updates
+    if (global.io) {
+      global.io.emit("truck:status:change", {
+        truckId: assignment.truckId,
+        assignmentId: assignment.id,
+        status: "picked_up",
+        orderId: assignment.orderId,
+        trackingActive: true,
+        message: "Location tracking started",
+      });
+
+      // Notify users tracking this order
+      global.io.to(`order:${assignment.orderId}`).emit("order:tracking:started", {
+        orderId: assignment.orderId,
+        assignmentId: assignment.id,
+        truckId: assignment.truckId,
+        message: "Driver has picked up the order. Location tracking is now active via mobile GPS.",
+        trackingActive: true,
+      });
+    }
 
     return assignment;
   } catch (error) {
@@ -226,7 +271,11 @@ async function markDelivered(assignmentId) {
 
   try {
     const assignment = await TruckAssignment.findByPk(assignmentId, {
-      include: [{ model: Order, as: "order" }],
+      include: [
+        { model: Order, as: "order" },
+        { model: Truck, as: "truck" },
+        { model: Warehouse, as: "warehouse" },
+      ],
       transaction: t,
     });
 

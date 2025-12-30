@@ -111,7 +111,11 @@ class WorkflowResolver {
     const roleName = user.roleDetails?.name || user.role;
     const currentStage = this.getCurrentStage(entity);
 
-    if (!currentStage) return false;
+    if (!currentStage) {
+      // Workflow hasn't been started - this should be handled by the controller
+      // but we'll return false here to prevent approval
+      return false;
+    }
 
     // Super admin can always approve (if allowed)
     if (allowSuperAdmin && roleName === 'super_admin') {
@@ -203,10 +207,18 @@ class WorkflowResolver {
     const pipeline = this.getPipeline(entityType);
     if (!pipeline.length) return null;
 
+    // For orders, invoices, payments, and documents, always start at the first stage
+    // These entity types require explicit approval at each stage, including the first
+    const alwaysStartAtFirst = ['order', 'invoice', 'payment', 'document'];
+    if (alwaysStartAtFirst.includes(entityType)) {
+      return pipeline[0];
+    }
+
     const roleName = creatorUser?.roleDetails?.name || creatorUser?.role;
 
-    // Find the first stage that the creator cannot approve
-    // This allows creators to "skip" stages they are authorized to approve
+    // For other entity types (pricing, campaign, dealer), find the first stage
+    // that the creator cannot approve - this allows creators to "skip" stages
+    // they are authorized to approve
     for (const stage of pipeline) {
       const allowedRoles = STAGE_APPROVERS[entityType]?.[stage] || [];
       if (!allowedRoles.includes(roleName)) {
@@ -214,8 +226,7 @@ class WorkflowResolver {
       }
     }
 
-    // Fallback if they can approve everything: start at the last stage
-    // or return the first stage if skipping is not desired for admins
+    // Fallback: return the first stage
     return pipeline[0];
   }
 

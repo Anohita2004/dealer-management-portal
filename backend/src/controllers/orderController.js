@@ -388,6 +388,25 @@ exports.approveOrder = async (req, res) => {
       return res.status(404).json({ error: "Order not found" });
     }
 
+    // If workflow hasn't been started, start it first
+    if (!order.approvalStage && order.approvalStatus !== 'approved') {
+      // Check if order is in a valid state to start workflow
+      if (order.status === 'Cancelled' || order.status === 'Rejected') {
+        await t.rollback();
+        return res.status(400).json({ 
+          error: "Cannot start workflow for cancelled or rejected order" 
+        });
+      }
+
+      // Start the workflow
+      await WorkflowService.startWorkflow("order", order, req.user, {
+        transaction: t
+      });
+
+      // Reload order to get updated approvalStage
+      await order.reload({ transaction: t });
+    }
+
     // Use workflow service for approval
     const result = await WorkflowService.approve(
       "order",

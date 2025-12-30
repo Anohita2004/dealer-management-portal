@@ -1,5 +1,5 @@
 // src/controllers/trackingController.js
-const { Truck, TruckAssignment, TruckLocationHistory, Order } = require("../models");
+const { Truck, TruckAssignment, TruckLocationHistory, Order, Warehouse } = require("../models");
 const { Op } = require("sequelize");
 const RBACEngine = require("../services/rbacEngine");
 const locationService = require("../services/locationService");

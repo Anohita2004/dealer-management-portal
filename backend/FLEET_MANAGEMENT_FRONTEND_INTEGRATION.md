@@ -10,7 +10,27 @@ This guide provides comprehensive instructions for integrating the fleet managem
 4. [Map Integration](#map-integration)
 5. [State Management](#state-management)
 6. [Authentication & Permissions](#authentication--permissions)
-7. [Example Implementations](#example-implementations)
+7. [Complete Mobile App GPS Tracking Flow](#complete-mobile-app-gps-tracking-flow)
+8. [Example Implementations](#example-implementations)
+
+---
+
+## Overview: How GPS Tracking Works
+
+**Complete Flow:**
+1. **Truck Assignment**: Admin assigns truck to order → Status: "assigned"
+2. **Driver Marks Pickup**: Driver confirms pickup at warehouse via mobile app → Status: "picked_up", Order: "In Transit"
+3. **Superadmin Notification**: Superadmin receives high-priority notification that GPS tracking is active
+4. **Mobile GPS Starts**: Mobile app automatically starts sending location updates every 10 seconds via GPS
+5. **Live Map Updates**: Superadmin and authorized users see real-time truck location on map via Socket.IO
+6. **Driver Marks Delivery**: Driver confirms delivery → Status: "delivered", GPS tracking stops automatically
+
+**Key Points:**
+- GPS tracking only starts when driver marks pickup (not when truck is assigned)
+- Mobile app listens for pickup confirmation and automatically begins GPS tracking
+- Location updates are sent continuously while status is "picked_up" or "in_transit"
+- Superadmin is notified immediately when pickup is confirmed
+- All authorized users can view live location on map in real-time
 
 ---
 
@@ -1133,20 +1153,97 @@ const FleetDashboard = () => {
 
 ### Mobile App Integration (Location Updates)
 
+**Important Flow:**
+1. Driver marks pickup via mobile app → Backend updates status to "picked_up"
+2. Superadmin receives notification that tracking is active
+3. Mobile app automatically starts sending GPS location updates
+4. Backend receives updates and broadcasts via Socket.IO
+5. Superadmin and authorized users see live location on map
+
 ```javascript
 // Mobile app - React Native example
 import Geolocation from '@react-native-community/geolocation';
 import axios from 'axios';
+import io from 'socket.io-client';
 
 class LocationTracker {
-  constructor(truckId) {
+  constructor(truckId, assignmentId) {
     this.truckId = truckId;
+    this.assignmentId = assignmentId;
     this.watchId = null;
     this.lastUpdate = 0;
     this.RATE_LIMIT_MS = 10000; // 10 seconds
+    this.isTracking = false;
+    this.socket = null;
   }
 
+  // Initialize and check if tracking should be active
+  async initialize() {
+    try {
+      // Get assignment status
+      const response = await axios.get(
+        `/api/fleet/assignments/${this.assignmentId}`,
+        {
+          headers: { Authorization: `Bearer ${this.getToken()}` }
+        }
+      );
+
+      const assignment = response.data;
+      
+      // Start tracking if status is "picked_up" or "in_transit"
+      if (assignment.status === 'picked_up' || assignment.status === 'in_transit') {
+        this.startTracking();
+      } else {
+        // Listen for status changes via Socket.IO
+        this.setupSocketListener();
+      }
+    } catch (error) {
+      console.error('Error initializing tracker:', error);
+    }
+  }
+
+  // Setup Socket.IO to listen for pickup status
+  setupSocketListener() {
+    this.socket = io('http://your-api.com', {
+      auth: { token: this.getToken() }
+    });
+
+    this.socket.on('connect', () => {
+      this.socket.emit('authenticate', { token: this.getToken() });
+      this.socket.emit('track_truck', { truckId: this.truckId });
+    });
+
+    // Listen for status change to "picked_up" - then start tracking
+    this.socket.on('truck:status:change', (data) => {
+      if (data.assignmentId === this.assignmentId && 
+          (data.status === 'picked_up' || data.status === 'in_transit')) {
+        console.log('Pickup confirmed - starting GPS tracking');
+        this.startTracking();
+      }
+    });
+
+    // Listen for tracking started event
+    this.socket.on('order:tracking:started', (data) => {
+      if (data.assignmentId === this.assignmentId) {
+        console.log('Tracking started - beginning GPS updates');
+        this.startTracking();
+      }
+    });
+  }
+
+  // Start GPS tracking
   startTracking() {
+    if (this.isTracking) {
+      console.log('Tracking already active');
+      return;
+    }
+
+    this.isTracking = true;
+    console.log('Starting GPS location tracking...');
+
+    // Request location permissions (React Native)
+    Geolocation.requestAuthorization();
+
     this.watchId = Geolocation.watchPosition(
       (position) => {
         const now = Date.now();
@@ -1167,49 +1264,324 @@ class LocationTracker {
       },
       (error) => {
         console.error('Location error:', error);
+        // Handle location errors (permission denied, etc.)
       },
       {
         enableHighAccuracy: true,
         timeout: 15000,
-        maximumAge: 0
+        maximumAge: 0,
+        distanceFilter: 10 // Only update if moved 10 meters (optional optimization)
       }
     );
   }
 
+  // Send location to backend
   async sendLocation(locationData) {
     try {
-      await axios.post('http://your-api.com/api/tracking/location', locationData, {
-        headers: {
-          Authorization: `Bearer ${this.getToken()}`,
-          'Content-Type': 'application/json'
+      const response = await axios.post(
+        'http://your-api.com/api/tracking/location',
+        locationData,
+        {
+          headers: {
+            Authorization: `Bearer ${this.getToken()}`,
+            'Content-Type': 'application/json'
+          }
         }
-      });
+      );
+      
+      console.log('Location sent successfully:', response.data);
     } catch (error) {
       console.error('Error sending location:', error);
+      // Retry logic can be added here
     }
   }
 
+  // Mark pickup (called when driver confirms pickup at warehouse)
+  async markPickup() {
+    try {
+      const response = await axios.post(
+        `/api/fleet/assignments/${this.assignmentId}/pickup`,
+        {},
+        {
+          headers: { Authorization: `Bearer ${this.getToken()}` }
+        }
+      );
+
+      console.log('Pickup marked successfully');
+      // Tracking will start automatically via Socket.IO event
+      // But we can also start it immediately
+      this.startTracking();
+      
+      return response.data;
+    } catch (error) {
+      console.error('Error marking pickup:', error);
+      throw error;
+    }
+  }
+
+  // Mark delivered (stops tracking)
+  async markDelivered() {
+    try {
+      const response = await axios.post(
+        `/api/fleet/assignments/${this.assignmentId}/deliver`,
+        {},
+        {
+          headers: { Authorization: `Bearer ${this.getToken()}` }
+        }
+      );
+
+      // Stop tracking when delivered
+      this.stopTracking();
+      
+      return response.data;
+    } catch (error) {
+      console.error('Error marking delivered:', error);
+      throw error;
+    }
+  }
+
+  // Stop tracking
   stopTracking() {
     if (this.watchId !== null) {
       Geolocation.clearWatch(this.watchId);
       this.watchId = null;
     }
+    this.isTracking = false;
+    
+    if (this.socket) {
+      this.socket.disconnect();
+    }
+    
+    console.log('GPS tracking stopped');
   }
 }
+
+// Usage in mobile app
+// When driver logs in and sees their assignment:
+const tracker = new LocationTracker(truckId, assignmentId);
+await tracker.initialize();
+
+// When driver arrives at warehouse and picks up:
+await tracker.markPickup(); // This triggers notification to superadmin
+
+// When driver delivers:
+await tracker.markDelivered(); // This stops tracking
 ```
 
 ---
+
+## Complete Mobile App GPS Tracking Flow
+
+### Business Process Flow
+
+```mermaid
+sequenceDiagram
+    participant Driver as Mobile App (Driver)
+    participant Backend as Backend API
+    participant SuperAdmin as SuperAdmin Dashboard
+    participant Map as Live Map View
+
+    Driver->>Backend: Mark Pickup (POST /api/fleet/assignments/:id/pickup)
+    Backend->>Backend: Update status to "picked_up"
+    Backend->>Backend: Update order status to "In Transit"
+    Backend->>SuperAdmin: Send Notification (Truck picked up, tracking active)
+    Backend->>Driver: Emit Socket.IO event (order:tracking:started)
+    Driver->>Driver: Start GPS tracking automatically
+    Driver->>Backend: Send GPS location (POST /api/tracking/location)
+    Backend->>Backend: Save to location history
+    Backend->>Map: Broadcast via Socket.IO (truck:location:update)
+    Map->>Map: Update truck marker position
+    Note over Driver,Map: Continuous GPS updates every 10 seconds
+    Driver->>Backend: Mark Delivered
+    Driver->>Driver: Stop GPS tracking
+```
+
+### Step-by-Step Implementation
+
+#### 1. Driver Login & Assignment View
+```javascript
+// Mobile app - Driver sees their assignments
+const DriverDashboard = () => {
+  const [assignments, setAssignments] = useState([]);
+
+  useEffect(() => {
+    fetchMyAssignments();
+  }, []);
+
+  const fetchMyAssignments = async () => {
+    // Get assignments for driver's truck
+    const response = await axios.get('/api/fleet/assignments', {
+      params: { truckId: currentTruckId, status: 'assigned' },
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    setAssignments(response.data.assignments);
+  };
+
+  return (
+    <div>
+      <h2>My Assignments</h2>
+      {assignments.map(assignment => (
+        <AssignmentCard
+          key={assignment.id}
+          assignment={assignment}
+          onPickup={() => handlePickup(assignment.id)}
+        />
+      ))}
+    </div>
+  );
+};
+```
+
+#### 2. Driver Marks Pickup
+```javascript
+const handlePickup = async (assignmentId) => {
+  try {
+    // Mark pickup
+    await axios.post(`/api/fleet/assignments/${assignmentId}/pickup`, {}, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    // Initialize location tracker
+    const tracker = new LocationTracker(truckId, assignmentId);
+    await tracker.initialize(); // This starts GPS tracking automatically
+
+    alert('Pickup confirmed! GPS tracking is now active.');
+  } catch (error) {
+    console.error('Error marking pickup:', error);
+  }
+};
+```
+
+#### 3. Automatic GPS Tracking Starts
+The `LocationTracker` class automatically:
+- Listens for Socket.IO event confirming pickup
+- Starts GPS tracking when status becomes "picked_up" or "in_transit"
+- Sends location updates every 10 seconds (respecting rate limit)
+- Continues until delivery is marked
+
+#### 4. Superadmin Receives Notification
+When pickup is marked:
+- Superadmin gets a high-priority notification
+- Notification includes: truck name, license number, order number, warehouse name
+- Message: "Location tracking is now active via mobile GPS"
+- Clicking notification opens the assignment/tracking page
+
+#### 5. Live Map Updates
+- Superadmin (and authorized users) can view live map
+- Truck location updates in real-time via Socket.IO
+- Shows route from warehouse → current location → dealer destination
+
+### Mobile App Driver Screen Example
+
+```javascript
+// Complete driver assignment screen
+const DriverAssignmentScreen = ({ assignmentId }) => {
+  const [assignment, setAssignment] = useState(null);
+  const [tracker, setTracker] = useState(null);
+  const [isTracking, setIsTracking] = useState(false);
+
+  useEffect(() => {
+    fetchAssignment();
+    initializeTracker();
+  }, [assignmentId]);
+
+  const fetchAssignment = async () => {
+    const response = await axios.get(`/api/fleet/assignments/${assignmentId}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    setAssignment(response.data);
+  };
+
+  const initializeTracker = () => {
+    const locationTracker = new LocationTracker(
+      assignment.truckId,
+      assignmentId
+    );
+    locationTracker.initialize();
+    setTracker(locationTracker);
+  };
+
+  const handlePickup = async () => {
+    try {
+      await tracker.markPickup();
+      setIsTracking(true);
+      // GPS tracking starts automatically
+    } catch (error) {
+      console.error('Pickup error:', error);
+    }
+  };
+
+  const handleDeliver = async () => {
+    try {
+      await tracker.markDelivered();
+      setIsTracking(false);
+      // GPS tracking stops automatically
+    } catch (error) {
+      console.error('Delivery error:', error);
+    }
+  };
+
+  return (
+    <div>
+      <h2>Assignment: {assignment?.order?.orderNumber}</h2>
+      
+      <div>
+        <p><strong>Warehouse:</strong> {assignment?.warehouse?.name}</p>
+        <p><strong>Destination:</strong> {assignment?.order?.dealer?.businessName}</p>
+        <p><strong>Status:</strong> {assignment?.status}</p>
+      </div>
+
+      {assignment?.status === 'assigned' && (
+        <button onClick={handlePickup}>
+          Confirm Pickup at Warehouse
+        </button>
+      )}
+
+      {isTracking && (
+        <div>
+          <p>📍 GPS Tracking Active</p>
+          <p>Your location is being tracked in real-time</p>
+        </div>
+      )}
+
+      {assignment?.status === 'in_transit' && (
+        <button onClick={handleDeliver}>
+          Mark as Delivered
+        </button>
+      )}
+    </div>
+  );
+};
+```
+
+### Key Points:
+
+1. **Pickup Triggers Tracking**: When driver marks pickup, backend:
+   - Updates assignment status to "picked_up"
+   - Updates order status to "In Transit"
+   - Sends notification to superadmin
+   - Emits Socket.IO event to mobile app
+
+2. **Mobile App Auto-Starts GPS**: Mobile app listens for pickup confirmation and automatically starts GPS tracking
+
+3. **Continuous Updates**: Mobile app sends GPS location every 10 seconds while status is "picked_up" or "in_transit"
+
+4. **Superadmin Visibility**: Superadmin receives notification and can view live location on map immediately
+
+5. **Delivery Stops Tracking**: When driver marks delivered, GPS tracking stops automatically
 
 ## Best Practices
 
 1. **Error Handling**: Always wrap API calls in try-catch blocks
 2. **Loading States**: Show loading indicators during API calls
 3. **Optimistic Updates**: Update UI immediately, then sync with server
-4. **Rate Limiting**: Respect rate limits on location updates
+4. **Rate Limiting**: Respect rate limits on location updates (10 seconds)
 5. **Reconnection**: Handle Socket.IO reconnection gracefully
 6. **Permissions**: Always check permissions before showing UI elements
 7. **Caching**: Cache warehouse and truck lists to reduce API calls
 8. **Real-time Updates**: Use Socket.IO for live data, polling for fallback
+9. **GPS Permissions**: Request location permissions when app starts
+10. **Battery Optimization**: Use distanceFilter to reduce GPS updates when stationary
 
 ---
 
