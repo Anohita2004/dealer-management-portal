@@ -102,4 +102,14 @@ router.get(
   orderController.getWorkflowStatus
 );
 
+// ---------------------------
+// ORDER TRACKING
+// ---------------------------
+router.get(
+  "/:id/tracking",
+  authenticate,
+  checkPermission("fleet.track"),
+  orderController.getOrderTracking
+);
+
 module.exports = router;

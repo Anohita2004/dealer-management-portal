@@ -2,7 +2,9 @@
 
 module.exports = {
   up: async (queryInterface, Sequelize) => {
-    await queryInterface.createTable('region_materials', {
+    // Create table (with error handling for existing table)
+    try {
+      await queryInterface.createTable('region_materials', {
       id: {
         type: Sequelize.UUID,
         defaultValue: Sequelize.UUIDV4,
@@ -43,12 +45,33 @@ module.exports = {
         defaultValue: Sequelize.fn('NOW'),
       },
     });
+    } catch (error) {
+      if (error.original && error.original.code === '42P01') {
+        // Table already exists, skip
+        console.log('⚠️ Table region_materials already exists, skipping creation...');
+      } else {
+        throw error;
+      }
+    }
 
-    await queryInterface.addConstraint('region_materials', {
-      fields: ['regionId', 'materialId'],
-      type: 'unique',
-      name: 'region_materials_region_material_unique',
-    });
+    // Add constraint (with error handling for existing constraint)
+    try {
+      await queryInterface.addConstraint('region_materials', {
+        fields: ['regionId', 'materialId'],
+        type: 'unique',
+        name: 'region_materials_region_material_unique',
+      });
+    } catch (error) {
+      if (error.original && (
+        error.original.code === '42P07' || // duplicate object
+        error.original.code === '23505' || // unique violation
+        error.message && error.message.includes('already exists')
+      )) {
+        console.log('⚠️ Constraint region_materials_region_material_unique already exists, skipping...');
+      } else {
+        throw error;
+      }
+    }
   },
 
   down: async (queryInterface) => {

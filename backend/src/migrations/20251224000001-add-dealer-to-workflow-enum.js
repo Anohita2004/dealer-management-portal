@@ -6,9 +6,20 @@ module.exports = {
         // Note: 'ALTER TYPE ... ADD VALUE' cannot be run inside a transaction block in older Postgres,
         // but works in valid transactions in Postgres 12+.
         // To be safe, we can try running it directly.
-        return queryInterface.sequelize.query(`
-      ALTER TYPE "enum_workflow_timelines_entityType" ADD VALUE 'dealer';
-    `);
+        try {
+            await queryInterface.sequelize.query(`
+                ALTER TYPE "enum_workflow_timelines_entityType" ADD VALUE IF NOT EXISTS 'dealer';
+            `);
+        } catch (error) {
+            if (error.original && (
+                error.original.code === '42710' || // duplicate object
+                error.message && error.message.includes('already exists')
+            )) {
+                console.log('⚠️ Enum value "dealer" already exists in enum_workflow_timelines_entityType, skipping...');
+            } else {
+                throw error;
+            }
+        }
     },
 
     down: async (queryInterface, Sequelize) => {

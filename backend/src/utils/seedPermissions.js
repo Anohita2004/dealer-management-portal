@@ -113,6 +113,16 @@ const PERMISSIONS = [
   { key: "system.logs", description: "View system logs" },
   { key: "system.config", description: "Manage system configuration" },
   { key: "system.backup", description: "System backup and restore" },
+
+  // ===== FLEET MANAGEMENT =====
+  { key: "fleet.view", description: "View fleet and trucks" },
+  { key: "fleet.manage", description: "Manage trucks" },
+  { key: "fleet.assign", description: "Assign trucks to orders" },
+  { key: "fleet.track", description: "Track truck locations" },
+
+  // ===== WAREHOUSE MANAGEMENT =====
+  { key: "warehouse.view", description: "View warehouses" },
+  { key: "warehouse.manage", description: "Manage warehouses" },
 ];
 
 const ROLES = [
@@ -155,7 +165,8 @@ const ROLE_TO_PERMS = {
     "reports.view", "reports.export",
     "dashboard.view.regional",
     "messages.view", "messages.send",
-    "notifications.view", "notifications.send"
+    "notifications.view", "notifications.send",
+    "fleet.view", "fleet.assign", "fleet.track", "warehouse.view"
   ],
 
   regional_manager: [
@@ -170,7 +181,8 @@ const ROLE_TO_PERMS = {
     "dashboard.view.manager",
     "teams.view",
     "messages.view", "messages.send",
-    "notifications.view"
+    "notifications.view",
+    "fleet.view", "fleet.assign", "fleet.track", "warehouse.view"
   ],
 
   sales_executive: [
@@ -210,7 +222,8 @@ const ROLE_TO_PERMS = {
     "maps.view", "maps.heatmap",
     "dashboard.view.manager",
     "messages.view", "messages.send",
-    "notifications.view"
+    "notifications.view",
+    "fleet.view", "fleet.assign", "fleet.track", "warehouse.view"
   ],
 
   territory_manager: [
@@ -224,7 +237,8 @@ const ROLE_TO_PERMS = {
     "maps.view", "maps.heatmap",
     "dashboard.view.manager",
     "messages.view", "messages.send",
-    "notifications.view"
+    "notifications.view",
+    "fleet.view", "fleet.assign", "fleet.track", "warehouse.view"
   ],
 
   finance_admin: [
@@ -248,7 +262,8 @@ const ROLE_TO_PERMS = {
     "notifications.view",
     "campaigns.view",
     "inventory.view",
-    "reports.view"
+    "reports.view",
+    "fleet.track" // track their own orders
   ],
 
   dealer_staff: [
@@ -262,7 +277,8 @@ const ROLE_TO_PERMS = {
     "notifications.view",
     "campaigns.view",
     "inventory.view",
-    "reports.view"
+    "reports.view",
+    "fleet.track" // track their own orders
   ],
 
   inventory_user: [
@@ -270,7 +286,8 @@ const ROLE_TO_PERMS = {
     "materials.view", "materials.manage",
     "pricing.view",
     "messages.view", "messages.send",
-    "notifications.view"
+    "notifications.view",
+    "fleet.view", "warehouse.view", "warehouse.manage", "fleet.assign"
   ],
 
   accounts_user: [

@@ -40,6 +40,10 @@ const teamRoutes = require('./routes/teamRoutes');
 const featureToggleRoutes = require('./routes/featureToggleRoutes');
 const taskRoutes = require('./routes/taskRoutes');
 const workflowRoutes = require('./routes/workflowRoutes');
+const warehouseRoutes = require('./routes/warehouseRoutes');
+const truckRoutes = require('./routes/truckRoutes');
+const fleetRoutes = require('./routes/fleetRoutes');
+const trackingRoutes = require('./routes/trackingRoutes');
 
 // --- Express app setup ---
 const app = express();
@@ -103,6 +107,10 @@ app.use('/api/teams', teamRoutes);
 app.use('/api/feature-toggles', featureToggleRoutes);
 app.use('/api/tasks', taskRoutes);
 app.use('/api/workflow', workflowRoutes);
+app.use('/api/warehouses', warehouseRoutes);
+app.use('/api/trucks', truckRoutes);
+app.use('/api/fleet', fleetRoutes);
+app.use('/api/tracking', trackingRoutes);
 
 // --- Error handling (keep your behavior) ---
 app.use((err, req, res, next) => {
@@ -135,6 +143,8 @@ const io = new Server(server, {
 // expose io & models to controllers
 app.set('io', io);
 app.set('models', require('./models'));
+// Make io globally available for services
+global.io = io;
 
 // Scheduled SLA job - runs every hour
 const runSLAJob = async () => {
@@ -324,6 +334,72 @@ io.on('connection', (socket) => {
     } catch (err) {
       console.error('send_message error:', err);
       socket.emit('message_error', { error: 'failed_to_send' });
+    }
+  });
+
+  // Join truck tracking room
+  socket.on('track_truck', ({ truckId }) => {
+    try {
+      if (truckId) {
+        socket.join(`truck:${truckId}`);
+        socket.emit('tracking_started', { truckId });
+        console.log(`🚚 socket ${socket.id} tracking truck:${truckId}`);
+      }
+    } catch (err) {
+      console.warn('track_truck error', err);
+    }
+  });
+
+  // Leave truck tracking room
+  socket.on('untrack_truck', ({ truckId }) => {
+    try {
+      if (truckId) {
+        socket.leave(`truck:${truckId}`);
+        socket.emit('tracking_stopped', { truckId });
+      }
+    } catch (err) {
+      console.warn('untrack_truck error', err);
+    }
+  });
+
+  // Join order tracking room
+  socket.on('track_order', ({ orderId }) => {
+    try {
+      if (orderId) {
+        socket.join(`order:${orderId}`);
+        socket.emit('order_tracking_started', { orderId });
+        console.log(`📦 socket ${socket.id} tracking order:${orderId}`);
+      }
+    } catch (err) {
+      console.warn('track_order error', err);
+    }
+  });
+
+  // Leave order tracking room
+  socket.on('untrack_order', ({ orderId }) => {
+    try {
+      if (orderId) {
+        socket.leave(`order:${orderId}`);
+        socket.emit('order_tracking_stopped', { orderId });
+      }
+    } catch (err) {
+      console.warn('untrack_order error', err);
+    }
+  });
+
+  // Join fleet region/area rooms for managers
+  socket.on('join_fleet_scope', ({ regionId, areaId }) => {
+    try {
+      if (regionId) {
+        socket.join(`fleet:region:${regionId}`);
+        console.log(`🌍 socket ${socket.id} joined fleet region:${regionId}`);
+      }
+      if (areaId) {
+        socket.join(`fleet:area:${areaId}`);
+        console.log(`📍 socket ${socket.id} joined fleet area:${areaId}`);
+      }
+    } catch (err) {
+      console.warn('join_fleet_scope error', err);
     }
   });
 

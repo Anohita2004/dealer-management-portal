@@ -364,6 +364,19 @@ class RBACEngine {
         // Campaigns have targetAudience field - handled separately
         return {};
 
+      case 'Warehouse':
+        // Warehouses belong to regions and optionally areas
+        const whereWarehouse = {};
+        if (scope.regionId) whereWarehouse.regionId = scope.regionId;
+        if (scope.areaId) whereWarehouse.areaId = scope.areaId;
+        return whereWarehouse;
+
+      case 'Truck':
+        // Trucks can be scoped by region
+        const whereTruck = {};
+        if (scope.regionId) whereTruck.regionId = scope.regionId;
+        return whereTruck;
+
       default:
         // Generic fallback - try to match by hierarchy
         const where = {};

@@ -1,5 +1,5 @@
 // src/controllers/orderController.js
-const { Order, OrderItem, Material, Dealer, DealerMaterial, sequelize } = require("../models");
+const { Order, OrderItem, Material, Dealer, DealerMaterial, TruckAssignment, Truck, Warehouse, TruckLocationHistory, sequelize } = require("../models");
 const { nextStage, isApproverForStage } = require("../utils/approvalEngine");
 const RBACEngine = require("../services/rbacEngine");
 const { WorkflowService } = require("../services/workflow");
@@ -462,5 +462,96 @@ exports.getWorkflowStatus = async (req, res) => {
   } catch (err) {
     console.error("getWorkflowStatus:", err);
     res.status(500).json({ error: "Failed to get workflow status", details: err.message });
+  }
+};
+
+// --------------------------------------
+// GET ORDER TRACKING
+// --------------------------------------
+exports.getOrderTracking = async (req, res) => {
+  try {
+    const order = await Order.findByPk(req.params.id, {
+      include: [
+        {
+          model: TruckAssignment,
+          as: "truckAssignment",
+          include: [
+            {
+              model: Truck,
+              as: "truck",
+              attributes: ["id", "truckName", "licenseNumber", "currentLat", "currentLng", "lastLocationUpdate"],
+            },
+            {
+              model: Warehouse,
+              as: "warehouse",
+              attributes: ["id", "name", "warehouseCode", "lat", "lng", "address", "city"],
+            },
+          ],
+        },
+      ],
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+
+    // Check access
+    const allowedDealers = await RBACEngine.getDealersInScope(req.user);
+    if (order.dealerId && !allowedDealers.includes(order.dealerId)) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    if (!order.truckAssignment) {
+      return res.json({
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        hasAssignment: false,
+        message: "No truck assigned to this order",
+      });
+    }
+
+    // Get recent location history
+    const recentHistory = await TruckLocationHistory.findAll({
+      where: {
+        truckAssignmentId: order.truckAssignment.id,
+      },
+      limit: 50,
+      order: [["timestamp", "DESC"]],
+    });
+
+    res.json({
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      status: order.status,
+      assignment: {
+        id: order.truckAssignment.id,
+        status: order.truckAssignment.status,
+        driverName: order.truckAssignment.driverName,
+        driverPhone: order.truckAssignment.driverPhone,
+        assignedAt: order.truckAssignment.assignedAt,
+        pickupAt: order.truckAssignment.pickupAt,
+        deliveredAt: order.truckAssignment.deliveredAt,
+        estimatedDeliveryAt: order.truckAssignment.estimatedDeliveryAt,
+        truck: order.truckAssignment.truck,
+        warehouse: order.truckAssignment.warehouse,
+      },
+      currentLocation: order.truckAssignment.truck
+        ? {
+            lat: order.truckAssignment.truck.currentLat,
+            lng: order.truckAssignment.truck.currentLng,
+            lastUpdate: order.truckAssignment.truck.lastLocationUpdate,
+          }
+        : null,
+      locationHistory: recentHistory.map((h) => ({
+        lat: h.lat,
+        lng: h.lng,
+        speed: h.speed,
+        heading: h.heading,
+        timestamp: h.timestamp,
+      })),
+    });
+  } catch (err) {
+    console.error("getOrderTracking:", err);
+    res.status(500).json({ error: "Failed to get order tracking", details: err.message });
   }
 };
