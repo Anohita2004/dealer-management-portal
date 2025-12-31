@@ -14,18 +14,36 @@ router.post(
 );
 
 // Get all assignments (scoped)
+// Note: Drivers can view their own assignments (controller filters by driver)
 router.get(
   "/assignments",
   authenticate,
-  checkPermission("fleet.view"),
+  async (req, res, next) => {
+    // Allow drivers to bypass permission check - controller will filter to their assignments
+    const userRole = req.user?.roleDetails?.name || req.user?.role;
+    if (userRole === 'driver') {
+      return next();
+    }
+    // For other roles, check permission
+    return checkPermission("fleet.view")(req, res, next);
+  },
   fleetController.getAssignments
 );
 
 // Get assignment by ID
+// Note: Drivers can view their own assignments (controller verifies ownership)
 router.get(
   "/assignments/:id",
   authenticate,
-  checkPermission("fleet.view"),
+  async (req, res, next) => {
+    // Allow drivers to bypass permission check - controller will verify they own the assignment
+    const userRole = req.user?.roleDetails?.name || req.user?.role;
+    if (userRole === 'driver') {
+      return next();
+    }
+    // For other roles, check permission
+    return checkPermission("fleet.view")(req, res, next);
+  },
   fleetController.getAssignment
 );
 
@@ -38,26 +56,53 @@ router.put(
 );
 
 // Update assignment status
+// Note: Drivers typically don't use this endpoint (they use pickup/deliver), but allow if needed
 router.patch(
   "/assignments/:id/status",
   authenticate,
-  checkPermission("fleet.assign"),
+  async (req, res, next) => {
+    // Allow drivers to bypass permission check - controller will verify ownership
+    const userRole = req.user?.roleDetails?.name || req.user?.role;
+    if (userRole === 'driver') {
+      return next();
+    }
+    // For other roles, check permission
+    return checkPermission("fleet.assign")(req, res, next);
+  },
   fleetController.updateAssignmentStatus
 );
 
 // Mark pickup
+// Note: Drivers can mark pickup for their own assignments (checked in controller)
 router.post(
   "/assignments/:id/pickup",
   authenticate,
-  checkPermission("fleet.assign"),
+  async (req, res, next) => {
+    // Allow drivers to bypass permission check - controller will verify ownership
+    const userRole = req.user?.roleDetails?.name || req.user?.role;
+    if (userRole === 'driver') {
+      return next();
+    }
+    // For other roles, check permission
+    return checkPermission("fleet.assign")(req, res, next);
+  },
   fleetController.markPickup
 );
 
 // Mark delivered
+// Note: Drivers can mark delivery for their own assignments (checked in controller)
 router.post(
   "/assignments/:id/deliver",
   authenticate,
-  checkPermission("fleet.assign"),
+  async (req, res, next) => {
+    // Allow drivers to bypass permission check - controller will verify ownership
+    const userRole = req.user?.roleDetails?.name || req.user?.role;
+    if (userRole === 'driver') {
+      return next();
+    }
+    // For other roles, check permission
+    return checkPermission("fleet.assign")(req, res, next);
+  },
   fleetController.markDelivered
 );
 

@@ -153,11 +153,80 @@ async function findWarehousesInRadius(lat, lng, radiusKm, regionId = null) {
   return warehousesInRadius;
 }
 
+/**
+ * Check if a point is within a geofence (circular area)
+ * @param {number} lat - Point latitude
+ * @param {number} lng - Point longitude
+ * @param {number} targetLat - Target center latitude
+ * @param {number} targetLng - Target center longitude
+ * @param {number} radiusMeters - Radius in meters
+ * @returns {boolean} True if point is within geofence
+ */
+function checkGeofence(lat, lng, targetLat, targetLng, radiusMeters) {
+  if (!validateCoordinates(lat, lng) || !validateCoordinates(targetLat, targetLng)) {
+    return false;
+  }
+
+  const distanceKm = calculateDistance(lat, lng, targetLat, targetLng);
+  const distanceMeters = distanceKm * 1000;
+  
+  return distanceMeters <= radiusMeters;
+}
+
+/**
+ * Check if truck is near warehouse
+ * @param {number} truckLat - Truck latitude
+ * @param {number} truckLng - Truck longitude
+ * @param {Object} warehouse - Warehouse object with lat/lng
+ * @param {number} radiusMeters - Radius in meters (default 100m)
+ * @returns {boolean} True if truck is within radius of warehouse
+ */
+async function isNearWarehouse(truckLat, truckLng, warehouse, radiusMeters = 100) {
+  if (!warehouse || !warehouse.lat || !warehouse.lng) {
+    return false;
+  }
+
+  return checkGeofence(truckLat, truckLng, warehouse.lat, warehouse.lng, radiusMeters);
+}
+
+/**
+ * Check if truck is near dealer
+ * @param {number} truckLat - Truck latitude
+ * @param {number} truckLng - Truck longitude
+ * @param {Object} dealer - Dealer object with lat/lng
+ * @param {number} radiusMeters - Radius in meters (default 100m)
+ * @returns {boolean} True if truck is within radius of dealer
+ */
+async function isNearDealer(truckLat, truckLng, dealer, radiusMeters = 100) {
+  if (!dealer || !dealer.lat || !dealer.lng) {
+    return false;
+  }
+
+  return checkGeofence(truckLat, truckLng, dealer.lat, dealer.lng, radiusMeters);
+}
+
+/**
+ * Get distance to target in meters
+ * @param {number} lat - Point latitude
+ * @param {number} lng - Point longitude
+ * @param {number} targetLat - Target latitude
+ * @param {number} targetLng - Target longitude
+ * @returns {number} Distance in meters
+ */
+function getDistanceMeters(lat, lng, targetLat, targetLng) {
+  const distanceKm = calculateDistance(lat, lng, targetLat, targetLng);
+  return distanceKm * 1000;
+}
+
 module.exports = {
   calculateDistance,
   validateCoordinates,
   findNearestWarehouse,
   findWarehousesInRadius,
   toRadians,
+  checkGeofence,
+  isNearWarehouse,
+  isNearDealer,
+  getDistanceMeters,
 };
 

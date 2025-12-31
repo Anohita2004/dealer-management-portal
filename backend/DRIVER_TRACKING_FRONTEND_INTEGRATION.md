@@ -22,6 +22,10 @@ This guide provides step-by-step instructions for integrating driver location tr
 - **Automatic notifications** to admins when drivers update order status
 - **Socket.IO integration** for real-time updates
 - **Phone number-based filtering** for map display
+- **GPS tracking from start location** - Tracking begins when driver starts journey
+- **Geofencing** - Automatic warehouse arrival detection (100m radius)
+- **Real-time ETA calculation** - Using routing APIs (Google Maps/Mapbox)
+- **Enhanced map display** - Shows warehouse, dealer, start location, and current truck position
 
 ### Flow Diagram
 ```
@@ -885,7 +889,28 @@ const MobileAppLocationTracker = ({ assignmentId, truckId, token }) => {
         return;
       }
 
-      // Start location tracking
+      // Get current location
+      const currentLocation = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+      });
+
+      // Start GPS tracking from current location
+      try {
+        const response = await api.post('/tracking/start', {
+          assignmentId,
+          lat: currentLocation.coords.latitude,
+          lng: currentLocation.coords.longitude,
+        });
+        
+        console.log('Tracking started:', response.data);
+        // Status changes to 'en_route_to_warehouse'
+      } catch (error) {
+        console.error('Failed to start tracking:', error);
+        Alert.alert('Error', 'Failed to start GPS tracking');
+        return;
+      }
+
+      // Start continuous location updates
       const subscription = await Location.watchPositionAsync(
         {
           accuracy: Location.Accuracy.High,
@@ -894,6 +919,7 @@ const MobileAppLocationTracker = ({ assignmentId, truckId, token }) => {
         },
         async (location) => {
           // Send location to backend
+          // Note: Geofencing automatically detects warehouse arrival (100m radius)
           try {
             await api.post('/tracking/location', {
               truckId,
