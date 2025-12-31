@@ -17,6 +17,11 @@ router.patch('/:id/approve', authenticate, authorize('dealer_admin', 'territory_
 router.post('/:id/approve', authenticate, authorize('dealer_admin', 'territory_manager', 'area_manager', 'regional_manager', 'regional_admin'), checkPermission('invoices.edit'), invoiceController.approveInvoice);
 router.patch('/:id/reject', authenticate, authorize('dealer_admin', 'territory_manager', 'area_manager', 'regional_manager', 'regional_admin'), checkPermission('invoices.edit'), invoiceController.rejectInvoice);
 router.post('/:id/reject', authenticate, authorize('dealer_admin', 'territory_manager', 'area_manager', 'regional_manager', 'regional_admin'), checkPermission('invoices.edit'), invoiceController.rejectInvoice);
+
+// Bulk actions
+router.post('/bulk/approve', authenticate, authorize('dealer_admin', 'territory_manager', 'area_manager', 'regional_manager', 'regional_admin'), checkPermission('invoices.edit'), invoiceController.bulkApproveInvoices);
+router.post('/bulk/reject', authenticate, authorize('dealer_admin', 'territory_manager', 'area_manager', 'regional_manager', 'regional_admin'), checkPermission('invoices.edit'), invoiceController.bulkRejectInvoices);
+
 router.get('/pending/approvals', authenticate, authorize('dealer_admin', 'territory_manager', 'area_manager', 'regional_manager', 'regional_admin'), checkPermission('invoices.view'), invoiceController.getPendingInvoices);
 
 // Workflow status

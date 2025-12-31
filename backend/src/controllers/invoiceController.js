@@ -45,38 +45,20 @@ const getAllInvoices = async (req, res) => {
     const {
       page = 1,
       limit = 10,
-      dealerId,
-      status,
-      startDate,
-      endDate,
-      search,
     } = req.query;
 
     const offset = (page - 1) * limit;
 
-    const where = {};
+    const { buildAdvancedWhere } = require('../utils/filterHelper');
+    const where = buildAdvancedWhere(req.query, {
+      searchFields: ['invoiceNumber', 'description'],
+      dateFields: ['invoiceDate', 'dueDate', 'createdAt'],
+      numberFields: ['totalAmount', 'balanceAmount', 'paidAmount'],
+      exactFields: ['status', 'approvalStatus', 'approvalStage', 'dealerId']
+    });
 
-    if (dealerId) where.dealerId = dealerId;
-    if (status) {
-      if (['pending', 'approved', 'rejected'].includes(status)) {
-        where.approvalStatus = status;
-      } else {
-        where.status = status;
-      }
-    }
-
-    if (startDate && endDate) {
-      where.invoiceDate = {
-        [Op.between]: [new Date(startDate), new Date(endDate)],
-      };
-    }
-
-    if (search) {
-      where[Op.or] = [
-        { invoiceNumber: { [Op.like]: `%${search}%` } },
-        { description: { [Op.like]: `%${search}%` } },
-      ];
-    }
+    // Support legacy 'status' filtering logic if needed, but buildAdvancedWhere handles it.
+    // buildAdvancedWhere handles query.status = 'paid,unpaid' -> Op.in: ['paid', 'unpaid']
 
     // 🔒 Apply hierarchical + role-based scoping for all roles (including sales_executive)
     const scopeWhere = await RBACEngine.buildScopeWhereClause(
@@ -544,6 +526,126 @@ const getWorkflowStatus = async (req, res) => {
   }
 };
 
+/* ============================================================
+   BULK APPROVE INVOICES
+============================================================ */
+const bulkApproveInvoices = async (req, res) => {
+  const { invoiceIds, notes } = req.body;
+
+  if (!invoiceIds || !Array.isArray(invoiceIds) || invoiceIds.length === 0) {
+    return res.status(400).json({ error: "invoiceIds must be a non-empty array" });
+  }
+
+  const results = {
+    success: [],
+    failed: [],
+  };
+
+  for (const id of invoiceIds) {
+    const t = await sequelize.transaction();
+    try {
+      const invoice = await Invoice.findByPk(id, {
+        include: [{ model: Dealer, as: "dealer" }],
+        transaction: t
+      });
+
+      if (!invoice) {
+        throw new Error("Invoice not found");
+      }
+
+      const result = await WorkflowService.approve(
+        "invoice",
+        invoice,
+        req.user,
+        { remarks: notes || "Bulk approved", transaction: t }
+      );
+
+      await AuditLog.create({
+        userId: req.user.id,
+        action: "APPROVE_INVOICE",
+        entity: "Invoice",
+        entityId: invoice.id,
+        changes: { action: "approve", remarks: notes || "Bulk approved", isBulk: true },
+        ipAddress: req.ip,
+        userAgent: req.headers["user-agent"],
+      }, { transaction: t });
+
+      await t.commit();
+      results.success.push({ id, message: result.message });
+    } catch (err) {
+      await t.rollback();
+      results.failed.push({ id, error: err.message });
+    }
+  }
+
+  res.json({
+    message: `Processed ${invoiceIds.length} invoices`,
+    results,
+  });
+};
+
+/* ============================================================
+   BULK REJECT INVOICES
+============================================================ */
+const bulkRejectInvoices = async (req, res) => {
+  const { invoiceIds, reason, remarks } = req.body;
+
+  if (!invoiceIds || !Array.isArray(invoiceIds) || invoiceIds.length === 0) {
+    return res.status(400).json({ error: "invoiceIds must be a non-empty array" });
+  }
+
+  if (!reason) {
+    return res.status(400).json({ error: "Rejection reason is required" });
+  }
+
+  const results = {
+    success: [],
+    failed: [],
+  };
+
+  for (const id of invoiceIds) {
+    const t = await sequelize.transaction();
+    try {
+      const invoice = await Invoice.findByPk(id, {
+        include: [{ model: Dealer, as: "dealer" }],
+        transaction: t
+      });
+
+      if (!invoice) {
+        throw new Error("Invoice not found");
+      }
+
+      const result = await WorkflowService.reject(
+        "invoice",
+        invoice,
+        req.user,
+        { reason, remarks: remarks || "Bulk rejected", rollback: true, transaction: t }
+      );
+
+      await AuditLog.create({
+        userId: req.user.id,
+        action: "REJECT_INVOICE",
+        entity: "Invoice",
+        entityId: invoice.id,
+        changes: { action: "reject", reason, remarks: remarks || "Bulk rejected", isBulk: true },
+        ipAddress: req.ip,
+        userAgent: req.headers["user-agent"],
+      }, { transaction: t });
+
+      await t.commit();
+      results.success.push({ id, message: result.message });
+    } catch (err) {
+      await t.rollback();
+      results.failed.push({ id, error: err.message });
+    }
+  }
+
+  res.json({
+    message: `Processed ${invoiceIds.length} invoices`,
+    results,
+  });
+};
+
 module.exports = {
   getAllInvoices,
   getInvoiceById,
@@ -554,4 +656,6 @@ module.exports = {
   getPendingInvoices,
   generateInvoicePDF,
   getWorkflowStatus,
+  bulkApproveInvoices,
+  bulkRejectInvoices,
 };

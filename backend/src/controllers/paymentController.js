@@ -118,15 +118,23 @@ const createPaymentRequest = async (req, res) => {
 const getDealerPayments = async (req, res) => {
   try {
     const roleName = req.user?.roleDetails?.name || req.user?.role;
+    const { page = 1, limit = 10 } = req.query;
+    const offset = (page - 1) * limit;
 
-    let where = {};
+    const { buildAdvancedWhere } = require('../utils/filterHelper');
+    const where = buildAdvancedWhere(req.query, {
+      searchFields: ['utrNumber', 'paymentMode', 'status'],
+      dateFields: ['createdAt', 'approvedAt'],
+      numberFields: ['amount'],
+      exactFields: ['status', 'approvalStatus', 'approvalStage', 'dealerId', 'paymentMode']
+    });
 
     if (roleName === "dealer_admin" || roleName === "dealer_staff") {
       where.dealerId = req.user.dealerId;
     } else if (roleName === "sales_executive") {
       const dealerIds = await RBACEngine.getDealersInScope(req.user);
       if (!dealerIds.length) {
-        return res.json({ payments: [] });
+        return res.json({ payments: [], total: 0 });
       }
       where.dealerId = { [Op.in]: dealerIds };
     } else {
@@ -138,12 +146,19 @@ const getDealerPayments = async (req, res) => {
       Object.assign(where, scopeWhere);
     }
 
-    const payments = await PaymentRequest.findAll({
+    const { count, rows } = await PaymentRequest.findAndCountAll({
       where,
-      include: ["invoice"],
+      include: ["invoice", "dealer"],
+      limit: parseInt(limit),
+      offset,
       order: [["createdAt", "DESC"]],
     });
-    res.json({ payments });
+    res.json({
+      payments: rows,
+      total: count,
+      page: parseInt(page),
+      totalPages: Math.ceil(count / limit)
+    });
   } catch (err) {
     console.error("getDealerPayments:", err);
     res.status(500).json({ error: "Failed to fetch payment requests" });
@@ -156,25 +171,48 @@ const getDealerPayments = async (req, res) => {
 const getPendingPayments = async (req, res) => {
   try {
     const role = req.user.roleDetails?.name || req.user.role;
+    const { page = 1, limit = 10 } = req.query;
+    const offset = (page - 1) * limit;
+
+    const { buildAdvancedWhere } = require('../utils/filterHelper');
+    const where = buildAdvancedWhere(req.query, {
+      searchFields: ['utrNumber', 'paymentMode'],
+      dateFields: ['createdAt'],
+      numberFields: ['amount'],
+      exactFields: ['paymentMode', 'dealerId']
+    });
 
     // Default: look for the stage matching the user's role
     // This allows each role to see payments pending at their specific workflow stage
-    const stageField = role;
+    let stageField = role;
+
+    // Exception: super_admin/technical_admin might want to see all pending or specify a stage
+    if ((role === 'super_admin' || role === 'technical_admin') && req.query.stage) {
+      stageField = req.query.stage;
+    }
 
     // Use RBAC engine to build a scoping where-clause (Region/Area/Territory levels)
     const scopeWhere = await RBACEngine.buildScopeWhereClause(req.user, "PaymentRequest");
 
-    const pending = await PaymentRequest.findAll({
+    const { count, rows } = await PaymentRequest.findAndCountAll({
       where: {
+        ...where,
         ...scopeWhere,
         approvalStage: stageField,
         approvalStatus: "pending",
       },
       include: ["invoice", "dealer"],
+      limit: parseInt(limit),
+      offset,
       order: [["createdAt", "DESC"]],
     });
 
-    res.json({ pending });
+    res.json({
+      pending: rows,
+      total: count,
+      page: parseInt(page),
+      totalPages: Math.ceil(count / limit)
+    });
   } catch (err) {
     console.error("getPendingPayments:", err);
     res.status(500).json({ error: "Failed to fetch pending payments" });
@@ -536,6 +574,140 @@ const getWorkflowStatus = async (req, res) => {
 };
 
 // ========================================================================
+// BULK APPROVE PAYMENTS
+// ========================================================================
+const bulkApprovePayments = async (req, res) => {
+  const { paymentIds, remarks } = req.body;
+
+  if (!paymentIds || !Array.isArray(paymentIds) || paymentIds.length === 0) {
+    return res.status(400).json({ error: "paymentIds must be a non-empty array" });
+  }
+
+  const results = {
+    success: [],
+    failed: [],
+  };
+
+  for (const id of paymentIds) {
+    const t = await sequelize.transaction();
+    try {
+      const payment = await PaymentRequest.findByPk(id, {
+        include: ["invoice", "dealer"],
+        transaction: t,
+      });
+
+      if (!payment) {
+        throw new Error("Payment request not found");
+      }
+
+      const result = await WorkflowService.approve("payment", payment, req.user, {
+        remarks: remarks || "Bulk approved",
+        transaction: t,
+      });
+
+      if (result.nextStage) {
+        payment.status = `${result.nextStage}_pending`;
+        await payment.save({ transaction: t });
+      }
+
+      if (result.isFinal && payment.invoice) {
+        await payment.invoice.update(
+          { status: "paid", balanceAmount: 0 },
+          { transaction: t }
+        );
+      }
+
+      await AuditLog.create(
+        {
+          userId: req.user.id,
+          action: "PAYMENT_APPROVED",
+          entity: "PaymentRequest",
+          entityId: payment.id,
+          changes: { action: "approve", remarks: remarks || "Bulk approved", isBulk: true },
+          ipAddress: req.ip,
+        },
+        { transaction: t }
+      );
+
+      await t.commit();
+      results.success.push({ id, message: result.message });
+    } catch (err) {
+      await t.rollback();
+      results.failed.push({ id, error: err.message });
+    }
+  }
+
+  res.json({
+    message: `Processed ${paymentIds.length} payments`,
+    results,
+  });
+};
+
+// ========================================================================
+// BULK REJECT PAYMENTS
+// ========================================================================
+const bulkRejectPayments = async (req, res) => {
+  const { paymentIds, reason, remarks } = req.body;
+
+  if (!paymentIds || !Array.isArray(paymentIds) || paymentIds.length === 0) {
+    return res.status(400).json({ error: "paymentIds must be a non-empty array" });
+  }
+
+  if (!reason) {
+    return res.status(400).json({ error: "Rejection reason is required" });
+  }
+
+  const results = {
+    success: [],
+    failed: [],
+  };
+
+  for (const id of paymentIds) {
+    const t = await sequelize.transaction();
+    try {
+      const payment = await PaymentRequest.findByPk(id, {
+        include: ["invoice", "dealer"],
+        transaction: t,
+      });
+
+      if (!payment) {
+        throw new Error("Payment request not found");
+      }
+
+      const result = await WorkflowService.reject("payment", payment, req.user, {
+        reason,
+        remarks: remarks || "Bulk rejected",
+        rollback: false,
+        transaction: t,
+      });
+
+      await AuditLog.create(
+        {
+          userId: req.user.id,
+          action: "PAYMENT_REJECTED",
+          entity: "PaymentRequest",
+          entityId: payment.id,
+          changes: { action: "reject", reason, remarks: remarks || "Bulk rejected", isBulk: true },
+          ipAddress: req.ip,
+        },
+        { transaction: t }
+      );
+
+      await t.commit();
+      results.success.push({ id, message: result.message });
+    } catch (err) {
+      await t.rollback();
+      results.failed.push({ id, error: err.message });
+    }
+  }
+
+  res.json({
+    message: `Processed ${paymentIds.length} payments`,
+    results,
+  });
+};
+
+// ========================================================================
 // EXPORTS
 // ========================================================================
 module.exports = {
@@ -549,4 +721,6 @@ module.exports = {
   getDuePayments,
   getWorkflowStatus,
   getPaymentById,
+  bulkApprovePayments,
+  bulkRejectPayments,
 };
