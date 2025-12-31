@@ -8,26 +8,16 @@ const { WorkflowService } = require('../services/workflow');
 ============================================================ */
 const getAllDealers = async (req, res) => {
   try {
-    const { page = 1, limit = 10, search, state, isActive } = req.query;
+    const { page = 1, limit = 10 } = req.query;
     const offset = (page - 1) * limit;
 
-    const where = {};
-
-    // 🔍 Search filter
-    if (search) {
-      where[Op.or] = [
-        { dealerCode: { [Op.like]: `%${search}%` } },
-        { businessName: { [Op.like]: `%${search}%` } }
-      ];
-    }
-
-    // 🌍 State filter
-    if (state) where.state = state;
-
-    // 🟢 Active/inactive filter
-    if (isActive !== undefined) {
-      where.isActive = isActive === "true";
-    }
+    const { buildAdvancedWhere } = require('../utils/filterHelper');
+    const where = buildAdvancedWhere(req.query, {
+      searchFields: ['dealerCode', 'businessName', 'email', 'phoneNumber', 'city', 'state'],
+      dateFields: ['createdAt', 'verifiedAt'],
+      booleanFields: ['isActive', 'isBlocked', 'isVerified'],
+      exactFields: ['status', 'state', 'regionId', 'areaId', 'territoryId']
+    });
 
     // Use RBAC engine for scoping
     if (req.scope?.dealer) {
@@ -402,7 +392,7 @@ const getDealerProfile = async (req, res) => {
 
     // Check dealerId from database (more reliable than token)
     const dealerId = user.dealerId || req.user.dealerId;
-    
+
     // If debug=true query param, return diagnostic info
     if (req.query.debug === 'true') {
       const dealer = dealerId ? await Dealer.findByPk(dealerId, {
@@ -444,9 +434,9 @@ const getDealerProfile = async (req, res) => {
           dealerIdMatches: user.dealerId === req.user.dealerId,
           dealerExists: !!dealer,
           needsRelogin: user.dealerId && !req.user.dealerId,
-          status: !user.dealerId 
+          status: !user.dealerId
             ? "❌ No dealerId in database - user needs to be assigned a dealer"
-            : !dealer 
+            : !dealer
               ? "❌ DealerId exists but dealer not found - dealer may have been deleted"
               : user.dealerId !== req.user.dealerId
                 ? "⚠️ DealerId in database but not in token - user needs to log out and log back in"
@@ -454,10 +444,10 @@ const getDealerProfile = async (req, res) => {
         }
       });
     }
-    
+
     if (!dealerId) {
       console.warn(`User ${user.username} (${user.role}) has no dealerId in database`);
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: "Your account is not linked to a dealer. Please contact an administrator to assign a dealer to your account.",
         userId: user.id,
         dealerIdInDB: user.dealerId,
@@ -469,7 +459,7 @@ const getDealerProfile = async (req, res) => {
     const dealer = await Dealer.findByPk(dealerId);
 
     if (!dealer) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         error: "Dealer profile not found",
         dealerId: dealerId
       });

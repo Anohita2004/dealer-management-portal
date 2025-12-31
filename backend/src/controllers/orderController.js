@@ -312,27 +312,66 @@ exports.getPendingOrdersForApproval = async (req, res) => {
 // --------------------------------------
 exports.getAllOrders = async (req, res) => {
   try {
-    // Use RBAC engine for scoping
-    let whereClause = {};
+    const { page = 1, limit = 10 } = req.query;
+    const offset = (page - 1) * limit;
+
+    const query = { ...req.query };
+
+    // Normalize status: map 'draft' to 'Pending' and handle Title Case for Order model
+    if (query.status) {
+      const statusMap = {
+        'draft': 'Pending',
+        'pending': 'Pending',
+        'approved': 'Approved',
+        'rejected': 'Rejected',
+        'pending approval': 'Pending Approval',
+        'processing': 'Processing',
+        'shipped': 'Shipped',
+        'in transit': 'In Transit',
+        'delivered': 'Delivered',
+        'cancelled': 'Cancelled'
+      };
+
+      query.status = query.status.split(',').map(s => {
+        const trimmed = s.trim().toLowerCase();
+        return statusMap[trimmed] || s; // Fallback to original if no mapping
+      }).join(',');
+    }
+
+    const { buildAdvancedWhere } = require('../utils/filterHelper');
+    const whereClause = buildAdvancedWhere(query, {
+      searchFields: ['orderNumber', 'notes', 'status'],
+      dateFields: ['createdAt', 'updatedAt'],
+      numberFields: ['totalAmount'],
+      exactFields: ['status', 'dealerId', 'approvalStage', 'approvalStatus']
+    });
 
     // If scoping middleware populated a scope, honor it
     if (req.scope?.order) {
-      whereClause = { ...req.scope.order };
+      Object.assign(whereClause, req.scope.order);
     } else {
       // Use RBAC engine to build scope
-      whereClause = await RBACEngine.buildScopeWhereClause(req.user, 'Order');
+      const scopeWhere = await RBACEngine.buildScopeWhereClause(req.user, 'Order');
+      Object.assign(whereClause, scopeWhere);
     }
 
-    const orders = await Order.findAll({
+    const { count, rows } = await Order.findAndCountAll({
       where: whereClause,
       include: [
         { model: OrderItem, as: "items", include: [{ model: Material, as: "material" }] },
         { model: Dealer, as: "dealer" },
       ],
+      offset,
+      limit: parseInt(limit),
       order: [["createdAt", "DESC"]],
     });
 
-    res.json({ orders });
+    res.json({
+      orders: rows,
+      total: count,
+      page: parseInt(page),
+      totalPages: Math.ceil(count / limit)
+    });
   } catch (err) {
     console.error("getAllOrders:", err);
     res.status(500).json({ error: "Failed to load orders" });
@@ -467,8 +506,8 @@ exports.approveOrder = async (req, res) => {
       // Check if order is in a valid state to start workflow
       if (order.status === 'Cancelled' || order.status === 'Rejected') {
         await t.rollback();
-        return res.status(400).json({ 
-          error: "Cannot start workflow for cancelled or rejected order" 
+        return res.status(400).json({
+          error: "Cannot start workflow for cancelled or rejected order"
         });
       }
 
@@ -630,10 +669,10 @@ exports.getOrderTracking = async (req, res) => {
       },
       currentLocation: order.truckAssignment.truck
         ? {
-            lat: order.truckAssignment.truck.currentLat,
-            lng: order.truckAssignment.truck.currentLng,
-            lastUpdate: order.truckAssignment.truck.lastLocationUpdate,
-          }
+          lat: order.truckAssignment.truck.currentLat,
+          lng: order.truckAssignment.truck.currentLng,
+          lastUpdate: order.truckAssignment.truck.lastLocationUpdate,
+        }
         : null,
       locationHistory: recentHistory.map((h) => ({
         lat: h.lat,

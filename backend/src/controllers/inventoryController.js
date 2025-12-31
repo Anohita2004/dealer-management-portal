@@ -2,40 +2,84 @@
 const { Inventory, AuditLog } = require("../models");
 const ExcelJS = require("exceljs");
 const PDFDocument = require("pdfkit");
+const { Op } = require("sequelize");
+
+// Helper function to format inventory item for frontend
+const formatInventoryItem = (item) => {
+  const materialNumber = item.materialNumber || item.sapMaterialNumber || item.materialCode || "";
+  const stock = item.stock || 0;
+  const minStock = item.minStock || item.reorderLevel || 0;
+  
+  // Determine status
+  let status = "in_stock";
+  if (stock === 0) {
+    status = "out";
+  } else if (stock <= minStock) {
+    status = "low";
+  }
+  
+  return {
+    id: item.id,
+    name: item.name,
+    materialName: item.name,
+    materialNumber: materialNumber,
+    materialCode: materialNumber,
+    plant: item.plant,
+    warehouse: item.plant, // warehouse is same as plant
+    stock: stock,
+    availableStock: stock,
+    minStock: minStock,
+    reorderLevel: item.reorderLevel || item.minStock || 0,
+    uom: item.uom || "EA",
+    price: parseFloat(item.price || 0),
+    description: item.description || "",
+    status: status, // "out", "low", or "in_stock"
+  };
+};
 
 // 🧮 Summary for dashboard
-// src/controllers/inventoryController.js
 exports.getInventorySummary = async (req, res) => {
   try {
-    const role = req.user.roleDetails?.name || req.user.role;
-
     const items = await Inventory.findAll({ order: [["name", "ASC"]] });
 
-    // filter view by role (dealers see limited fields)
-    let visibleInventory;
-    if (["dealer_admin", "dealer_staff", "dealer"].includes(role)) {
-      visibleInventory = items.map((i) => ({
-        id: i.id,
-        product: i.name,
-        available: i.stock,
-      }));
-    } else if (["territory_manager", "area_manager", "regional_manager", "regional_admin"].includes(role)) {
-      visibleInventory = items.map((i) => ({
-        id: i.id,
-        product: i.name,
-        available: i.stock,
-        plant: i.plant,
-      }));
-    } else {
-      visibleInventory = items;
-    }
+    // Format inventory items for frontend
+    const inventory = items.map(formatInventoryItem);
 
-    const lowStock = items.filter((i) => i.stock <=  (i.reorderLevel || 0)).length;
+    // Get unique warehouses/plants (they are the same)
+    const uniquePlants = [...new Set(items.map((i) => i.plant).filter(Boolean))];
+    const warehouses = uniquePlants.map((plant) => ({
+      code: plant,
+      name: plant,
+      plant: plant,
+      warehouse: plant, // warehouse is same as plant
+    }));
+
+    // Calculate summary statistics
+    const totalItems = items.length;
+    const totalValue = items.reduce((sum, item) => {
+      return sum + (parseFloat(item.price || 0) * (item.stock || 0));
+    }, 0);
+    const lowStockCount = items.filter((i) => {
+      const minStock = i.minStock || i.reorderLevel || 0;
+      return i.stock > 0 && i.stock <= minStock;
+    }).length;
+    const outOfStockCount = items.filter((i) => i.stock === 0).length;
+
+    // Get out of stock items
+    const outOfStockItems = items
+      .filter((i) => i.stock === 0)
+      .map(formatInventoryItem);
 
     res.json({
-      role,
-      inventory: visibleInventory,
-      summary: { totalSkus: items.length, lowStock },
+      inventory,
+      warehouses, // List of unique warehouses/plants
+      outOfStockItems, // Out of stock items
+      summary: {
+        totalItems,
+        totalValue,
+        lowStockCount,
+        outOfStockCount,
+      },
     });
   } catch (error) {
     console.error("getInventorySummary:", error);
@@ -43,11 +87,76 @@ exports.getInventorySummary = async (req, res) => {
   }
 };
 
-// 📋 Get detailed inventory list
+// 📋 Get detailed inventory list with pagination and filtering
 exports.getInventoryDetails = async (req, res) => {
   try {
-    const items = await Inventory.findAll({ order: [["updatedAt", "DESC"]] });
-    res.json(items);
+    const page = parseInt(req.query.page) || 1;
+    const pageSize = parseInt(req.query.pageSize) || 25;
+    const search = req.query.search || "";
+    // Plant and warehouse are the same - accept both
+    const plant = req.query.plant || req.query.warehouse || "";
+    const stockFilter = req.query.stockFilter || ""; // "low", "out", or empty
+
+    // Build where clause
+    const whereClause = {};
+
+    // Search filter
+    if (search) {
+      whereClause[Op.or] = [
+        { name: { [Op.like]: `%${search}%` } },
+        { sapMaterialNumber: { [Op.like]: `%${search}%` } },
+        { materialNumber: { [Op.like]: `%${search}%` } },
+        { materialCode: { [Op.like]: `%${search}%` } },
+      ];
+    }
+
+    // Plant/Warehouse filter (they are the same)
+    if (plant) {
+      whereClause.plant = plant;
+    }
+
+    // Stock filter
+    if (stockFilter === "low") {
+      // Items with stock <= reorderLevel but > 0
+      const items = await Inventory.findAll({ where: whereClause });
+      const lowStockItems = items.filter((item) => {
+        const minStock = item.minStock || item.reorderLevel || 0;
+        return item.stock > 0 && item.stock <= minStock;
+      });
+      const total = lowStockItems.length;
+      const totalPages = Math.ceil(total / pageSize);
+      const paginatedItems = lowStockItems.slice((page - 1) * pageSize, page * pageSize);
+
+      return res.json({
+        inventory: paginatedItems.map(formatInventoryItem),
+        total,
+        page,
+        pageSize,
+        totalPages,
+      });
+    } else if (stockFilter === "out") {
+      whereClause.stock = 0;
+    }
+
+    // Get total count
+    const total = await Inventory.count({ where: whereClause });
+    const totalPages = Math.ceil(total / pageSize);
+
+    // Get paginated items
+    const items = await Inventory.findAll({
+      where: whereClause,
+      order: [["updatedAt", "DESC"]],
+      limit: pageSize,
+      offset: (page - 1) * pageSize,
+    });
+
+    res.json({
+      inventory: items.map(formatInventoryItem),
+      total,
+      page,
+      pageSize,
+      totalPages,
+    });
   } catch (error) {
     console.error("getInventoryDetails:", error);
     res.status(500).json({ error: "Failed to fetch detailed inventory" });
@@ -193,6 +302,141 @@ exports.exportInventory = async (req, res) => {
   } catch (err) {
     console.error("Export error:", err);
     res.status(500).json({ error: "Failed to export inventory" });
+  }
+};
+
+// 🔔 Get low stock alerts
+exports.getLowStockAlerts = async (req, res) => {
+  try {
+    const items = await Inventory.findAll({ order: [["name", "ASC"]] });
+    
+    // Filter items where stock is at or below reorder level
+    const lowStockItems = items.filter((item) => {
+      const minStock = item.minStock || item.reorderLevel || 0;
+      return item.stock <= minStock;
+    });
+
+    // Format the response
+    const alerts = lowStockItems.map((item) => {
+      const minStock = item.minStock || item.reorderLevel || 0;
+      const materialNumber = item.materialNumber || item.sapMaterialNumber || item.materialCode || "";
+      return {
+        ...formatInventoryItem(item),
+        status: item.stock === 0 ? "out" : "low",
+      };
+    });
+
+    // Calculate summary
+    const lowStock = alerts.filter((a) => a.status === "low").length;
+    const outOfStock = alerts.filter((a) => a.status === "out").length;
+
+    res.json({
+      alerts,
+      summary: {
+        totalAlerts: alerts.length,
+        lowStock,
+        outOfStock,
+      },
+    });
+  } catch (error) {
+    console.error("getLowStockAlerts:", error);
+    res.status(500).json({ error: "Failed to fetch low stock alerts" });
+  }
+};
+
+// 📊 Get inventory for specific plant/warehouse
+exports.getPlantInventory = async (req, res) => {
+  try {
+    // plantCode and warehouseCode are the same - route can use either
+    const code = req.params.plantCode || req.params.warehouseCode;
+    
+    if (!code) {
+      return res.status(400).json({ error: "Plant/Warehouse code is required" });
+    }
+
+    const items = await Inventory.findAll({
+      where: { plant: code },
+      order: [["name", "ASC"]],
+    });
+
+    // Format inventory items
+    const inventory = items.map(formatInventoryItem);
+
+    // Calculate summary
+    const totalItems = items.length;
+    const totalStock = items.reduce((sum, item) => sum + (item.stock || 0), 0);
+    const lowStock = items.filter((item) => {
+      const minStock = item.minStock || item.reorderLevel || 0;
+      return item.stock > 0 && item.stock <= minStock;
+    }).length;
+    const outOfStock = items.filter((item) => item.stock === 0).length;
+
+    res.json({
+      inventory,
+      plant: code,
+      warehouse: code, // warehouse is same as plant
+      summary: {
+        totalItems,
+        totalStock,
+        lowStock,
+        outOfStock,
+      },
+    });
+  } catch (error) {
+    console.error("getPlantInventory:", error);
+    res.status(500).json({ error: "Failed to fetch plant inventory" });
+  }
+};
+
+// 🔧 Adjust stock level
+exports.adjustStock = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { adjustment, reason } = req.body;
+
+    if (adjustment === undefined || adjustment === null) {
+      return res.status(400).json({ error: "Adjustment value is required" });
+    }
+
+    const item = await Inventory.findByPk(id);
+    if (!item) {
+      return res.status(404).json({ error: "Item not found" });
+    }
+
+    const oldStock = item.stock || 0;
+    const newStock = Math.max(0, oldStock + parseInt(adjustment, 10));
+
+    await item.update({ stock: newStock });
+
+    // Create audit log
+    await AuditLog.create({
+      userId: req.user.id,
+      action: "ADJUST_INVENTORY_STOCK",
+      entity: "Inventory",
+      entityId: id,
+      changes: {
+        oldStock,
+        newStock,
+        adjustment: parseInt(adjustment, 10),
+        reason: reason || "Stock adjustment",
+      },
+      ipAddress: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+
+    res.json({
+      message: "Stock adjusted successfully",
+      item: formatInventoryItem(item),
+      adjustment: {
+        oldStock,
+        newStock,
+        adjustment: parseInt(adjustment, 10),
+        reason: reason || "Stock adjustment",
+      },
+    });
+  } catch (error) {
+    console.error("adjustStock:", error);
+    res.status(500).json({ error: "Failed to adjust stock" });
   }
 };
 

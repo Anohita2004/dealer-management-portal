@@ -31,6 +31,33 @@ module.exports = (sequelize, DataTypes) => {
     },
     sapMaterialNumber: {
       type: DataTypes.STRING
+    },
+    reorderLevel: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: 0
+    },
+    minStock: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: 0
+    },
+    price: {
+      type: DataTypes.DECIMAL(12, 2),
+      allowNull: true,
+      defaultValue: 0
+    },
+    description: {
+      type: DataTypes.TEXT,
+      allowNull: true
+    },
+    materialNumber: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
+    materialCode: {
+      type: DataTypes.STRING,
+      allowNull: true
     }
   }, {
     timestamps: true
