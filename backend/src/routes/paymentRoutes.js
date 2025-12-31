@@ -18,6 +18,24 @@ const {
   bulkRejectPayments,
 } = require("../controllers/paymentController");
 
+const {
+  createGatewayOrder,
+  handleWebhook
+} = require("../controllers/paymentGatewayController");
+
+// -----------------------
+// GATEWAY ROUTES (Public/Dealer)
+// -----------------------
+// Webhook must be public and come before authenticated routes to avoid JWT issues if it's not excluded in middleware
+router.post("/webhook/razorpay", handleWebhook);
+
+router.post(
+  "/gateway/init",
+  authenticate,
+  authorize("dealer_admin", "dealer_staff"),
+  createGatewayOrder
+);
+
 // -----------------------
 // DEALER STAFF ROUTES
 // -----------------------

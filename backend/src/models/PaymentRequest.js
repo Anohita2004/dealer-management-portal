@@ -50,6 +50,12 @@ module.exports = (sequelize, DataTypes) => {
       defaultValue: 'pending',
     },
     rejectionReason: { type: DataTypes.TEXT },
+
+    // Gateway integration fields
+    gatewayOrderId: { type: DataTypes.STRING },
+    gatewayPaymentId: { type: DataTypes.STRING },
+    gatewaySignature: { type: DataTypes.STRING },
+    paymentGateway: { type: DataTypes.STRING },
   });
 
   PaymentRequest.associate = (models) => {

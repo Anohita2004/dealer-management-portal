@@ -204,6 +204,8 @@ dealer_staff creates → dealer_admin → territory_manager → area_manager →
 | `POST` | `/api/payments/:id/approve` | Approve payment | `payments.approve` | `dealer_admin`, `finance_admin` |
 | `POST` | `/api/payments/:id/reject` | Reject payment | `payments.approve` | `dealer_admin`, `finance_admin` |
 | `GET` | `/api/payments/reconcile` | Auto-reconcile payments | `payments.approve` | `finance_admin`, `super_admin` |
+| `POST` | `/api/payments/gateway/init` | Initialize Razorpay payment | `payments.create` | `dealer_admin`, `dealer_staff` |
+| `POST` | `/api/payments/webhook/razorpay` | Razorpay Webhook (Public) | - | Public |
 
 **Create Payment Request (multipart/form-data):**
 ```
