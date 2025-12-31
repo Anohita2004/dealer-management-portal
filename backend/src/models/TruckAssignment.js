@@ -56,12 +56,33 @@ module.exports = (sequelize, DataTypes) => {
       status: {
         type: DataTypes.ENUM(
           "assigned",
+          "en_route_to_warehouse",
           "picked_up",
           "in_transit",
           "delivered",
           "cancelled"
         ),
         defaultValue: "assigned",
+      },
+      startLocationLat: {
+        type: DataTypes.DOUBLE,
+        allowNull: true,
+        comment: "Driver's start location latitude when tracking begins",
+      },
+      startLocationLng: {
+        type: DataTypes.DOUBLE,
+        allowNull: true,
+        comment: "Driver's start location longitude when tracking begins",
+      },
+      startTrackingAt: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        comment: "Timestamp when GPS tracking started",
+      },
+      warehouseArrivedAt: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        comment: "Timestamp when truck arrived at warehouse (geofencing detected)",
       },
       pickupAt: {
         type: DataTypes.DATE,
@@ -74,6 +95,11 @@ module.exports = (sequelize, DataTypes) => {
       estimatedDeliveryAt: {
         type: DataTypes.DATE,
         allowNull: true,
+      },
+      currentEta: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        comment: "Real-time ETA to dealer location (updated dynamically)",
       },
       notes: {
         type: DataTypes.TEXT,

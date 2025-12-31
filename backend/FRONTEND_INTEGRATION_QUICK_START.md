@@ -25,7 +25,31 @@ socket.on('connect', () => {
 // Listen for location updates
 socket.on('truck:location:update', (data) => {
   console.log('Location update:', data);
-  // data includes: truckId, driverPhone, lat, lng, speed, heading
+  // data includes: truckId, driverPhone, lat, lng, speed, heading, status, eta, warehouseProximity
+});
+
+// Listen for tracking started
+socket.on('truck:tracking:started', (data) => {
+  console.log('Tracking started:', data);
+  // data includes: assignmentId, orderId, startLocation, warehouse
+});
+
+// Listen for warehouse arrival (geofencing detected)
+socket.on('truck:warehouse:arrived', (data) => {
+  console.log('Warehouse arrived:', data);
+  // data includes: assignmentId, orderId, driverName, warehouse
+});
+
+// Listen for warehouse approaching
+socket.on('truck:warehouse:approaching', (data) => {
+  console.log('Approaching warehouse:', data);
+  // data includes: assignmentId, distanceMeters, warehouse
+});
+
+// Listen for ETA updates
+socket.on('truck:eta:updated', (data) => {
+  console.log('ETA updated:', data);
+  // data includes: assignmentId, eta, durationText, distanceText
 });
 
 // Listen for notifications
@@ -72,9 +96,11 @@ import { MapContainer, TileLayer, Marker } from 'react-leaflet';
 ## 📱 Key API Endpoints
 
 ### Location Tracking
+- `POST /api/tracking/start` - Start GPS tracking from driver's current location
 - `POST /api/tracking/location` - Update location (mobile app)
-- `GET /api/tracking/live` - Get all active locations (includes `driverPhone`)
-- `GET /api/tracking/order/:orderId` - Get order tracking details
+- `GET /api/tracking/live` - Get all active locations (includes `driverPhone`, warehouse, dealer)
+- `GET /api/tracking/order/:orderId` - Get order tracking details (includes all locations and ETA)
+- `GET /api/tracking/assignment/:id/eta` - Get current ETA for assignment
 
 ### Fleet Management
 - `GET /api/fleet/assignments` - List assignments (filtered by driver phone)
@@ -119,6 +145,7 @@ socket.on('notification', (data) => {
 
 ```javascript
 import { useLiveLocations } from './hooks/useLiveLocations';
+import { MapContainer, TileLayer, Marker, Polyline } from 'react-leaflet';
 
 function TrackingMap({ driverPhone }) {
   const { locations } = useLiveLocations(driverPhone);
@@ -126,6 +153,40 @@ function TrackingMap({ driverPhone }) {
   return (
     <MapContainer center={[20, 77]} zoom={5}>
       <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+      
+      {/* Warehouse marker (always shown) */}
+      {locations
+        .filter(loc => loc.warehouse?.lat && loc.warehouse?.lng)
+        .map(loc => (
+          <Marker 
+            key={`warehouse-${loc.assignmentId}`}
+            position={[loc.warehouse.lat, loc.warehouse.lng]}
+            icon={warehouseIcon}
+          >
+            <Popup>
+              <strong>Warehouse</strong><br />
+              {loc.warehouse.name}
+            </Popup>
+          </Marker>
+        ))}
+      
+      {/* Dealer marker (shown after pickup) */}
+      {locations
+        .filter(loc => loc.dealer?.lat && loc.dealer?.lng)
+        .map(loc => (
+          <Marker 
+            key={`dealer-${loc.assignmentId}`}
+            position={[loc.dealer.lat, loc.dealer.lng]}
+            icon={dealerIcon}
+          >
+            <Popup>
+              <strong>Dealer</strong><br />
+              {loc.dealer.businessName}
+            </Popup>
+          </Marker>
+        ))}
+      
+      {/* Truck marker (current location) */}
       {locations
         .filter(loc => loc.truck?.lat && loc.truck?.lng)
         .map(loc => (
@@ -136,7 +197,28 @@ function TrackingMap({ driverPhone }) {
             <Popup>
               <strong>{loc.driverName}</strong><br />
               Phone: {loc.driverPhone}<br />
-              Order: {loc.orderNumber}
+              Order: {loc.orderNumber}<br />
+              Status: {loc.status}<br />
+              {loc.currentEta && (
+                <>
+                  ETA: {new Date(loc.currentEta).toLocaleTimeString()}
+                </>
+              )}
+            </Popup>
+          </Marker>
+        ))}
+      
+      {/* Start location marker (if available) */}
+      {locations
+        .filter(loc => loc.startLocation?.lat && loc.startLocation?.lng)
+        .map(loc => (
+          <Marker 
+            key={`start-${loc.assignmentId}`}
+            position={[loc.startLocation.lat, loc.startLocation.lng]}
+            icon={startIcon}
+          >
+            <Popup>
+              <strong>Start Location</strong>
             </Popup>
           </Marker>
         ))}
@@ -149,10 +231,40 @@ function TrackingMap({ driverPhone }) {
 
 ## 📲 Mobile App Integration
 
+### Start GPS Tracking
+
+```javascript
+// Start tracking from driver's current location
+async function startTracking(assignmentId) {
+  try {
+    const location = await getCurrentPosition();
+    
+    const response = await fetch('/api/tracking/start', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        assignmentId: assignmentId,
+        lat: location.coords.latitude,
+        lng: location.coords.longitude
+      })
+    });
+    
+    const data = await response.json();
+    console.log('Tracking started:', data);
+    // Status changes to 'en_route_to_warehouse'
+  } catch (error) {
+    console.error('Failed to start tracking:', error);
+  }
+}
+```
+
 ### Send Location Updates
 
 ```javascript
-// Every 10 seconds
+// Every 10 seconds (after tracking has started)
 setInterval(async () => {
   const location = await getCurrentPosition();
   
@@ -170,13 +282,48 @@ setInterval(async () => {
       heading: location.coords.heading
     })
   });
+  
+  // Note: Geofencing automatically detects warehouse arrival
+  // Status changes to 'picked_up' when within 100m of warehouse
 }, 10000);
+```
+
+### Browser Geolocation (Web App)
+
+```javascript
+// Request location permission
+if (navigator.geolocation) {
+  navigator.geolocation.getCurrentPosition(
+    async (position) => {
+      const { latitude, longitude } = position.coords;
+      
+      // Start tracking or update location
+      await fetch('/api/tracking/start', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          assignmentId: assignmentId,
+          lat: latitude,
+          lng: longitude
+        })
+      });
+    },
+    (error) => {
+      console.error('Geolocation error:', error);
+    },
+    { enableHighAccuracy: true, timeout: 5000 }
+  );
+}
 ```
 
 ### Mark Pickup/Delivery
 
 ```javascript
-// Mark pickup
+// Note: Pickup is now automatic via geofencing when truck reaches warehouse (100m radius)
+// Manual pickup is still available if needed:
 await fetch(`/api/fleet/assignments/${assignmentId}/pickup`, {
   method: 'POST',
   headers: { 'Authorization': `Bearer ${token}` }
@@ -230,6 +377,10 @@ const driverLocations = locations.filter(
 - [ ] Test real-time updates
 - [ ] Test notifications on status changes
 - [ ] Add mobile app location tracking
+- [ ] Implement start tracking endpoint
+- [ ] Display warehouse and dealer locations on map
+- [ ] Show ETA information
+- [ ] Handle geofencing events (warehouse arrival)
 
 ---
 

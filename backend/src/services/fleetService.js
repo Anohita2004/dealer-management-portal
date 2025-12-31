@@ -1,7 +1,8 @@
 // src/services/fleetService.js
-const { Truck, TruckAssignment, Order, Warehouse, sequelize } = require("../models");
+const { Truck, TruckAssignment, Order, Warehouse, Dealer, sequelize } = require("../models");
 const eventBus = require("./eventBus");
 const notificationService = require("./notificationService");
+const locationService = require("./locationService");
 
 /**
  * Assign truck to order
@@ -182,12 +183,16 @@ async function markPickup(assignmentId) {
       throw new Error("Assignment not found");
     }
 
-    if (assignment.status !== "assigned") {
+    // Allow pickup from either 'assigned' or 'en_route_to_warehouse' status
+    if (assignment.status !== "assigned" && assignment.status !== "en_route_to_warehouse") {
       throw new Error(`Cannot mark pickup. Current status: ${assignment.status}`);
     }
 
     assignment.status = "picked_up";
     assignment.pickupAt = new Date();
+    if (!assignment.warehouseArrivedAt) {
+      assignment.warehouseArrivedAt = new Date();
+    }
     await assignment.save({ transaction: t });
 
     // Update truck status
@@ -341,11 +346,266 @@ async function markDelivered(assignmentId) {
   }
 }
 
+/**
+ * Start GPS tracking from driver's current location
+ * @param {string} assignmentId - Assignment ID
+ * @param {number} startLat - Driver's start latitude
+ * @param {number} startLng - Driver's start longitude
+ * @returns {Promise<Object>} Updated assignment
+ */
+async function startTracking(assignmentId, startLat, startLng) {
+  const t = await sequelize.transaction();
+
+  try {
+    const assignment = await TruckAssignment.findByPk(assignmentId, {
+      include: [
+        { model: Order, as: "order" },
+        { model: Truck, as: "truck" },
+        { model: Warehouse, as: "warehouse" },
+      ],
+      transaction: t,
+    });
+
+    if (!assignment) {
+      throw new Error("Assignment not found");
+    }
+
+    if (assignment.status !== "assigned") {
+      throw new Error(`Cannot start tracking. Current status: ${assignment.status}`);
+    }
+
+    // Validate coordinates
+    if (!locationService.validateCoordinates(startLat, startLng)) {
+      throw new Error("Invalid start coordinates");
+    }
+
+    // Update assignment with start location and status
+    assignment.startLocationLat = startLat;
+    assignment.startLocationLng = startLng;
+    assignment.startTrackingAt = new Date();
+    assignment.status = "en_route_to_warehouse";
+    await assignment.save({ transaction: t });
+
+    await t.commit();
+
+    // Emit Socket.IO event
+    if (global.io) {
+      global.io.emit("truck:tracking:started", {
+        assignmentId: assignment.id,
+        orderId: assignment.orderId,
+        truckId: assignment.truckId,
+        driverPhone: assignment.driverPhone,
+        driverName: assignment.driverName,
+        startLocation: {
+          lat: startLat,
+          lng: startLng,
+        },
+        warehouse: assignment.warehouse ? {
+          id: assignment.warehouse.id,
+          name: assignment.warehouse.name,
+          lat: assignment.warehouse.lat,
+          lng: assignment.warehouse.lng,
+        } : null,
+        message: "GPS tracking started from driver's location",
+      });
+
+      // Notify users tracking this order
+      global.io.to(`order:${assignment.orderId}`).emit("order:tracking:started", {
+        orderId: assignment.orderId,
+        assignmentId: assignment.id,
+        truckId: assignment.truckId,
+        driverPhone: assignment.driverPhone,
+        startLocation: { lat: startLat, lng: startLng },
+        message: "Driver has started GPS tracking. Truck is en route to warehouse.",
+      });
+    }
+
+    return assignment;
+  } catch (error) {
+    await t.rollback();
+    throw error;
+  }
+}
+
+/**
+ * Detect warehouse arrival using geofencing
+ * @param {string} assignmentId - Assignment ID
+ * @param {number} truckLat - Current truck latitude
+ * @param {number} truckLng - Current truck longitude
+ * @returns {Promise<Object|null>} Updated assignment if arrival detected, null otherwise
+ */
+async function detectWarehouseArrival(assignmentId, truckLat, truckLng) {
+  try {
+    const assignment = await TruckAssignment.findByPk(assignmentId, {
+      include: [
+        { model: Order, as: "order", include: [{ model: Dealer, as: "dealer" }] },
+        { model: Truck, as: "truck" },
+        { model: Warehouse, as: "warehouse" },
+      ],
+    });
+
+    if (!assignment) {
+      throw new Error("Assignment not found");
+    }
+
+    // Only check if status is en_route_to_warehouse
+    if (assignment.status !== "en_route_to_warehouse") {
+      return null;
+    }
+
+    // Check if already arrived (prevent duplicate triggers)
+    if (assignment.warehouseArrivedAt) {
+      return null;
+    }
+
+    // Check geofencing (100m radius)
+    const isNear = await locationService.isNearWarehouse(
+      truckLat,
+      truckLng,
+      assignment.warehouse,
+      100
+    );
+
+    if (!isNear) {
+      return null;
+    }
+
+    // Truck has arrived at warehouse - automatically mark pickup
+    const t = await sequelize.transaction();
+    try {
+      assignment.status = "picked_up";
+      assignment.pickupAt = new Date();
+      assignment.warehouseArrivedAt = new Date();
+      await assignment.save({ transaction: t });
+
+      // Update truck status
+      const truck = await Truck.findByPk(assignment.truckId, { transaction: t });
+      if (truck) {
+        truck.status = "in_transit";
+        await truck.save({ transaction: t });
+      }
+
+      // Update order status
+      if (assignment.order) {
+        assignment.order.status = "In Transit";
+        await assignment.order.save({ transaction: t });
+      }
+
+      await t.commit();
+
+      // Notify superadmin and managers about pickup
+      await notificationService.createRoleNotification({
+        roleName: "super_admin",
+        title: "Order Picked Up from Warehouse - GPS Tracking Active",
+        message: `Driver ${assignment.driverName} (${assignment.driverPhone || 'N/A'}) reached warehouse ${assignment.warehouse?.name || 'N/A'} and picked up order ${assignment.order?.orderNumber || 'N/A'}. Live GPS location tracking is now active.`,
+        type: "fleet",
+        actionUrl: `/fleet/assignments/${assignment.id}`,
+        priority: "high",
+        relatedId: assignment.orderId,
+        relatedType: "order",
+      });
+
+      // Notify regional/area/territory managers based on order's dealer hierarchy
+      if (assignment.order?.dealer) {
+        const dealer = assignment.order.dealer;
+        
+        if (dealer.territoryId) {
+          await notificationService.createHierarchyBroadcast({
+            hierarchyLevel: "territory",
+            hierarchyId: dealer.territoryId,
+            title: "Order Picked Up - Tracking Active",
+            message: `Order ${assignment.order.orderNumber} picked up from warehouse. Driver: ${assignment.driverName}. Live tracking available.`,
+            type: "fleet",
+            priority: "normal",
+            relatedId: assignment.orderId,
+            relatedType: "order",
+            actionUrl: `/orders/${assignment.orderId}/tracking`,
+            includeManagers: false,
+          });
+        }
+
+        if (dealer.areaId) {
+          await notificationService.createRoleNotification({
+            roleName: "area_manager",
+            title: "Order Picked Up",
+            message: `Order ${assignment.order.orderNumber} picked up. Driver: ${assignment.driverName} (${assignment.driverPhone || 'N/A'}).`,
+            type: "fleet",
+            relatedId: assignment.orderId,
+            relatedType: "order",
+            actionUrl: `/orders/${assignment.orderId}/tracking`,
+            scope: { areaId: dealer.areaId },
+          });
+        }
+
+        if (dealer.regionId) {
+          await notificationService.createRoleNotification({
+            roleName: "regional_manager",
+            title: "Order Picked Up - Live Tracking",
+            message: `Order ${assignment.order.orderNumber} picked up. Driver: ${assignment.driverName} (${assignment.driverPhone || 'N/A'}). Live GPS tracking active.`,
+            type: "fleet",
+            relatedId: assignment.orderId,
+            relatedType: "order",
+            actionUrl: `/orders/${assignment.orderId}/tracking`,
+            scope: { regionId: dealer.regionId },
+          });
+        }
+      }
+
+      // Emit Socket.IO events
+      if (global.io) {
+        global.io.emit("truck:warehouse:arrived", {
+          assignmentId: assignment.id,
+          orderId: assignment.orderId,
+          truckId: assignment.truckId,
+          driverPhone: assignment.driverPhone,
+          driverName: assignment.driverName,
+          warehouse: assignment.warehouse ? {
+            id: assignment.warehouse.id,
+            name: assignment.warehouse.name,
+          } : null,
+          message: "Truck arrived at warehouse. Order picked up automatically via geofencing.",
+        });
+
+        global.io.to(`order:${assignment.orderId}`).emit("order:tracking:update", {
+          orderId: assignment.orderId,
+          assignment: {
+            id: assignment.id,
+            status: assignment.status,
+            driverPhone: assignment.driverPhone,
+            driverName: assignment.driverName,
+          },
+          message: "Order picked up from warehouse. Truck is now en route to dealer.",
+          warehouseArrived: true,
+        });
+      }
+
+      // Emit event bus event
+      await eventBus.emit("truck:warehouse:arrived", {
+        assignmentId: assignment.id,
+        orderId: assignment.orderId,
+        truckId: assignment.truckId,
+        warehouseId: assignment.warehouseId,
+        driverName: assignment.driverName,
+      });
+
+      return assignment;
+    } catch (error) {
+      await t.rollback();
+      throw error;
+    }
+  } catch (error) {
+    console.error("Error detecting warehouse arrival:", error);
+    throw error;
+  }
+}
+
 module.exports = {
   assignTruckToOrder,
   updateOrderStatusOnAssignment,
   notifyAssignment,
   markPickup,
   markDelivered,
+  startTracking,
+  detectWarehouseArrival,
 };
 

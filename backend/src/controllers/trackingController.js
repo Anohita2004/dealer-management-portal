@@ -1,13 +1,91 @@
 // src/controllers/trackingController.js
-const { Truck, TruckAssignment, TruckLocationHistory, Order, Warehouse } = require("../models");
+const { Truck, TruckAssignment, TruckLocationHistory, Order, Warehouse, Dealer } = require("../models");
 const { Op } = require("sequelize");
 const RBACEngine = require("../services/rbacEngine");
 const locationService = require("../services/locationService");
 const eventBus = require("../services/eventBus");
+const fleetService = require("../services/fleetService");
+const etaService = require("../services/etaService");
 
 // Rate limiting map (truckId -> lastUpdateTime)
 const rateLimitMap = new Map();
 const RATE_LIMIT_MS = 10000; // 10 seconds
+
+// ETA update tracking (assignmentId -> lastETAUpdate)
+const etaUpdateMap = new Map();
+const ETA_UPDATE_INTERVAL = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Start GPS tracking from driver's current location
+ * Drivers can only start tracking for their own assignments
+ */
+exports.startTracking = async (req, res) => {
+  try {
+    const { assignmentId, lat, lng } = req.body;
+
+    if (!assignmentId || lat === undefined || lng === undefined) {
+      return res.status(400).json({
+        error: "Missing required fields: assignmentId, lat, lng",
+      });
+    }
+
+    // Validate coordinates
+    if (!locationService.validateCoordinates(lat, lng)) {
+      return res.status(400).json({ error: "Invalid coordinates" });
+    }
+
+    // Get assignment
+    const assignment = await TruckAssignment.findByPk(assignmentId, {
+      include: [
+        { model: Order, as: "order" },
+        { model: Truck, as: "truck" },
+        { model: Warehouse, as: "warehouse" },
+      ],
+    });
+
+    if (!assignment) {
+      return res.status(404).json({ error: "Assignment not found" });
+    }
+
+    // Driver-specific access check
+    const userRole = req.user.roleDetails?.name || req.user.role;
+    if (userRole === 'driver') {
+      if (assignment.driverName !== req.user.username && 
+          assignment.driverPhone !== req.user.phoneNumber) {
+        return res.status(403).json({ 
+          error: "Not authorized to start tracking for this assignment" 
+        });
+      }
+    } else {
+      // Managers/admins check access through order
+      const canAccess = await RBACEngine.canAccessResource(req.user, assignment.order);
+      if (!canAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+    }
+
+    // Start tracking
+    const updatedAssignment = await fleetService.startTracking(assignmentId, lat, lng);
+
+    res.json({
+      success: true,
+      assignmentId: updatedAssignment.id,
+      status: updatedAssignment.status,
+      startLocation: {
+        lat: updatedAssignment.startLocationLat,
+        lng: updatedAssignment.startLocationLng,
+      },
+      startTrackingAt: updatedAssignment.startTrackingAt,
+      message: "GPS tracking started from driver's location",
+    });
+  } catch (error) {
+    console.error("Start tracking error:", error);
+    res.status(500).json({ 
+      error: "Failed to start tracking", 
+      details: error.message 
+    });
+  }
+};
 
 /**
  * Update truck location (mobile app endpoint)
@@ -47,8 +125,26 @@ exports.updateLocation = async (req, res) => {
     const activeAssignment = await TruckAssignment.findOne({
       where: {
         truckId: truck.id,
-        status: { [Op.in]: ["assigned", "picked_up", "in_transit"] },
+        status: { [Op.in]: ["assigned", "en_route_to_warehouse", "picked_up", "in_transit"] },
       },
+      include: [
+        {
+          model: Warehouse,
+          as: "warehouse",
+          attributes: ["id", "name", "lat", "lng"],
+        },
+        {
+          model: Order,
+          as: "order",
+          include: [
+            {
+              model: Dealer,
+              as: "dealer",
+              attributes: ["id", "businessName", "lat", "lng"],
+            },
+          ],
+        },
+      ],
     });
 
     if (!activeAssignment) {
@@ -89,6 +185,79 @@ exports.updateLocation = async (req, res) => {
     // Update rate limit
     rateLimitMap.set(truckId, now);
 
+    // Geofencing: Check if truck has arrived at warehouse
+    let warehouseArrived = false;
+    if (activeAssignment.status === "en_route_to_warehouse" && activeAssignment.warehouse) {
+      try {
+        const arrivalResult = await fleetService.detectWarehouseArrival(
+          activeAssignment.id,
+          lat,
+          lng
+        );
+        if (arrivalResult) {
+          warehouseArrived = true;
+          // Reload assignment to get updated status
+          await activeAssignment.reload();
+        }
+      } catch (error) {
+        console.error("Error detecting warehouse arrival:", error);
+      }
+    }
+
+    // Calculate ETA if needed (update every 5 minutes or when location changes significantly)
+    let etaResult = null;
+    const lastETAUpdate = etaUpdateMap.get(activeAssignment.id);
+    const shouldUpdateETA = !lastETAUpdate || (now - lastETAUpdate > ETA_UPDATE_INTERVAL);
+    
+    if (shouldUpdateETA && (activeAssignment.status === "picked_up" || activeAssignment.status === "in_transit")) {
+      try {
+        etaResult = await etaService.updateETAForAssignment(activeAssignment.id);
+        etaUpdateMap.set(activeAssignment.id, now);
+        
+        // Emit ETA update event
+        if (global.io) {
+          global.io.emit("truck:eta:updated", {
+            assignmentId: activeAssignment.id,
+            orderId: activeAssignment.orderId,
+            eta: etaResult.eta,
+            durationText: etaResult.durationText,
+            distanceText: etaResult.distanceText,
+          });
+        }
+      } catch (error) {
+        console.error("Error updating ETA:", error);
+      }
+    }
+
+    // Check warehouse proximity for approaching notification
+    let warehouseProximity = null;
+    if (activeAssignment.warehouse && activeAssignment.status === "en_route_to_warehouse") {
+      const distanceMeters = locationService.getDistanceMeters(
+        lat,
+        lng,
+        activeAssignment.warehouse.lat,
+        activeAssignment.warehouse.lng
+      );
+      warehouseProximity = {
+        distanceMeters: Math.round(distanceMeters),
+        isApproaching: distanceMeters <= 200, // Within 200m
+      };
+
+      if (warehouseProximity.isApproaching && !warehouseArrived) {
+        if (global.io) {
+          global.io.emit("truck:warehouse:approaching", {
+            assignmentId: activeAssignment.id,
+            orderId: activeAssignment.orderId,
+            distanceMeters: Math.round(distanceMeters),
+            warehouse: {
+              id: activeAssignment.warehouse.id,
+              name: activeAssignment.warehouse.name,
+            },
+          });
+        }
+      }
+    }
+
     // Emit Socket.IO event with driver phone number for map tracking
     if (global.io) {
       global.io.emit("truck:location:update", {
@@ -102,6 +271,14 @@ exports.updateLocation = async (req, res) => {
         speed,
         heading,
         timestamp: historyEntry.timestamp,
+        status: activeAssignment.status,
+        eta: etaResult ? {
+          timestamp: etaResult.eta,
+          durationText: etaResult.durationText,
+          distanceText: etaResult.distanceText,
+        } : null,
+        warehouseProximity,
+        warehouseArrived,
       });
 
       // Emit to order-specific room
@@ -120,6 +297,24 @@ exports.updateLocation = async (req, res) => {
           heading,
           timestamp: historyEntry.timestamp,
         },
+        warehouse: activeAssignment.warehouse ? {
+          id: activeAssignment.warehouse.id,
+          name: activeAssignment.warehouse.name,
+          lat: activeAssignment.warehouse.lat,
+          lng: activeAssignment.warehouse.lng,
+        } : null,
+        dealer: (activeAssignment.status === "picked_up" || activeAssignment.status === "in_transit") && activeAssignment.order?.dealer ? {
+          id: activeAssignment.order.dealer.id,
+          businessName: activeAssignment.order.dealer.businessName,
+          lat: activeAssignment.order.dealer.lat,
+          lng: activeAssignment.order.dealer.lng,
+        } : null,
+        eta: etaResult ? {
+          timestamp: etaResult.eta,
+          durationText: etaResult.durationText,
+          distanceText: etaResult.distanceText,
+        } : null,
+        warehouseArrived,
       });
     }
 
@@ -157,7 +352,7 @@ exports.getLiveLocations = async (req, res) => {
 
     // Build where clause
     const where = {
-      status: { [Op.in]: ["assigned", "picked_up", "in_transit"] },
+      status: { [Op.in]: ["assigned", "en_route_to_warehouse", "picked_up", "in_transit"] },
     };
 
     // Driver-specific filtering: filter by driver's phone number or username
@@ -182,11 +377,18 @@ exports.getLiveLocations = async (req, res) => {
           model: Order,
           as: "order",
           attributes: ["id", "orderNumber", "dealerId"],
+          include: [
+            {
+              model: Dealer,
+              as: "dealer",
+              attributes: ["id", "businessName", "lat", "lng", "address", "city"],
+            },
+          ],
         },
         {
           model: Warehouse,
           as: "warehouse",
-          attributes: ["id", "name", "lat", "lng"],
+          attributes: ["id", "name", "lat", "lng", "address", "city"],
         },
       ],
     });
@@ -194,6 +396,9 @@ exports.getLiveLocations = async (req, res) => {
     // Filter by user's scope (for managers/admins)
     const scopedLocations = [];
     for (const assignment of activeAssignments) {
+      // Include dealer location if status is picked_up or in_transit
+      const includeDealer = assignment.status === "picked_up" || assignment.status === "in_transit";
+      
       if (userRole === 'driver') {
         // Drivers see all their assignments (already filtered)
         scopedLocations.push({
@@ -208,10 +413,30 @@ exports.getLiveLocations = async (req, res) => {
             lng: assignment.truck.currentLng,
             lastUpdate: assignment.truck.lastLocationUpdate,
           },
-          warehouse: assignment.warehouse,
+          warehouse: assignment.warehouse ? {
+            id: assignment.warehouse.id,
+            name: assignment.warehouse.name,
+            lat: assignment.warehouse.lat,
+            lng: assignment.warehouse.lng,
+            address: assignment.warehouse.address,
+            city: assignment.warehouse.city,
+          } : null,
+          dealer: includeDealer && assignment.order?.dealer ? {
+            id: assignment.order.dealer.id,
+            businessName: assignment.order.dealer.businessName,
+            lat: assignment.order.dealer.lat,
+            lng: assignment.order.dealer.lng,
+            address: assignment.order.dealer.address,
+            city: assignment.order.dealer.city,
+          } : null,
+          startLocation: assignment.startLocationLat && assignment.startLocationLng ? {
+            lat: assignment.startLocationLat,
+            lng: assignment.startLocationLng,
+          } : null,
           status: assignment.status,
           driverName: assignment.driverName,
-          driverPhone: assignment.driverPhone, // Include phone number for map tracking
+          driverPhone: assignment.driverPhone,
+          currentEta: assignment.currentEta,
         });
       } else {
         // Managers/admins check access through order
@@ -229,10 +454,30 @@ exports.getLiveLocations = async (req, res) => {
               lng: assignment.truck.currentLng,
               lastUpdate: assignment.truck.lastLocationUpdate,
             },
-            warehouse: assignment.warehouse,
+            warehouse: assignment.warehouse ? {
+              id: assignment.warehouse.id,
+              name: assignment.warehouse.name,
+              lat: assignment.warehouse.lat,
+              lng: assignment.warehouse.lng,
+              address: assignment.warehouse.address,
+              city: assignment.warehouse.city,
+            } : null,
+            dealer: includeDealer && assignment.order?.dealer ? {
+              id: assignment.order.dealer.id,
+              businessName: assignment.order.dealer.businessName,
+              lat: assignment.order.dealer.lat,
+              lng: assignment.order.dealer.lng,
+              address: assignment.order.dealer.address,
+              city: assignment.order.dealer.city,
+            } : null,
+            startLocation: assignment.startLocationLat && assignment.startLocationLng ? {
+              lat: assignment.startLocationLat,
+              lng: assignment.startLocationLng,
+            } : null,
             status: assignment.status,
             driverName: assignment.driverName,
-            driverPhone: assignment.driverPhone, // Include phone number for map tracking
+            driverPhone: assignment.driverPhone,
+            currentEta: assignment.currentEta,
           });
         }
       }
@@ -268,6 +513,11 @@ exports.getOrderTracking = async (req, res) => {
             },
           ],
         },
+        {
+          model: Dealer,
+          as: "dealer",
+          attributes: ["id", "businessName", "lat", "lng", "address", "city"],
+        },
       ],
     });
 
@@ -299,6 +549,36 @@ exports.getOrderTracking = async (req, res) => {
       order: [["timestamp", "DESC"]],
     });
 
+    // Get route polyline if available (for map display)
+    let routePolyline = null;
+    if (order.truckAssignment.truck?.currentLat && order.truckAssignment.truck?.currentLng) {
+      try {
+        if (order.truckAssignment.status === "picked_up" || order.truckAssignment.status === "in_transit") {
+          // Route to dealer
+          if (order.dealer?.lat && order.dealer?.lng) {
+            routePolyline = await etaService.getRoutePolyline(
+              order.truckAssignment.truck.currentLat,
+              order.truckAssignment.truck.currentLng,
+              order.dealer.lat,
+              order.dealer.lng
+            );
+          }
+        } else if (order.truckAssignment.status === "en_route_to_warehouse") {
+          // Route to warehouse
+          if (order.truckAssignment.warehouse?.lat && order.truckAssignment.warehouse?.lng) {
+            routePolyline = await etaService.getRoutePolyline(
+              order.truckAssignment.truck.currentLat,
+              order.truckAssignment.truck.currentLng,
+              order.truckAssignment.warehouse.lat,
+              order.truckAssignment.warehouse.lng
+            );
+          }
+        }
+      } catch (error) {
+        console.error("Error getting route polyline:", error);
+      }
+    }
+
     res.json({
       orderId: order.id,
       orderNumber: order.orderNumber,
@@ -307,11 +587,18 @@ exports.getOrderTracking = async (req, res) => {
         id: order.truckAssignment.id,
         status: order.truckAssignment.status,
         driverName: order.truckAssignment.driverName,
-        driverPhone: order.truckAssignment.driverPhone, // Phone number for map tracking
+        driverPhone: order.truckAssignment.driverPhone,
         assignedAt: order.truckAssignment.assignedAt,
+        startTrackingAt: order.truckAssignment.startTrackingAt,
+        startLocation: order.truckAssignment.startLocationLat && order.truckAssignment.startLocationLng ? {
+          lat: order.truckAssignment.startLocationLat,
+          lng: order.truckAssignment.startLocationLng,
+        } : null,
+        warehouseArrivedAt: order.truckAssignment.warehouseArrivedAt,
         pickupAt: order.truckAssignment.pickupAt,
         deliveredAt: order.truckAssignment.deliveredAt,
         estimatedDeliveryAt: order.truckAssignment.estimatedDeliveryAt,
+        currentEta: order.truckAssignment.currentEta,
         truck: order.truckAssignment.truck,
         warehouse: order.truckAssignment.warehouse,
       },
@@ -322,6 +609,23 @@ exports.getOrderTracking = async (req, res) => {
             lastUpdate: order.truckAssignment.truck.lastLocationUpdate,
           }
         : null,
+      warehouse: order.truckAssignment.warehouse ? {
+        id: order.truckAssignment.warehouse.id,
+        name: order.truckAssignment.warehouse.name,
+        lat: order.truckAssignment.warehouse.lat,
+        lng: order.truckAssignment.warehouse.lng,
+        address: order.truckAssignment.warehouse.address,
+        city: order.truckAssignment.warehouse.city,
+      } : null,
+      dealer: (order.truckAssignment.status === "picked_up" || order.truckAssignment.status === "in_transit") && order.dealer ? {
+        id: order.dealer.id,
+        businessName: order.dealer.businessName,
+        lat: order.dealer.lat,
+        lng: order.dealer.lng,
+        address: order.dealer.address,
+        city: order.dealer.city,
+      } : null,
+      routePolyline,
       locationHistory: recentHistory.map((h) => ({
         lat: h.lat,
         lng: h.lng,
@@ -333,6 +637,46 @@ exports.getOrderTracking = async (req, res) => {
   } catch (error) {
     console.error("Get order tracking error:", error);
     res.status(500).json({ error: "Failed to get order tracking", details: error.message });
+  }
+};
+
+/**
+ * Get current ETA for assignment
+ */
+exports.getAssignmentETA = async (req, res) => {
+  try {
+    const assignment = await TruckAssignment.findByPk(req.params.id, {
+      include: [
+        { model: Order, as: "order" },
+      ],
+    });
+
+    if (!assignment) {
+      return res.status(404).json({ error: "Assignment not found" });
+    }
+
+    // Check access
+    const canAccess = await RBACEngine.canAccessResource(req.user, assignment.order);
+    if (!canAccess) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    // Update ETA
+    const etaResult = await etaService.updateETAForAssignment(assignment.id);
+
+    res.json({
+      assignmentId: assignment.id,
+      orderId: assignment.orderId,
+      eta: etaResult.eta,
+      durationSeconds: etaResult.durationSeconds,
+      durationText: etaResult.durationText,
+      distanceMeters: etaResult.distanceMeters,
+      distanceText: etaResult.distanceText,
+      provider: etaResult.provider,
+    });
+  } catch (error) {
+    console.error("Get assignment ETA error:", error);
+    res.status(500).json({ error: "Failed to get ETA", details: error.message });
   }
 };
 

@@ -340,10 +340,20 @@ exports.updateAssignmentStatus = async (req, res) => {
       return res.status(404).json({ error: "Assignment not found" });
     }
 
-    // Check access
-    const canAccess = await RBACEngine.canAccessResource(req.user, assignment.order);
-    if (!canAccess) {
-      return res.status(403).json({ error: "Access denied" });
+    // Driver-specific access check
+    const userRole = req.user.roleDetails?.name || req.user.role;
+    if (userRole === 'driver') {
+      // Drivers can only update status for their own assignments
+      if (assignment.driverName !== req.user.username && 
+          assignment.driverPhone !== req.user.phoneNumber) {
+        return res.status(403).json({ error: "Access denied - This is not your assignment" });
+      }
+    } else {
+      // Managers/admins check access through order
+      const canAccess = await RBACEngine.canAccessResource(req.user, assignment.order);
+      if (!canAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
     }
 
     // Validate status transition
