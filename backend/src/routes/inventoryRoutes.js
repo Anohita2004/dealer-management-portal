@@ -58,4 +58,40 @@ router.get(
   inventoryController.exportInventory
 );
 
+// ✅ Get low stock alerts
+router.get(
+  "/alerts/low-stock",
+  authenticate,
+  authorize("inventory_user", "super_admin", "key_user","dealer_admin", "territory_manager","area_manager","regional_manager","regional_admin","technical_admin"),
+  checkPermission("inventory.view"),
+  inventoryController.getLowStockAlerts
+);
+
+// ✅ Get inventory for specific plant/warehouse (must come before /:id routes)
+// Both routes point to the same handler - plant and warehouse are the same
+router.get(
+  "/plant/:plantCode",
+  authenticate,
+  authorize("inventory_user", "super_admin", "key_user","dealer_admin", "territory_manager","area_manager","regional_manager","regional_admin","technical_admin"),
+  checkPermission("inventory.view"),
+  inventoryController.getPlantInventory
+);
+
+router.get(
+  "/warehouse/:warehouseCode",
+  authenticate,
+  authorize("inventory_user", "super_admin", "key_user","dealer_admin", "territory_manager","area_manager","regional_manager","regional_admin","technical_admin"),
+  checkPermission("inventory.view"),
+  inventoryController.getPlantInventory
+);
+
+// ✅ Adjust stock level (must come before /:id routes)
+router.patch(
+  "/:id/adjust",
+  authenticate,
+  authorize("inventory_user", "super_admin"),
+  checkPermission("inventory.manage"),
+  inventoryController.adjustStock
+);
+
 module.exports = router;
