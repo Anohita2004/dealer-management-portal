@@ -169,9 +169,18 @@ const resetPasswordConfirm = async (req, res) => {
   }
 };
 
+const getMe = async (req, res) => {
+  // req.user is already populated by authenticate middleware
+  if (!req.user) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+  return res.json({ user: req.user });
+};
+
 module.exports = {
   login,
   verifyOTP,
   resetPassword,
   resetPasswordConfirm,
+  getMe,
 };
