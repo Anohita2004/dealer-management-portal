@@ -109,9 +109,31 @@ exports.createWarehouse = async (req, res) => {
       email,
     } = req.body;
 
+    // Validate required fields
+    if (!warehouseCode || !name) {
+      return res.status(400).json({ error: "Warehouse code and name are required" });
+    }
+
     // Validate coordinates
     if (!locationService.validateCoordinates(lat, lng)) {
       return res.status(400).json({ error: "Invalid coordinates" });
+    }
+
+    // Role-based validation: Regional admin can only create warehouses in their region
+    const role = req.user.roleDetails?.name || req.user.role;
+    if (role === 'regional_admin') {
+      if (!req.user.regionId) {
+        return res.status(403).json({ error: "Regional admin must be assigned to a region" });
+      }
+      if (!regionId) {
+        return res.status(400).json({ error: "Region ID is required" });
+      }
+      if (regionId !== req.user.regionId) {
+        return res.status(403).json({ 
+          error: "Cannot create warehouse outside your region",
+          message: `You can only create warehouses in region ${req.user.regionId}`
+        });
+      }
     }
 
     // Check if warehouse code already exists
@@ -120,7 +142,11 @@ exports.createWarehouse = async (req, res) => {
     });
 
     if (existing) {
-      return res.status(400).json({ error: "Warehouse code already exists" });
+      return res.status(400).json({ 
+        error: "Warehouse code already exists",
+        message: `A warehouse with code "${warehouseCode}" already exists. Please use a different code.`,
+        field: "warehouseCode"
+      });
     }
 
     const warehouse = await Warehouse.create({
@@ -140,10 +166,28 @@ exports.createWarehouse = async (req, res) => {
       isActive: true,
     });
 
+    console.log("✅ Warehouse created successfully:", warehouse.warehouseCode, "by", req.user.username);
     res.status(201).json(warehouse);
   } catch (error) {
-    console.error("Create warehouse error:", error);
-    res.status(500).json({ error: "Failed to create warehouse", details: error.message });
+    console.error("❌ Create warehouse error:", error);
+    console.error("❌ Error stack:", error.stack);
+    
+    // Handle unique constraint errors
+    if (error.name === 'SequelizeUniqueConstraintError') {
+      const field = error.errors?.[0]?.path || 'field';
+      const value = error.errors?.[0]?.value;
+      return res.status(400).json({ 
+        error: `${field} must be unique`,
+        message: `A warehouse with ${field} "${value}" already exists.`,
+        field: field,
+        value: value
+      });
+    }
+
+    res.status(500).json({ 
+      error: "Failed to create warehouse",
+      message: process.env.NODE_ENV === "development" ? error.message : undefined
+    });
   }
 };
 
@@ -164,7 +208,25 @@ exports.updateWarehouse = async (req, res) => {
       return res.status(403).json({ error: "Access denied" });
     }
 
-    const { lat, lng, ...updateData } = req.body;
+    const { lat, lng, regionId, ...updateData } = req.body;
+
+    // Role-based validation: Regional admin can only update warehouses in their region
+    const role = req.user.roleDetails?.name || req.user.role;
+    if (role === 'regional_admin') {
+      if (warehouse.regionId !== req.user.regionId) {
+        return res.status(403).json({ 
+          error: "Cannot update warehouse outside your region",
+          message: `You can only update warehouses in region ${req.user.regionId}`
+        });
+      }
+      // Prevent changing regionId to a different region
+      if (regionId && regionId !== req.user.regionId) {
+        return res.status(403).json({ 
+          error: "Cannot move warehouse to a different region",
+          message: `You can only assign warehouses to region ${req.user.regionId}`
+        });
+      }
+    }
 
     // Validate coordinates if provided
     if (lat !== undefined || lng !== undefined) {
@@ -177,12 +239,22 @@ exports.updateWarehouse = async (req, res) => {
       updateData.lng = finalLng;
     }
 
+    // Include regionId in update if provided
+    if (regionId !== undefined) {
+      updateData.regionId = regionId;
+    }
+
     await warehouse.update(updateData);
 
+    console.log("✅ Warehouse updated successfully:", warehouse.warehouseCode, "by", req.user.username);
     res.json(warehouse);
   } catch (error) {
-    console.error("Update warehouse error:", error);
-    res.status(500).json({ error: "Failed to update warehouse", details: error.message });
+    console.error("❌ Update warehouse error:", error);
+    console.error("❌ Error stack:", error.stack);
+    res.status(500).json({ 
+      error: "Failed to update warehouse",
+      message: process.env.NODE_ENV === "development" ? error.message : undefined
+    });
   }
 };
 

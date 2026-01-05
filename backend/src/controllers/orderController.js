@@ -317,6 +317,23 @@ exports.getAllOrders = async (req, res) => {
 
     const query = { ...req.query };
 
+    // Sanitize search parameter - escape special characters for SQL LIKE
+    if (query.search) {
+      // Decode URL-encoded characters first (e.g., + becomes space)
+      query.search = decodeURIComponent(query.search);
+      
+      // Escape special characters that could break SQL LIKE queries
+      // Only escape %, _, and backslash - don't escape spaces or hyphens
+      query.search = query.search
+        .replace(/[%_\\]/g, '\\$&') // Escape %, _, and backslash
+        .trim();
+      
+      // If search is empty after sanitization, remove it
+      if (!query.search) {
+        delete query.search;
+      }
+    }
+
     // Normalize status: map 'draft' to 'Pending' and handle Title Case for Order model
     if (query.status) {
       const statusMap = {
@@ -340,10 +357,10 @@ exports.getAllOrders = async (req, res) => {
 
     const { buildAdvancedWhere } = require('../utils/filterHelper');
     const whereClause = buildAdvancedWhere(query, {
-      searchFields: ['orderNumber', 'notes', 'status'],
+      searchFields: ['orderNumber', 'notes'], // Removed 'status' - it's an ENUM and can't use LIKE
       dateFields: ['createdAt', 'updatedAt'],
       numberFields: ['totalAmount'],
-      exactFields: ['status', 'dealerId', 'approvalStage', 'approvalStatus']
+      exactFields: ['status', 'dealerId', 'approvalStage', 'approvalStatus'] // status is handled here as exact match
     });
 
     // If scoping middleware populated a scope, honor it
@@ -358,23 +375,55 @@ exports.getAllOrders = async (req, res) => {
     const { count, rows } = await Order.findAndCountAll({
       where: whereClause,
       include: [
-        { model: OrderItem, as: "items", include: [{ model: Material, as: "material" }] },
-        { model: Dealer, as: "dealer" },
+        { 
+          model: OrderItem, 
+          as: "items", 
+          required: false, // Left join - don't fail if no items
+          include: [{ 
+            model: Material, 
+            as: "material",
+            required: false // Left join - don't fail if material is missing
+          }] 
+        },
+        { 
+          model: Dealer, 
+          as: "dealer",
+          required: false // Left join - don't fail if dealer is missing
+        },
       ],
       offset,
-      limit: parseInt(limit),
+      limit: parseInt(limit, 10),
       order: [["createdAt", "DESC"]],
+      distinct: true, // Important when using includes with count
+    });
+
+    // Log response for debugging (only in development)
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`✅ getAllOrders: Returning ${rows.length} orders (total: ${count})`);
+      console.log(`📋 Query params:`, { status: query.status, search: query.search, limit, page });
+    }
+
+    // Disable caching for dynamic order queries to prevent stale data
+    res.set({
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
     });
 
     res.json({
       orders: rows,
       total: count,
-      page: parseInt(page),
-      totalPages: Math.ceil(count / limit)
+      page: parseInt(page, 10),
+      totalPages: Math.ceil(count / parseInt(limit, 10))
     });
   } catch (err) {
-    console.error("getAllOrders:", err);
-    res.status(500).json({ error: "Failed to load orders" });
+    console.error("❌ getAllOrders error:", err);
+    console.error("❌ getAllOrders error stack:", err.stack);
+    console.error("❌ Query params:", req.query);
+    res.status(500).json({ 
+      error: "Failed to load orders",
+      message: process.env.NODE_ENV === "development" ? err.message : undefined
+    });
   }
 };
 

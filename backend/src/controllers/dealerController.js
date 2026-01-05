@@ -80,6 +80,32 @@ const createDealer = async (req, res) => {
   try {
     const payload = { ...req.body };
 
+    // Validate required fields
+    if (!payload.dealerCode) {
+      await t.rollback();
+      return res.status(400).json({ error: "Dealer code is required" });
+    }
+
+    if (!payload.businessName) {
+      await t.rollback();
+      return res.status(400).json({ error: "Business name is required" });
+    }
+
+    // Check if dealerCode already exists
+    const existingDealer = await Dealer.findOne({
+      where: { dealerCode: payload.dealerCode },
+      transaction: t,
+    });
+
+    if (existingDealer) {
+      await t.rollback();
+      return res.status(400).json({ 
+        error: "Dealer code already exists",
+        message: `A dealer with code "${payload.dealerCode}" already exists. Please use a different code.`,
+        field: "dealerCode"
+      });
+    }
+
     // Ensure new dealer starts in pending_approval state and inactive
     payload.status = "pending_approval";
     payload.isActive = false;
@@ -107,11 +133,44 @@ const createDealer = async (req, res) => {
 
     await t.commit();
 
+    console.log("✅ Dealer created successfully:", dealer.dealerCode);
     res.status(201).json(dealer);
   } catch (error) {
     await t.rollback();
-    console.error("Create dealer error:", error);
-    res.status(500).json({ error: "Failed to create dealer" });
+    
+    // Handle Sequelize unique constraint errors
+    if (error.name === 'SequelizeUniqueConstraintError') {
+      const field = error.errors?.[0]?.path || 'field';
+      const value = error.errors?.[0]?.value;
+      console.error(`❌ Duplicate ${field}:`, value);
+      
+      return res.status(400).json({ 
+        error: `${field} must be unique`,
+        message: `A dealer with ${field} "${value}" already exists. Please use a different value.`,
+        field: field,
+        value: value
+      });
+    }
+
+    // Handle Sequelize validation errors
+    if (error.name === 'SequelizeValidationError') {
+      const messages = error.errors.map(e => e.message).join(', ');
+      console.error("❌ Validation error:", messages);
+      
+      return res.status(400).json({ 
+        error: "Validation failed",
+        message: messages,
+        details: error.errors
+      });
+    }
+
+    // Handle other errors
+    console.error("❌ Create dealer error:", error);
+    console.error("❌ Error stack:", error.stack);
+    res.status(500).json({ 
+      error: "Failed to create dealer",
+      message: process.env.NODE_ENV === "development" ? error.message : undefined
+    });
   }
 };
 

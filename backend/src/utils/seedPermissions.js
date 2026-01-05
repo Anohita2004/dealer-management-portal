@@ -150,6 +150,7 @@ const ROLE_TO_PERMS = {
     "users.view", "users.edit",
     "system.logs", "system.config",
     "materials.view", "materials.manage",
+    "dealer.view", "dealer.create", "dealer.update",
     "messages.view", "messages.send",
     "notifications.view", "notifications.send"
   ],
@@ -167,11 +168,11 @@ const ROLE_TO_PERMS = {
     "dashboard.view.regional",
     "messages.view", "messages.send",
     "notifications.view", "notifications.send",
-    "fleet.view", "fleet.assign", "fleet.track", "warehouse.view"
+    "fleet.view", "fleet.assign", "fleet.track", "warehouse.view", "warehouse.manage"
   ],
 
   regional_manager: [
-    "dealer.view", "dealer.update",
+    "dealer.view", "dealer.create", "dealer.update",
     "users.view", "users.create", "users.edit",
     "areas.view", "territories.view",
     "orders.view", "orders.approve", "orders.reject",

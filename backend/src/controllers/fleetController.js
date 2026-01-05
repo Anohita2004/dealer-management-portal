@@ -118,6 +118,11 @@ exports.getAssignments = async (req, res) => {
           whereConditions.push({ orderId: { [Op.in]: orderIds } });
         } else {
           // User has no access to any orders, return empty
+          res.set({
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          });
           return res.json({
             assignments: [],
             total: 0,
@@ -153,6 +158,13 @@ exports.getAssignments = async (req, res) => {
       limit: parseInt(limit),
       offset,
       order: [["createdAt", "DESC"]],
+    });
+
+    // Disable caching for dynamic fleet queries to prevent stale data
+    res.set({
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
     });
 
     res.json({

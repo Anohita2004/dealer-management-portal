@@ -19,9 +19,27 @@ const buildAdvancedWhere = (query, options = {}) => {
 
     // 1. Global Search
     if (query.search && searchFields.length > 0) {
-        where[Op.or] = searchFields.map(field => ({
-            [field]: { [Op.like]: `%${query.search}%` }
+        // Use Op.iLike for case-insensitive search in PostgreSQL
+        // For MySQL, Sequelize will fall back to Op.like
+        // Escape special characters are already handled in controller
+        // Exclude fields that are also in exactFields to avoid conflicts
+        const searchableFields = searchFields.filter(field => !exactFields.includes(field) || !query[field]);
+        
+        // Try to use iLike for PostgreSQL (case-insensitive), fallback to like for MySQL
+        const likeOperator = Op.iLike || Op.like;
+        
+        const searchConditions = searchableFields.map(field => ({
+            [field]: { [likeOperator]: `%${query.search}%` }
         }));
+        
+        if (searchConditions.length > 0) {
+            // Merge with existing Op.or if it exists
+            if (where[Op.or]) {
+                where[Op.or] = [...where[Op.or], ...searchConditions];
+            } else {
+                where[Op.or] = searchConditions;
+            }
+        }
     }
 
     // 2. Date Range Filters (e.g., createdAt_from, createdAt_to)
@@ -60,12 +78,13 @@ const buildAdvancedWhere = (query, options = {}) => {
     });
 
     // 5. Exact Match / Multi-Select (e.g. status=paid,unpaid)
+    // This takes precedence over search for the same field
     exactFields.forEach(field => {
         if (query[field]) {
-            const values = query[field].split(',');
+            const values = query[field].split(',').map(v => v.trim()).filter(v => v);
             if (values.length > 1) {
                 where[field] = { [Op.in]: values };
-            } else {
+            } else if (values.length === 1) {
                 where[field] = values[0];
             }
         }
