@@ -169,7 +169,94 @@ const handleWebhook = async (req, res) => {
     res.status(200).send('OK');
 };
 
+/**
+ * Handle manual/frontend verification call
+ */
+const verifyPayment = async (req, res) => {
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+        return res.status(400).json({ error: "Missing verification parameters" });
+    }
+
+    // Razorpay signature verification logic for manual calls
+    // Usually: HMAC_SHA256(razorpay_order_id + "|" + razorpay_payment_id, secret)
+    const crypto = require('crypto');
+    const secret = razorpayService.keySecret;
+    const body = razorpay_order_id + "|" + razorpay_payment_id;
+    const expectedSignature = crypto
+        .createHmac("sha256", secret)
+        .update(body.toString())
+        .digest("hex");
+
+    if (expectedSignature !== razorpay_signature) {
+        return res.status(400).json({ success: false, error: "Invalid payment signature" });
+    }
+
+    // Signature is valid! Now update the database if the webhook hasn't yet.
+    const t = await sequelize.transaction();
+    try {
+        const paymentRequest = await PaymentRequest.findOne({
+            where: { gatewayOrderId: razorpay_order_id },
+            include: ['invoice'],
+            transaction: t
+        });
+
+        if (!paymentRequest) {
+            await t.rollback();
+            return res.status(404).json({ error: "Payment request not found" });
+        }
+
+        // Check if already processed by webhook
+        if (paymentRequest.status === 'approved') {
+            await t.rollback();
+            return res.json({ success: true, message: "Payment already processed", status: 'approved' });
+        }
+
+        // Update Payment Request
+        paymentRequest.gatewayPaymentId = razorpay_payment_id;
+        paymentRequest.gatewaySignature = razorpay_signature;
+        paymentRequest.status = 'approved';
+        paymentRequest.approvalStatus = 'approved';
+        paymentRequest.approvalStage = null;
+        paymentRequest.approvedAt = new Date();
+        paymentRequest.approvedBy = 'FRONTEND_VERIFY';
+        await paymentRequest.save({ transaction: t });
+
+        // Update Invoice
+        if (paymentRequest.invoice) {
+            const invoice = paymentRequest.invoice;
+            const newPaidAmount = Number(invoice.paidAmount || 0) + Number(paymentRequest.amount);
+            const newBalance = Number(invoice.totalAmount) - newPaidAmount;
+
+            await invoice.update({
+                paidAmount: newPaidAmount,
+                balanceAmount: Math.max(0, newBalance),
+                status: newBalance <= 0 ? 'paid' : 'partial'
+            }, { transaction: t });
+        }
+
+        await AuditLog.create({
+            userId: req.user.id,
+            action: "GATEWAY_PAYMENT_VERIFIED",
+            entity: "PaymentRequest",
+            entityId: paymentRequest.id,
+            changes: { razorpay_payment_id },
+            ipAddress: req.ip,
+        }, { transaction: t });
+
+        await t.commit();
+        res.json({ success: true, message: "Payment verified successfully", status: 'approved' });
+
+    } catch (error) {
+        if (t) await t.rollback();
+        console.error("Payment Verification Error:", error);
+        res.status(500).json({ error: "Verification failed on server" });
+    }
+};
+
 module.exports = {
     createGatewayOrder,
-    handleWebhook
+    handleWebhook,
+    verifyPayment
 };

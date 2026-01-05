@@ -20,7 +20,8 @@ const {
 
 const {
   createGatewayOrder,
-  handleWebhook
+  handleWebhook,
+  verifyPayment
 } = require("../controllers/paymentGatewayController");
 
 // -----------------------
@@ -34,6 +35,13 @@ router.post(
   authenticate,
   authorize("dealer_admin", "dealer_staff"),
   createGatewayOrder
+);
+
+router.post(
+  "/gateway/verify",
+  authenticate,
+  authorize("dealer_admin", "dealer_staff"),
+  verifyPayment
 );
 
 // -----------------------

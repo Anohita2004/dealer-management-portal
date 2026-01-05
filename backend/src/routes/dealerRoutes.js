@@ -152,14 +152,14 @@ router.get('/:id', authenticate, checkPermission('dealer.view'), applyScope(['De
 router.post(
   '/',
   authenticate,
-  authorize('super_admin', 'key_user', 'regional_admin', 'regional_manager', 'area_manager'),
+  authorize('super_admin', 'technical_admin', 'key_user', 'regional_admin', 'regional_manager', 'area_manager'),
   checkPermission('dealer.create'),
   dealerController.createDealer
 );
 
-router.put('/:id', authenticate, authorize('super_admin', 'key_user'), checkPermission('dealer.update'), dealerController.updateDealer);
+router.put('/:id', authenticate, authorize('super_admin', 'technical_admin', 'key_user'), checkPermission('dealer.update'), dealerController.updateDealer);
 router.put('/:id/block', authenticate, authorize('super_admin'), checkPermission('dealer.update'), dealerController.blockDealer);
-router.put('/:id/verify', authenticate, authorize('super_admin', 'key_user'), checkPermission('dealer.update'), dealerController.verifyDealer);
+router.put('/:id/verify', authenticate, authorize('super_admin', 'technical_admin', 'key_user'), checkPermission('dealer.update'), dealerController.verifyDealer);
 
 // Multi-stage dealer onboarding approvals
 router.patch(

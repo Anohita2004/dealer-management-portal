@@ -2,6 +2,18 @@
 const { User, Dealer, Role, AuditLog } = require("../models");
 const { generateToken } = require("../utils/jwt");
 
+// Legacy → canonical role mapping (same as middleware)
+const LEGACY_ROLE_MAP = {
+  admin: "super_admin",
+  key_user: "technical_admin",
+  tm: "territory_manager",
+  am: "area_manager",
+  sm: "regional_manager",
+  dealer: "dealer_admin",
+  accounts: "accounts_user",
+  inventory: "inventory_user",
+};
+
 // -------------------------------
 // LOGIN (Step 1 → Generate OTP)
 // -------------------------------
@@ -11,10 +23,14 @@ const { generateToken } = require("../utils/jwt");
 const login = async (req, res) => {
   try {
     const { username, password } = req.body;
+    
+    if (!username || !password) {
+      return res.status(400).json({ error: "Username and password are required" });
+    }
 
     const user = await User.findOne({
       where: { username },
-      include: [{ model: Role, as: "roleDetails" }],
+      include: [{ model: Role, as: "roleDetails", required: false }],
     });
 
     if (!user) return res.status(401).json({ error: "Invalid credentials" });
@@ -49,7 +65,11 @@ const login = async (req, res) => {
     });
   } catch (err) {
     console.error("Login error:", err);
-    return res.status(500).json({ error: "Login failed" });
+    console.error("Login error stack:", err.stack);
+    return res.status(500).json({ 
+      error: "Login failed",
+      message: process.env.NODE_ENV === "development" ? err.message : undefined
+    });
   }
 };
 
@@ -59,11 +79,15 @@ const login = async (req, res) => {
 const verifyOTP = async (req, res) => {
   try {
     const { userId, otp } = req.body;
+    
+    if (!userId || !otp) {
+      return res.status(400).json({ error: "UserId and OTP are required" });
+    }
 
     const user = await User.findByPk(userId, {
       include: [
-        { model: Dealer, as: "dealer" },
-        { model: Role, as: "roleDetails" },
+        { model: Dealer, as: "dealer", required: false },
+        { model: Role, as: "roleDetails", required: false },
       ],
     });
 
@@ -77,7 +101,15 @@ const verifyOTP = async (req, res) => {
     user.lastLogin = new Date();
     await user.save();
 
+    // Normalize role name (same logic as authenticate middleware)
+    const canonicalRole =
+      user.roleDetails?.name ||
+      LEGACY_ROLE_MAP[user.role] ||
+      user.role ||
+      null;
+
     const token = generateToken(user.id, user.roleId);
+    console.log("🔑 Token generated:", { userId: user.id, roleId: user.roleId, tokenPreview: token.substring(0, 30) + "..." });
 
     await AuditLog.create({
       userId: user.id,
@@ -88,27 +120,35 @@ const verifyOTP = async (req, res) => {
       userAgent: req.headers["user-agent"],
     });
 
+    const userResponse = {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      phoneNumber: user.phoneNumber,
+      role: canonicalRole,
+      roleId: user.roleId,
+      regionId: user.regionId,
+      areaId: user.areaId,
+      territoryId: user.territoryId,
+      dealerId: user.dealerId || (user.dealer ? user.dealer.id : null),
+      dealer: user.dealer || null,
+      isActive: user.isActive,
+    };
+
+    console.log("✅ OTP verified successfully for user:", user.username, "role:", canonicalRole);
+
     return res.json({
       token,
-      user: {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        phoneNumber: user.phoneNumber,
-        role: user.roleDetails?.name,
-        roleId: user.roleId,
-        regionId: user.regionId,
-        areaId: user.areaId,
-        territoryId: user.territoryId,
-        dealerId: user.dealerId || (user.dealer ? user.dealer.id : null),
-        dealer: user.dealer || null,
-        isActive: user.isActive,
-      },
+      user: userResponse,
     });
 
   } catch (err) {
     console.error("OTP error:", err);
-    return res.status(500).json({ error: "OTP verification failed" });
+    console.error("OTP error stack:", err.stack);
+    return res.status(500).json({ 
+      error: "OTP verification failed",
+      message: process.env.NODE_ENV === "development" ? err.message : undefined
+    });
   }
 };
 
@@ -169,9 +209,27 @@ const resetPasswordConfirm = async (req, res) => {
   }
 };
 
+const getMe = async (req, res) => {
+  try {
+    // req.user is already populated by authenticate middleware
+    if (!req.user) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    
+    console.log("✅ GET /api/auth/me - User authenticated:", req.user.username, "role:", req.user.role);
+    
+    return res.json({ user: req.user });
+  } catch (err) {
+    console.error("GetMe error:", err);
+    console.error("GetMe error stack:", err.stack);
+    return res.status(500).json({ error: "Failed to fetch user data" });
+  }
+};
+
 module.exports = {
   login,
   verifyOTP,
   resetPassword,
   resetPasswordConfirm,
+  getMe,
 };
