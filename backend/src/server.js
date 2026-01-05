@@ -54,6 +54,8 @@ app.use(
   cors({
     origin: process.env.CORS_ORIGIN || '*',
     credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    exposedHeaders: ['Authorization'],
   })
 );
 
@@ -154,14 +156,19 @@ const runSLAJob = async () => {
     console.log('✅ SLA check completed at', new Date().toISOString());
   } catch (error) {
     console.error('❌ SLA job error:', error);
+    console.error('❌ SLA job error stack:', error.stack);
+    // Don't crash the server if SLA job fails
   }
 };
 
-// Run immediately on startup, then every hour
+// Run immediately on startup, then every hour (only if enabled)
 if (process.env.ENABLE_SLA_JOB !== 'false') {
-  runSLAJob();
-  setInterval(runSLAJob, 60 * 60 * 1000); // Every hour
-  console.log('✅ Scheduled SLA job enabled (runs every hour)');
+  // Run SLA job asynchronously after server starts to avoid blocking startup
+  setTimeout(() => {
+    runSLAJob();
+    setInterval(runSLAJob, 60 * 60 * 1000); // Every hour
+    console.log('✅ Scheduled SLA job enabled (runs every hour)');
+  }, 2000); // Wait 2 seconds after server starts
 }
 
 // Helper: deterministic room id for 1-1 chats
@@ -172,7 +179,8 @@ const createRoomId = (a, b) => `chat:${[String(a), String(b)].sort().join('-')}`
 const verifySocketToken = (token) => {
   if (!token) return null;
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const secret = process.env.JWT_SECRET || 'secret';
+    const decoded = jwt.verify(token, secret);
     return decoded; // should include user id and role (based on your token payload)
   } catch (err) {
     console.warn('Socket JWT verify failed:', err && err.message);
@@ -411,21 +419,33 @@ io.on('connection', (socket) => {
 // --- Start server bootstrap (DB connect + sync + listen) ---
 const startServer = async () => {
   try {
+    console.log('🔄 Connecting to database...');
     await sequelize.authenticate();
     console.log('✅ PostgreSQL connection established successfully.');
 
-    // syncDatabase is from your models; use it (it may call sequelize.sync)
-    if (typeof syncDatabase === 'function') {
-      await syncDatabase();
-      console.log('✅ Database synced');
-    }
+    // Note: syncDatabase was removed - using migrations instead
+    // Database tables should be created via migrations
 
+    console.log('🔄 Starting server...');
     server.listen(PORT, () => {
       console.log(`🚀 Server + Socket.IO running on port ${PORT}`);
       console.log(`🌍 Health check: http://localhost:${PORT}/health`);
+      console.log(`📡 API base URL: http://localhost:${PORT}/api`);
+    });
+
+    // Handle server errors
+    server.on('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        console.error(`❌ Port ${PORT} is already in use. Please use a different port.`);
+      } else {
+        console.error('❌ Server error:', err);
+      }
+      process.exit(1);
     });
   } catch (err) {
     console.error('❌ Failed to start server:', err);
+    console.error('❌ Error message:', err.message);
+    console.error('❌ Error stack:', err.stack);
     process.exit(1);
   }
 };
