@@ -116,7 +116,9 @@ exports.updateLocation = async (req, res) => {
     }
 
     // Check if truck exists
-    const truck = await Truck.findByPk(truckId);
+    const truck = await Truck.findByPk(truckId, {
+      attributes: ["id", "licenseNumber", "truckType", "capacity", "status", "currentLat", "currentLng", "lastLocationUpdate", "isActive"], // Explicit attributes - truckName and regionId removed
+    });
     if (!truck) {
       return res.status(404).json({ error: "Truck not found" });
     }
@@ -371,7 +373,7 @@ exports.getLiveLocations = async (req, res) => {
         {
           model: Truck,
           as: "truck",
-          attributes: ["id", "truckName", "licenseNumber", "currentLat", "currentLng", "lastLocationUpdate"],
+          attributes: ["id", "licenseNumber", "truckType", "currentLat", "currentLng", "lastLocationUpdate"], // truckName removed - column doesn't exist
         },
         {
           model: Order,
@@ -407,7 +409,7 @@ exports.getLiveLocations = async (req, res) => {
           orderNumber: assignment.order.orderNumber,
           truck: {
             id: assignment.truck.id,
-            truckName: assignment.truck.truckName,
+            truckName: assignment.truck.licenseNumber, // Using licenseNumber since truckName column doesn't exist
             licenseNumber: assignment.truck.licenseNumber,
             lat: assignment.truck.currentLat,
             lng: assignment.truck.currentLng,
@@ -448,7 +450,7 @@ exports.getLiveLocations = async (req, res) => {
             orderNumber: assignment.order.orderNumber,
             truck: {
               id: assignment.truck.id,
-              truckName: assignment.truck.truckName,
+              truckName: assignment.truck.licenseNumber, // Using licenseNumber since truckName column doesn't exist
               licenseNumber: assignment.truck.licenseNumber,
               lat: assignment.truck.currentLat,
               lng: assignment.truck.currentLng,
@@ -504,7 +506,7 @@ exports.getOrderTracking = async (req, res) => {
             {
               model: Truck,
               as: "truck",
-              attributes: ["id", "truckName", "licenseNumber", "currentLat", "currentLng", "lastLocationUpdate"],
+              attributes: ["id", "licenseNumber", "truckType", "currentLat", "currentLng", "lastLocationUpdate"], // truckName removed - column doesn't exist
             },
             {
               model: Warehouse,
@@ -687,7 +689,9 @@ exports.getTruckHistory = async (req, res) => {
   try {
     const { startDate, endDate, limit = 100 } = req.query;
 
-    const truck = await Truck.findByPk(req.params.truckId);
+    const truck = await Truck.findByPk(req.params.truckId, {
+      attributes: ["id", "licenseNumber", "truckType", "capacity", "status", "currentLat", "currentLng", "lastLocationUpdate", "isActive"], // Explicit attributes - truckName and regionId removed
+    });
 
     if (!truck) {
       return res.status(404).json({ error: "Truck not found" });

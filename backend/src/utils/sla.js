@@ -61,12 +61,14 @@ async function checkPending(model, wherePending, thresholdHours, recipientRole, 
 async function runSlaChecks() {
   const results = {};
 
+  // Orders - specify attributes to avoid selecting truckAssignmentId column that may not exist in DB
   results.orders = await checkPending(
     Order,
     { approvalStatus: "pending" },
     THRESHOLDS.order,
     "regional_manager",
-    "order"
+    "order",
+    ["id", "dealerId", "orderNumber", "status", "totalAmount", "notes", "approvalStage", "approvalStatus", "approvedBy", "approvedAt", "rejectionReason", "currentSlaExpiresAt", "createdAt"] // Only select needed columns, excluding truckAssignmentId
   );
 
   results.invoices = await checkPending(

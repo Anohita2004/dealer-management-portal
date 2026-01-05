@@ -79,8 +79,8 @@ async function assignTruckToOrder(
     truck.status = "assigned";
     await truck.save({ transaction: t });
 
-    // Update order status to "Shipped" and link assignment
-    order.status = "Shipped";
+    // Link assignment to order (preserve order status - don't change to "Shipped" yet)
+    // Status will change to "In Transit" when truck picks up, and "Delivered" when delivered
     order.truckAssignmentId = assignment.id;
     await order.save({ transaction: t });
 
@@ -116,13 +116,15 @@ async function updateOrderStatusOnAssignment(orderId, assignment) {
 
   switch (assignment.status) {
     case "picked_up":
-      if (order.status === "Shipped") {
+      // Change status to "In Transit" when truck picks up (from "Approved" or "Shipped")
+      if (order.status === "Approved" || order.status === "Shipped") {
         order.status = "In Transit";
         await order.save();
       }
       break;
     case "delivered":
-      if (order.status === "In Transit" || order.status === "Shipped") {
+      // Change status to "Delivered" when truck delivers (from "Approved", "Shipped", or "In Transit")
+      if (order.status === "Approved" || order.status === "In Transit" || order.status === "Shipped") {
         order.status = "Delivered";
         await order.save();
       }
