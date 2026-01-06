@@ -1,5 +1,6 @@
 // src/controllers/orderController.js
 const { Order, OrderItem, Material, Dealer, DealerMaterial, TruckAssignment, Truck, Warehouse, TruckLocationHistory, sequelize } = require("../models");
+const { Op } = require("sequelize");
 const { nextStage, isApproverForStage } = require("../utils/approvalEngine");
 const RBACEngine = require("../services/rbacEngine");
 const { WorkflowService } = require("../services/workflow");
@@ -337,7 +338,7 @@ exports.getAllOrders = async (req, res) => {
     // Normalize status: map 'draft' to 'Pending' and handle Title Case for Order model
     if (query.status) {
       const statusMap = {
-        'draft': 'Pending',
+        'draft': 'Approved',
         'pending': 'Pending',
         'approved': 'Approved',
         'rejected': 'Rejected',
@@ -351,8 +352,59 @@ exports.getAllOrders = async (req, res) => {
 
       query.status = query.status.split(',').map(s => {
         const trimmed = s.trim().toLowerCase();
-        return statusMap[trimmed] || s; // Fallback to original if no mapping
+        // Handle both lowercase and Title Case inputs
+        const normalized = statusMap[trimmed];
+        if (normalized) {
+          return normalized;
+        }
+        // If input is already in Title Case (e.g., "Approved"), check if it's a valid enum value
+        const titleCase = s.trim();
+        const validStatuses = ['Pending', 'Approved', 'Rejected', 'Pending Approval', 'Processing', 'Shipped', 'In Transit', 'Delivered', 'Cancelled'];
+        if (validStatuses.includes(titleCase)) {
+          return titleCase;
+        }
+        // Fallback to original
+        return s.trim();
       }).join(',');
+    }
+
+    // Handle dealer business name search separately (requires join)
+    // Also make search more flexible by splitting into parts
+    let dealerWhere = {};
+    if (query.search) {
+      // Split search into parts (by dash, space, etc.) and search for any part
+      const searchParts = query.search.split(/[-–—\s]+/).map(s => s.trim()).filter(s => s.length > 0);
+      
+      if (searchParts.length > 1) {
+        // If search has multiple parts, search for each part separately
+        // First part is likely order number, last part might be dealer name
+        const orderNumberPart = searchParts[0];
+        const dealerNamePart = searchParts[searchParts.length - 1];
+        
+        // Update search to use first part (order number) for order fields
+        // This makes search less restrictive - only searches order number, not the full string
+        query.search = orderNumberPart;
+        
+        // Search in dealer business name for dealer name part
+        if (dealerNamePart && dealerNamePart.length > 2) {
+          dealerWhere = {
+            businessName: { [Op.iLike || Op.like]: `%${dealerNamePart}%` }
+          };
+        }
+      } else if (searchParts.length === 1) {
+        // Single part - could be order number or dealer name
+        // If it looks like an order number (contains ORD- or is mostly numbers), use as-is
+        // Otherwise, it might be a dealer name
+        const singlePart = searchParts[0];
+        if (!singlePart.match(/^ORD-|^\d+/) && singlePart.length > 3) {
+          // Looks like a dealer name, search in dealer table
+          dealerWhere = {
+            businessName: { [Op.iLike || Op.like]: `%${singlePart}%` }
+          };
+          // Clear search from order fields to avoid double filtering
+          delete query.search;
+        }
+      }
     }
 
     const { buildAdvancedWhere } = require('../utils/filterHelper');
@@ -476,7 +528,7 @@ exports.getOrderById = async (req, res) => {
             {
               model: Truck,
               as: "truck",
-              attributes: ["id", "truckName", "licenseNumber", "status", "currentLat", "currentLng", "lastLocationUpdate"],
+              attributes: ["id", "licenseNumber", "truckType", "status", "currentLat", "currentLng", "lastLocationUpdate"], // truckName removed - column doesn't exist
             },
             {
               model: Warehouse,
@@ -672,7 +724,7 @@ exports.getOrderTracking = async (req, res) => {
             {
               model: Truck,
               as: "truck",
-              attributes: ["id", "truckName", "licenseNumber", "currentLat", "currentLng", "lastLocationUpdate"],
+              attributes: ["id", "licenseNumber", "truckType", "currentLat", "currentLng", "lastLocationUpdate"], // truckName removed - column doesn't exist
             },
             {
               model: Warehouse,

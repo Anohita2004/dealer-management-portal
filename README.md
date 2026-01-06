@@ -241,6 +241,8 @@ The application comes with pre-seeded test users:
 | Dealer | dealer3 | Dealer@123 | PQR Trading Company |
 | Key User | keyuser | Key@123 | Campaign management |
 | Territory Manager | tm_west | TM@123 | Territory management |
+| Accounts User | accounts_user | Accounts@123 | Accounts Management |
+| Inventory User | inventory_user | Inventory@123 | Inventory management |
 
 ## API Endpoints
 

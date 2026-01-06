@@ -5,7 +5,8 @@ const { sequelize, Product } = require("../models");
 
 const seedProducts = async () => {
   try {
-    await sequelize.sync(); // ensure tables exist
+    await sequelize.authenticate();
+    console.log('✅ DB connected');
 
     const products = [
       { name: "LED TV 42\"", plant: "Bangalore", stock: 25, uom: "unit" },
@@ -17,11 +18,15 @@ const seedProducts = async () => {
 
     await Product.bulkCreate(products, { ignoreDuplicates: true });
     console.log("✅ Product seed completed!");
+    await sequelize.close();
     process.exit(0);
   } catch (err) {
     console.error("❌ Seeding error:", err);
+    await sequelize.close();
     process.exit(1);
   }
 };
 
-seedProducts();
+if (require.main === module) {
+  seedProducts();
+}

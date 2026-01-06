@@ -24,7 +24,10 @@ const login = async (req, res) => {
   try {
     const { username, password } = req.body;
     
+    console.log("🔐 Login attempt:", { username, hasPassword: !!password, bodyKeys: Object.keys(req.body) });
+    
     if (!username || !password) {
+      console.error("❌ Login failed: Missing username or password");
       return res.status(400).json({ error: "Username and password are required" });
     }
 
@@ -33,15 +36,25 @@ const login = async (req, res) => {
       include: [{ model: Role, as: "roleDetails", required: false }],
     });
 
-    if (!user) return res.status(401).json({ error: "Invalid credentials" });
-    if (!user.isActive || user.isBlocked)
+    if (!user) {
+      console.error(`❌ Login failed: User not found - ${username}`);
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+    
+    console.log(`✅ User found: ${username}, isActive: ${user.isActive}, isBlocked: ${user.isBlocked}`);
+    
+    if (!user.isActive || user.isBlocked) {
+      console.error(`❌ Login failed: Account inactive/blocked - ${username}`);
       return res.status(403).json({ error: "Account inactive/blocked" });
+    }
 
     const valid = await user.validatePassword(password);
     if (!valid) {
-      console.error(`Login failed for user ${username}: Invalid password`);
+      console.error(`❌ Login failed for user ${username}: Invalid password`);
       return res.status(401).json({ error: "Invalid credentials" });
     }
+    
+    console.log(`✅ Password validated for user: ${username}`);
 
     // Generate OTP
     const otp = user.generateOTP();
@@ -64,8 +77,9 @@ const login = async (req, res) => {
       otp: process.env.NODE_ENV === "development" ? otp : undefined,
     });
   } catch (err) {
-    console.error("Login error:", err);
-    console.error("Login error stack:", err.stack);
+    console.error("❌ Login error:", err);
+    console.error("❌ Login error message:", err.message);
+    console.error("❌ Login error stack:", err.stack);
     return res.status(500).json({ 
       error: "Login failed",
       message: process.env.NODE_ENV === "development" ? err.message : undefined

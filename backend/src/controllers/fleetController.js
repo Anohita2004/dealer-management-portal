@@ -151,7 +151,7 @@ exports.getAssignments = async (req, res) => {
             attributes: ["id", "businessName", "address"],
           }],
         },
-        { model: Truck, as: "truck", attributes: ["id", "truckName", "licenseNumber", "status"] },
+        { model: Truck, as: "truck", attributes: ["id", "licenseNumber", "truckType", "status"] }, // truckName column doesn't exist in DB yet
         { model: Warehouse, as: "warehouse", attributes: ["id", "name", "warehouseCode", "address", "lat", "lng"] },
         { model: User, as: "assignedByUser", attributes: ["id", "username"] },
       ],
@@ -301,7 +301,9 @@ exports.updateAssignment = async (req, res) => {
 
       // Validate truck if changing
       if (truckId !== undefined && truckId !== assignment.truckId) {
-        const truck = await Truck.findByPk(truckId);
+        const truck = await Truck.findByPk(truckId, {
+          attributes: ["id", "licenseNumber", "truckType", "status", "isActive"], // Explicit attributes - truckName and regionId removed
+        });
         if (!truck) {
           return res.status(400).json({ error: "Truck not found" });
         }
