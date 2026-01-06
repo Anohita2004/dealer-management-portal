@@ -187,3 +187,4 @@ const meData = await meResponse.json();
 3. **Token not retrieved** - Must get token from storage before each request
 4. **CORS issues** - Backend is configured correctly, but ensure frontend sends credentials
 
+

@@ -9,7 +9,8 @@ const etaService = require("../services/etaService");
 
 // Rate limiting map (truckId -> lastUpdateTime)
 const rateLimitMap = new Map();
-const RATE_LIMIT_MS = 10000; // 10 seconds
+// Configurable via env; fallback to 1000ms (1 second) so tracking stays smooth
+const RATE_LIMIT_MS = parseInt(process.env.TRACKING_RATE_LIMIT_MS || "1000", 10);
 
 // ETA update tracking (assignmentId -> lastETAUpdate)
 const etaUpdateMap = new Map();
@@ -106,15 +107,6 @@ exports.updateLocation = async (req, res) => {
       return res.status(400).json({ error: "Invalid coordinates" });
     }
 
-    // Rate limiting
-    const now = Date.now();
-    const lastUpdate = rateLimitMap.get(truckId);
-    if (lastUpdate && now - lastUpdate < RATE_LIMIT_MS) {
-      return res.status(429).json({
-        error: "Rate limit exceeded. Maximum 1 update per 10 seconds.",
-      });
-    }
-
     // Check if truck exists
     const truck = await Truck.findByPk(truckId, {
       attributes: ["id", "licenseNumber", "truckType", "capacity", "status", "currentLat", "currentLng", "lastLocationUpdate", "isActive"], // Explicit attributes - truckName and regionId removed
@@ -165,6 +157,25 @@ exports.updateLocation = async (req, res) => {
           error: "Not authorized to update this truck location" 
         });
       }
+    }
+
+    // Rate limiting
+    const now = Date.now();
+    const lastUpdate = rateLimitMap.get(truckId);
+    if (lastUpdate && now - lastUpdate < RATE_LIMIT_MS) {
+      // Don't treat this as an error for the client; just avoid spamming DB
+      // and return the last known location so tracking UI can continue smoothly.
+      return res.json({
+        success: true,
+        rateLimited: true,
+        truckId: truck.id,
+        assignmentId: activeAssignment.id,
+        driverPhone: activeAssignment.driverPhone,
+        driverName: activeAssignment.driverName,
+        lat: truck.currentLat,
+        lng: truck.currentLng,
+        timestamp: truck.lastLocationUpdate,
+      });
     }
 
     // Update truck location
