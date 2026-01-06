@@ -160,3 +160,4 @@ Or re-run the permission seeding script if available.
 | `area_manager` | ✅ Area only | ❌ No | ❌ No | Area |
 | `inventory_user` | ✅ All | ✅ All | ✅ All | Global |
 
+

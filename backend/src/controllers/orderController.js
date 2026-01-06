@@ -388,9 +388,13 @@ exports.getAllOrders = async (req, res) => {
         { 
           model: Dealer, 
           as: "dealer",
-          required: false // Left join - don't fail if dealer is missing
+          required: false, // Left join - don't fail if dealer is missing
+          attributes: ['id', 'dealerCode', 'businessName', 'email', 'phoneNumber', 'address', 'city', 'state']
         },
       ],
+      attributes: {
+        exclude: [] // Include all order fields for dropdown selection
+      },
       offset,
       limit: parseInt(limit, 10),
       order: [["createdAt", "DESC"]],
@@ -639,6 +643,14 @@ exports.getWorkflowStatus = async (req, res) => {
     }
 
     const status = await WorkflowService.getWorkflowStatus("order", order);
+    
+    // Disable caching for workflow status to prevent stale data
+    res.set({
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    });
+    
     res.json({ success: true, workflow: status });
   } catch (err) {
     console.error("getWorkflowStatus:", err);
