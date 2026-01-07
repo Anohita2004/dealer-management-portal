@@ -60,9 +60,6 @@ module.exports = {
         });
 
         // 5. USERS
-        // Dependencies: roles, sales_groups, regions(00), territories(01).
-        // Note: 'areas' is created in 04, so we created the column but CANNOT add the constraint yet.
-        // Note: 'dealers' is created in 02 (or my patch), so we can't Link dealerId yet.
         await queryInterface.createTable('Users', {
             id: { type: Sequelize.UUID, defaultValue: Sequelize.UUIDV4, primaryKey: true },
             username: { type: Sequelize.STRING, allowNull: false, unique: true },
@@ -72,15 +69,10 @@ module.exports = {
             roleId: { type: Sequelize.INTEGER, references: { model: 'roles', key: 'id' } },
             salesGroupId: { type: Sequelize.INTEGER, references: { model: 'sales_groups', key: 'id' } },
 
-            // Regions/Territories (Tables exist)
             regionId: { type: Sequelize.UUID, references: { model: 'regions', key: 'id' } },
             territoryId: { type: Sequelize.UUID, references: { model: 'territories', key: 'id' } },
-
-            // Areas (Table 04 - does not exist yet)
-            areaId: { type: Sequelize.UUID }, // No constraint yet
-
-            // Dealers (Table 02 - potentially missing)
-            dealerId: { type: Sequelize.UUID }, // No constraint yet
+            areaId: { type: Sequelize.UUID },
+            dealerId: { type: Sequelize.UUID },
 
             managerId: { type: Sequelize.UUID, references: { model: 'Users', key: 'id' } },
 
@@ -103,9 +95,7 @@ module.exports = {
             amount: { type: Sequelize.DECIMAL(15, 2), allowNull: false },
             status: { type: Sequelize.ENUM('pending', 'paid', 'overdue', 'cancelled'), defaultValue: 'pending' },
             dueDate: { type: Sequelize.DATE },
-
-            dealerId: { type: Sequelize.UUID }, // Constraint added later if dealer table missing
-
+            dealerId: { type: Sequelize.UUID },
             createdAt: { type: Sequelize.DATE, defaultValue: Sequelize.fn('NOW') },
             updatedAt: { type: Sequelize.DATE, defaultValue: Sequelize.fn('NOW') }
         });
@@ -131,9 +121,51 @@ module.exports = {
             createdAt: { type: Sequelize.DATE, defaultValue: Sequelize.fn('NOW') },
             updatedAt: { type: Sequelize.DATE, defaultValue: Sequelize.fn('NOW') }
         });
+
+        // 9. ORDERS (Adding this to fix the missing relation error)
+        await queryInterface.createTable('orders', {
+            id: { type: Sequelize.UUID, defaultValue: Sequelize.UUIDV4, primaryKey: true },
+            dealerId: { type: Sequelize.UUID, allowNull: false }, // Constraint added later if needed
+            orderNumber: { type: Sequelize.STRING, allowNull: false, unique: true },
+            status: {
+                type: Sequelize.ENUM('Pending', 'Approved', 'Rejected', 'Pending Approval', 'Processing', 'Shipped', 'In Transit', 'Delivered', 'Cancelled'),
+                defaultValue: "Pending"
+            },
+            totalAmount: { type: Sequelize.DECIMAL(12, 2), defaultValue: 0 },
+            notes: { type: Sequelize.TEXT },
+
+            // Approval fields
+            approvalStage: { type: Sequelize.STRING },
+            approvalStatus: { type: Sequelize.ENUM('pending', 'approved', 'rejected'), defaultValue: 'pending' },
+            approvedBy: { type: Sequelize.UUID },
+            approvedAt: { type: Sequelize.DATE },
+            rejectionReason: { type: Sequelize.STRING },
+
+            createdAt: { type: Sequelize.DATE, defaultValue: Sequelize.fn('NOW') },
+            updatedAt: { type: Sequelize.DATE, defaultValue: Sequelize.fn('NOW') }
+        });
+
+        // 10. ORDER ITEMS
+        await queryInterface.createTable('order_items', {
+            id: { type: Sequelize.UUID, defaultValue: Sequelize.UUIDV4, primaryKey: true },
+            orderId: {
+                type: Sequelize.UUID,
+                allowNull: false,
+                references: { model: 'orders', key: 'id' },
+                onDelete: 'CASCADE'
+            },
+            materialId: { type: Sequelize.UUID, allowNull: false }, // Ref to material if exists
+            qty: { type: Sequelize.INTEGER, allowNull: false, defaultValue: 1 },
+            unitPrice: { type: Sequelize.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
+            lineTotal: { type: Sequelize.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
+            createdAt: { type: Sequelize.DATE, defaultValue: Sequelize.fn('NOW') },
+            updatedAt: { type: Sequelize.DATE, defaultValue: Sequelize.fn('NOW') }
+        });
     },
 
     async down(queryInterface, Sequelize) {
+        await queryInterface.dropTable('order_items');
+        await queryInterface.dropTable('orders');
         await queryInterface.dropTable('payment_requests');
         await queryInterface.dropTable('documents');
         await queryInterface.dropTable('invoices');
