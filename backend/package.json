@@ -12,7 +12,8 @@
     "test:integration": "jest --testPathPattern=integration",
     "migrate:workflow": "node scripts/run-migrations.js",
     "test:workflow": "node scripts/test-workflow.js",
-    "migrate": "sequelize-cli db:migrate"
+    "migrate": "sequelize-cli db:migrate",
+    "seed": "node src/utils/seed.js"
   },
   "keywords": [],
   "author": "",
