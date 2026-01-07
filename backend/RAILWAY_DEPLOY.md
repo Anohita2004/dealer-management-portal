@@ -58,6 +58,28 @@ We have already updated your `package.json` to include:
 2.  Check the **"Deployments"** tab to see the logs.
 3.  If "Build" succeeds but "Deploy" fails, check the logs. It's often due to missing environment variables.
 
+### 6. Seeding the Database (Populate Initial Data)
+To populate your database with initial data (Admin user, dummy dealers, invoices, etc.):
+
+**Option A (Temporary Start Command - Easiest):**
+1.  Go to **Settings** -> **Deploy**.
+2.  Change **Start Command** to:
+    ```bash
+    npm run migrate && npm run seed && npm start
+    ```
+3.  Let it deploy. This will run the seeder.
+4.  **Important:** Once deployed successfully, change the Start Command back to:
+    ```bash
+    npm run migrate && npm start
+    ```
+    (Otherwise, it will try to re-seed on every restart, which might cause errors).
+
+**Option B (Railway CLI):**
+If you have the Railway CLI installed:
+```bash
+railway run npm run seed
+```
+
 ## Troubleshooting
 
 -   **Database Connection Error**: Double-check your `DB_*` variables. Ensure they match the Railway Postgres credentials.
