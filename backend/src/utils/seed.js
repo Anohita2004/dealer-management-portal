@@ -5,7 +5,19 @@ const seedData = async () => {
   try {
     console.log('Starting database seeding...');
 
-    const dealer1 = await Dealer.create({
+    // HELPER: Find or Create Dealer
+    const getOrCreateDealer = async (data) => {
+      const [dealer, created] = await Dealer.findOrCreate({
+        where: { dealerCode: data.dealerCode },
+        defaults: data
+      });
+      if (!created) {
+        console.log(`Dealer ${data.dealerCode} already exists, skipping creation.`);
+      }
+      return dealer;
+    };
+
+    const dealer1 = await getOrCreateDealer({
       dealerCode: 'D001',
       businessName: 'ABC Distributors Pvt Ltd',
       contactPerson: 'Rajesh Kumar',
@@ -31,7 +43,7 @@ const seedData = async () => {
       isBlocked: false
     });
 
-    const dealer2 = await Dealer.create({
+    const dealer2 = await getOrCreateDealer({
       dealerCode: 'D002',
       businessName: 'XYZ Enterprises',
       contactPerson: 'Priya Sharma',
@@ -57,7 +69,7 @@ const seedData = async () => {
       isBlocked: false
     });
 
-    const dealer3 = await Dealer.create({
+    const dealer3 = await getOrCreateDealer({
       dealerCode: 'D003',
       businessName: 'PQR Trading Company',
       contactPerson: 'Amit Patel',
@@ -83,38 +95,53 @@ const seedData = async () => {
       isBlocked: false
     });
     // PRODUCTS SEEDING
-await Product.bulkCreate([
-  {
-    name: "Cement Bag - 50kg",
-    plant: "Mumbai Plant",
-    stock: 1200,
-    uom: "Bag",
-  },
-  {
-    name: "Steel Rod - 10mm",
-    plant: "Delhi Plant",
-    stock: 800,
-    uom: "Ton",
-  },
-  {
-    name: "Paint Drum - 20L",
-    plant: "Bangalore Plant",
-    stock: 600,
-    uom: "Drum",
-  },
-  {
-    name: "Wall Putty - 40kg",
-    plant: "Chennai Plant",
-    stock: 500,
-    uom: "Bag",
-  },
-]);
-console.log("Products created successfully");
+    await Product.bulkCreate([
+      {
+        name: "Cement Bag - 50kg",
+        plant: "Mumbai Plant",
+        stock: 1200,
+        uom: "Bag",
+      },
+      {
+        name: "Steel Rod - 10mm",
+        plant: "Delhi Plant",
+        stock: 800,
+        uom: "Ton",
+      },
+      {
+        name: "Paint Drum - 20L",
+        plant: "Bangalore Plant",
+        stock: 600,
+        uom: "Drum",
+      },
+      {
+        name: "Wall Putty - 40kg",
+        plant: "Chennai Plant",
+        stock: 500,
+        uom: "Bag",
+      },
+    ], {
+      updateOnDuplicate: ["stock", "uom", "plant"]
+    });
+    console.log("Products created successfully");
 
 
     console.log('Dealers created successfully');
 
-    const adminUser = await User.create({
+
+    // HELPER: Find or Create User
+    const getOrCreateUser = async (data) => {
+      const [user, created] = await User.findOrCreate({
+        where: { email: data.email },
+        defaults: data
+      });
+      if (!created) {
+        console.log(`User ${data.username} already exists, skipping creation.`);
+      }
+      return user;
+    };
+
+    const adminUser = await getOrCreateUser({
       username: 'admin',
       email: 'admin@dealerportal.com',
       password: 'Admin@123',
@@ -123,7 +150,7 @@ console.log("Products created successfully");
       phoneNumber: '9999999999'
     });
 
-    const dealerUser1 = await User.create({
+    const dealerUser1 = await getOrCreateUser({
       username: 'dealer1',
       email: 'rajesh@abcdist.com',
       password: 'Dealer@123',
@@ -133,7 +160,7 @@ console.log("Products created successfully");
       phoneNumber: '9876543210'
     });
 
-    const dealerUser2 = await User.create({
+    const dealerUser2 = await getOrCreateUser({
       username: 'dealer2',
       email: 'priya@xyzent.com',
       password: 'Dealer@123',
@@ -143,7 +170,7 @@ console.log("Products created successfully");
       phoneNumber: '9876543211'
     });
 
-    const dealerUser3 = await User.create({
+    const dealerUser3 = await getOrCreateUser({
       username: 'dealer3',
       email: 'amit@pqrtrading.com',
       password: 'Dealer@123',
@@ -153,7 +180,7 @@ console.log("Products created successfully");
       phoneNumber: '9876543212'
     });
 
-    const keyUser = await User.create({
+    const keyUser = await getOrCreateUser({
       username: 'keyuser',
       email: 'keyuser@dealerportal.com',
       password: 'Key@123',
@@ -162,7 +189,7 @@ console.log("Products created successfully");
       phoneNumber: '9999999998'
     });
 
-    const tmUser = await User.create({
+    const tmUser = await getOrCreateUser({
       username: 'tm_west',
       email: 'tm.west@dealerportal.com',
       password: 'TM@123',
@@ -170,27 +197,37 @@ console.log("Products created successfully");
       isActive: true,
       phoneNumber: '9999999997'
     });
-    const accountsUser = await User.create({
-  username: 'accounts_user',
-  email: 'accounts@dealerportal.com',
-  password: 'Accounts@123',
-  role: 'accounts',
-  isActive: true,
-  phoneNumber: '9999999996'
-});
-const inventoryUser = await User.create({
-  username: 'inventory_user',
-  email: 'inventory@dealerportal.com',
-  password: 'Inventory@123', // will be hashed automatically
-  role: 'inventory',
-  isActive: true,
-  phoneNumber: '9999999976'
-});
+    const accountsUser = await getOrCreateUser({
+      username: 'accounts_user',
+      email: 'accounts@dealerportal.com',
+      password: 'Accounts@123',
+      role: 'accounts',
+      isActive: true,
+      phoneNumber: '9999999996'
+    });
+    const inventoryUser = await getOrCreateUser({
+      username: 'inventory_user',
+      email: 'inventory@dealerportal.com',
+      password: 'Inventory@123', // will be hashed automatically
+      role: 'inventory',
+      isActive: true,
+      phoneNumber: '9999999976'
+    });
 
 
     console.log('Users created successfully');
 
-    await Invoice.create({
+    // HELPER: Create Invoice if not exists
+    const createInvoiceIfNotExists = async (data) => {
+      const existing = await Invoice.findOne({ where: { invoiceNumber: data.invoiceNumber } });
+      if (!existing) {
+        await Invoice.create(data);
+      } else {
+        console.log(`Invoice ${data.invoiceNumber} already exists.`);
+      }
+    }
+
+    await createInvoiceIfNotExists({
       invoiceNumber: 'INV-2024-001',
       invoiceDate: new Date('2024-01-15'),
       dueDate: new Date('2024-02-15'),
