@@ -1,4 +1,4 @@
-const { User, Dealer, Invoice, Campaign, CreditDebitNote, AccountStatement, syncDatabase } = require('../models');
+const { User, Dealer, Invoice, Campaign, CreditDebitNote, AccountStatement, sequelize } = require('../models');
 const { Product } = require('../models');
 
 const seedData = async () => {
@@ -375,15 +375,20 @@ const inventoryUser = await User.create({
 };
 
 if (require.main === module) {
-  syncDatabase().then(() => {
-    seedData().then(() => {
-      console.log('Seeding completed');
+  (async () => {
+    try {
+      await sequelize.authenticate();
+      console.log('✅ DB connected');
+      await seedData();
+      console.log('✅ Seeding completed');
+      await sequelize.close();
       process.exit(0);
-    }).catch(error => {
-      console.error('Seeding failed:', error);
+    } catch (error) {
+      console.error('❌ Seeding failed:', error);
+      await sequelize.close();
       process.exit(1);
-    });
-  });
+    }
+  })();
 }
 
 module.exports = { seedData };
