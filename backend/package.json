@@ -11,7 +11,8 @@
     "test:unit": "jest --testPathPattern=unit",
     "test:integration": "jest --testPathPattern=integration",
     "migrate:workflow": "node scripts/run-migrations.js",
-    "test:workflow": "node scripts/test-workflow.js"
+    "test:workflow": "node scripts/test-workflow.js",
+    "migrate": "sequelize-cli db:migrate"
   },
   "keywords": [],
   "author": "",
@@ -40,7 +41,8 @@
     "socket.io-client": "^4.8.1",
     "sqlite3": "^5.1.7",
     "winston": "^3.18.3",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "sequelize-cli": "^6.6.2"
   },
   "devDependencies": {
     "axios": "^1.13.2",
