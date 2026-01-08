@@ -1,0 +1,35 @@
+
+> backend@1.0.0 seed
+> node src/utils/seed.js
+
+[dotenv@17.2.3] injecting env (25) from .env -- tip: 🔄 add secrets lifecycle management: https://dotenvx.com/ops
+🔌 Initializing Database Connection...
+⚠️ DATABASE_URL not found, using individual DB_* variables.
+❌ Seeding failed: ConnectionError [SequelizeConnectionError]: The server does not support SSL connections
+    at Client._connectionCallback (C:\Users\Admin\dealer-management-portal\backend\node_modules\sequelize\lib\dialects\postgres\connection-manager.js:149:20)
+    at Client._handleErrorWhileConnecting (C:\Users\Admin\dealer-management-portal\backend\node_modules\pg\lib\client.js:336:19)
+    at Client._handleErrorEvent (C:\Users\Admin\dealer-management-portal\backend\node_modules\pg\lib\client.js:346:19)
+    at Connection.emit (node:events:519:28)
+    at Socket.<anonymous> (C:\Users\Admin\dealer-management-portal\backend\node_modules\pg\lib\connection.js:76:23)
+    at Object.onceWrapper (node:events:634:26)
+    at Socket.emit (node:events:519:28)
+    at addChunk (node:internal/streams/readable:561:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:512:3)
+    at Readable.push (node:internal/streams/readable:392:5) {
+  parent: Error: The server does not support SSL connections
+      at Socket.<anonymous> (C:\Users\Admin\dealer-management-portal\backend\node_modules\pg\lib\connection.js:76:37)
+      at Object.onceWrapper (node:events:634:26)
+      at Socket.emit (node:events:519:28)
+      at addChunk (node:internal/streams/readable:561:12)
+      at readableAddChunkPushByteMode (node:internal/streams/readable:512:3)
+      at Readable.push (node:internal/streams/readable:392:5)
+      at TCP.onStreamRead (node:internal/stream_base_commons:189:23),
+  original: Error: The server does not support SSL connections
+      at Socket.<anonymous> (C:\Users\Admin\dealer-management-portal\backend\node_modules\pg\lib\connection.js:76:37)
+      at Object.onceWrapper (node:events:634:26)
+      at Socket.emit (node:events:519:28)
+      at addChunk (node:internal/streams/readable:561:12)
+      at readableAddChunkPushByteMode (node:internal/streams/readable:512:3)
+      at Readable.push (node:internal/streams/readable:392:5)
+      at TCP.onStreamRead (node:internal/stream_base_commons:189:23)
+}

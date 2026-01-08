@@ -36,7 +36,7 @@ const seedData = async () => {
       creditLimit: 500000,
       outstandingAmount: 150000,
       territory: 'West',
-      region: 'Mumbai',
+      // region: 'Mumbai', // Removed as per schema
       sapCustomerNumber: 'C100001',
       sapVendorNumber: 'V100001',
       isActive: true,
@@ -62,7 +62,7 @@ const seedData = async () => {
       creditLimit: 750000,
       outstandingAmount: 200000,
       territory: 'North',
-      region: 'Delhi',
+      // region: 'Delhi',
       sapCustomerNumber: 'C100002',
       sapVendorNumber: 'V100002',
       isActive: true,
@@ -88,7 +88,7 @@ const seedData = async () => {
       creditLimit: 600000,
       outstandingAmount: 100000,
       territory: 'South',
-      region: 'Bangalore',
+      // region: 'Bangalore',
       sapCustomerNumber: 'C100003',
       sapVendorNumber: 'V100003',
       isActive: true,
@@ -340,7 +340,7 @@ const seedData = async () => {
       description: 'Product return credit note',
       referenceInvoiceNumber: 'INV-2024-001',
       status: 'approved',
-      dealerId: dealer1.id,
+      // dealerId: dealer1.id,
       sapDocumentNumber: 'SAP-CN-001'
     });
 
@@ -353,7 +353,7 @@ const seedData = async () => {
       description: 'Shortage debit note',
       referenceInvoiceNumber: 'INV-2024-002',
       status: 'approved',
-      dealerId: dealer1.id,
+      // dealerId: dealer1.id,
       sapDocumentNumber: 'SAP-DN-001'
     });
 
@@ -367,7 +367,7 @@ const seedData = async () => {
       debitAmount: 0,
       creditAmount: 0,
       balance: 50000,
-      dealerId: dealer1.id
+      // dealerId: dealer1.id
     });
 
     await AccountStatement.create({
@@ -379,7 +379,7 @@ const seedData = async () => {
       creditAmount: 0,
       balance: 168000,
       productGroup: 'Electronics',
-      dealerId: dealer1.id,
+      // dealerId: dealer1.id,
       sapDocumentNumber: 'SAP-INV-001'
     });
 
@@ -391,7 +391,7 @@ const seedData = async () => {
       debitAmount: 0,
       creditAmount: 50000,
       balance: 118000,
-      dealerId: dealer1.id
+      // dealerId: dealer1.id
     });
 
     console.log('Account statements created successfully');
