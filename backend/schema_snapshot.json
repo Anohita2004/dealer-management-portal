@@ -1,0 +1,711 @@
+{
+  "Users": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "username": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "email": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "password": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "role": {
+      "type": "TEXT",
+      "allowNull": false,
+      "defaultValue": "dealer"
+    },
+    "isActive": {
+      "type": "BOOLEAN",
+      "allowNull": true,
+      "defaultValue": true
+    },
+    "isBlocked": {
+      "type": "BOOLEAN",
+      "allowNull": true,
+      "defaultValue": false
+    },
+    "lastLogin": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "otp": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "otpExpiry": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "phoneNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "dealerId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "roleId": {
+      "type": "INTEGER",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "regionId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "managerId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "areaId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "territoryId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "salesGroupId": {
+      "type": "INTEGER",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "createdBy": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null
+    }
+  },
+  "dealers": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "dealerCode": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "businessName": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "contactPerson": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "email": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "phoneNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "address": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "city": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "state": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "pincode": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "gstNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "panNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "bankName": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "bankAccountNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "bankIFSC": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "paymentTerms": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "creditLimit": {
+      "type": "NUMERIC",
+      "allowNull": true,
+      "defaultValue": "0"
+    },
+    "outstandingAmount": {
+      "type": "NUMERIC",
+      "allowNull": true,
+      "defaultValue": "0"
+    },
+    "territory": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "sapCustomerNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "sapVendorNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "isActive": {
+      "type": "BOOLEAN",
+      "allowNull": true,
+      "defaultValue": true
+    },
+    "isBlocked": {
+      "type": "BOOLEAN",
+      "allowNull": true,
+      "defaultValue": false
+    },
+    "blockReason": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "isVerified": {
+      "type": "BOOLEAN",
+      "allowNull": true,
+      "defaultValue": false
+    },
+    "licenseNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "licenseDocument": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "verifiedBy": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "verifiedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "licenses": {
+      "type": "JSON",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "managerId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "regionId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "lat": {
+      "type": "DOUBLE PRECISION",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "lng": {
+      "type": "DOUBLE PRECISION",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "territoryId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "areaId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "status": {
+      "type": "USER-DEFINED",
+      "allowNull": false,
+      "defaultValue": "pending_approval"
+    },
+    "approvalStage": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "approvalStatus": {
+      "type": "USER-DEFINED",
+      "allowNull": false,
+      "defaultValue": "pending"
+    },
+    "approvedBy": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "approvedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "rejectionReason": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "currentSlaExpiresAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null
+    }
+  },
+  "Products": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "name": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "plant": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "stock": {
+      "type": "INTEGER",
+      "allowNull": false,
+      "defaultValue": "0"
+    },
+    "uom": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "lastUpdatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null
+    }
+  },
+  "Invoices": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "invoiceNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "invoiceDate": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "dueDate": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "amount": {
+      "type": "NUMERIC",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "taxAmount": {
+      "type": "NUMERIC",
+      "allowNull": true,
+      "defaultValue": "0"
+    },
+    "totalAmount": {
+      "type": "NUMERIC",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "paidAmount": {
+      "type": "NUMERIC",
+      "allowNull": true,
+      "defaultValue": "0"
+    },
+    "balanceAmount": {
+      "type": "NUMERIC",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "status": {
+      "type": "USER-DEFINED",
+      "allowNull": true,
+      "defaultValue": "unpaid"
+    },
+    "productGroup": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "description": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "pdfPath": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "sapDocumentNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "paymentDate": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "dealerId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null
+    }
+  },
+  "Campaigns": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "campaignName": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "campaignType": {
+      "type": "USER-DEFINED",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "description": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "startDate": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "endDate": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "productGroup": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "discountPercentage": {
+      "type": "NUMERIC",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "discountAmount": {
+      "type": "NUMERIC",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "targetAudience": {
+      "type": "JSON",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "isActive": {
+      "type": "BOOLEAN",
+      "allowNull": true,
+      "defaultValue": true
+    },
+    "terms": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "bannerImage": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "areaId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "approvalStage": {
+      "type": "USER-DEFINED",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "approvalStatus": {
+      "type": "USER-DEFINED",
+      "allowNull": false,
+      "defaultValue": "pending"
+    },
+    "approvedBy": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "approvedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "rejectionReason": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "currentSlaExpiresAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null
+    }
+  },
+  "CreditDebitNotes": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "noteNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "noteType": {
+      "type": "USER-DEFINED",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "noteDate": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "amount": {
+      "type": "NUMERIC",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "reasonCode": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "description": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "referenceInvoiceNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "status": {
+      "type": "USER-DEFINED",
+      "allowNull": true,
+      "defaultValue": "pending"
+    },
+    "pdfPath": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "sapDocumentNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null
+    }
+  },
+  "AccountStatements": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "statementDate": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "documentType": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "documentNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "description": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "debitAmount": {
+      "type": "NUMERIC",
+      "allowNull": true,
+      "defaultValue": "0"
+    },
+    "creditAmount": {
+      "type": "NUMERIC",
+      "allowNull": true,
+      "defaultValue": "0"
+    },
+    "balance": {
+      "type": "NUMERIC",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "productGroup": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "sapDocumentNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null
+    }
+  }
+}

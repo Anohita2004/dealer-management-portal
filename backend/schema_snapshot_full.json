@@ -1,0 +1,3194 @@
+{
+  "AccountStatements": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": true
+    },
+    "statementDate": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "documentType": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "documentNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "description": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "debitAmount": {
+      "type": "NUMERIC",
+      "allowNull": true,
+      "defaultValue": "0",
+      "primaryKey": false
+    },
+    "creditAmount": {
+      "type": "NUMERIC",
+      "allowNull": true,
+      "defaultValue": "0",
+      "primaryKey": false
+    },
+    "balance": {
+      "type": "NUMERIC",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "productGroup": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "sapDocumentNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    }
+  },
+  "AuditLogs": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": true
+    },
+    "userId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "action": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "entity": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "entityId": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "changes": {
+      "type": "JSON",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "ipAddress": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "userAgent": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "timestamp": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    }
+  },
+  "Campaigns": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": true
+    },
+    "campaignName": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "campaignType": {
+      "type": "USER-DEFINED",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "description": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "startDate": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "endDate": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "productGroup": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "discountPercentage": {
+      "type": "NUMERIC",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "discountAmount": {
+      "type": "NUMERIC",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "targetAudience": {
+      "type": "JSON",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "isActive": {
+      "type": "BOOLEAN",
+      "allowNull": true,
+      "defaultValue": true,
+      "primaryKey": false
+    },
+    "terms": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "bannerImage": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "areaId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "approvalStage": {
+      "type": "USER-DEFINED",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "approvalStatus": {
+      "type": "USER-DEFINED",
+      "allowNull": false,
+      "defaultValue": "pending",
+      "primaryKey": false
+    },
+    "approvedBy": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "approvedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "rejectionReason": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "currentSlaExpiresAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    }
+  },
+  "CreditDebitNotes": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": true
+    },
+    "noteNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "noteType": {
+      "type": "USER-DEFINED",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "noteDate": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "amount": {
+      "type": "NUMERIC",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "reasonCode": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "description": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "referenceInvoiceNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "status": {
+      "type": "USER-DEFINED",
+      "allowNull": true,
+      "defaultValue": "pending",
+      "primaryKey": false
+    },
+    "pdfPath": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "sapDocumentNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    }
+  },
+  "Documents": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": true
+    },
+    "documentType": {
+      "type": "USER-DEFINED",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "documentName": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "filePath": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "fileSize": {
+      "type": "INTEGER",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "mimeType": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "uploadedBy": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "description": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "status": {
+      "type": "USER-DEFINED",
+      "allowNull": true,
+      "defaultValue": "pending",
+      "primaryKey": false
+    },
+    "approvedBy": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "approvedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "rejectionReason": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "sapDocumentId": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "dealerId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "areaId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    }
+  },
+  "Inventories": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": true
+    },
+    "name": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "plant": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "stock": {
+      "type": "INTEGER",
+      "allowNull": false,
+      "defaultValue": "0",
+      "primaryKey": false
+    },
+    "uom": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": "Units",
+      "primaryKey": false
+    },
+    "lastUpdatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "sapMaterialNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "reorderLevel": {
+      "type": "INTEGER",
+      "allowNull": true,
+      "defaultValue": "0",
+      "primaryKey": false
+    },
+    "minStock": {
+      "type": "INTEGER",
+      "allowNull": true,
+      "defaultValue": "0",
+      "primaryKey": false
+    },
+    "price": {
+      "type": "NUMERIC",
+      "allowNull": true,
+      "defaultValue": "0",
+      "primaryKey": false
+    },
+    "description": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "materialNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "materialCode": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    }
+  },
+  "Invoices": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": true
+    },
+    "invoiceNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "invoiceDate": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "dueDate": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "amount": {
+      "type": "NUMERIC",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "taxAmount": {
+      "type": "NUMERIC",
+      "allowNull": true,
+      "defaultValue": "0",
+      "primaryKey": false
+    },
+    "totalAmount": {
+      "type": "NUMERIC",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "paidAmount": {
+      "type": "NUMERIC",
+      "allowNull": true,
+      "defaultValue": "0",
+      "primaryKey": false
+    },
+    "balanceAmount": {
+      "type": "NUMERIC",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "status": {
+      "type": "USER-DEFINED",
+      "allowNull": true,
+      "defaultValue": "unpaid",
+      "primaryKey": false
+    },
+    "productGroup": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "description": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "pdfPath": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "sapDocumentNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "paymentDate": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "dealerId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    }
+  },
+  "Notifications": {
+    "senderId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "recipientId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "recipientRole": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "title": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "message": {
+      "type": "TEXT",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "type": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "isRead": {
+      "type": "BOOLEAN",
+      "allowNull": true,
+      "defaultValue": false,
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": "gen_random_uuid()",
+      "primaryKey": true
+    },
+    "relatedId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    }
+  },
+  "PaymentRequests": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": true
+    },
+    "invoiceId": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "dealerId": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "amount": {
+      "type": "DOUBLE PRECISION",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "paymentMode": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "utrNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "proofFile": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "status": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": "dealer_pending",
+      "primaryKey": false
+    },
+    "dealerApprovalStatus": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": "pending",
+      "primaryKey": false
+    },
+    "dealerApprovalRemarks": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "dealerApprovedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "dealerApprovedBy": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "remarks": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "approvedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "approvedBy": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "currentSlaExpiresAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "approvalStage": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "approvalStatus": {
+      "type": "USER-DEFINED",
+      "allowNull": false,
+      "defaultValue": "pending",
+      "primaryKey": false
+    },
+    "rejectionReason": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "gatewayOrderId": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "gatewayPaymentId": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "gatewaySignature": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "paymentGateway": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    }
+  },
+  "PricingUpdates": {
+    "id": {
+      "type": "INTEGER",
+      "allowNull": false,
+      "defaultValue": "nextval(\"PricingUpdates_id_seq\"::regclass)",
+      "primaryKey": true
+    },
+    "productId": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "oldPrice": {
+      "type": "NUMERIC",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "newPrice": {
+      "type": "NUMERIC",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "reason": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "requestedBy": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "requestedByUserId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "status": {
+      "type": "USER-DEFINED",
+      "allowNull": true,
+      "defaultValue": "pending",
+      "primaryKey": false
+    },
+    "remarks": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "approvedBy": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "approvedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "dealerId": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "currentSlaExpiresAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "approvalStage": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "approvalStatus": {
+      "type": "USER-DEFINED",
+      "allowNull": false,
+      "defaultValue": "pending",
+      "primaryKey": false
+    },
+    "rejectionReason": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    }
+  },
+  "Products": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": true
+    },
+    "name": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "plant": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "stock": {
+      "type": "INTEGER",
+      "allowNull": false,
+      "defaultValue": "0",
+      "primaryKey": false
+    },
+    "uom": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "lastUpdatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    }
+  },
+  "Regions": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": "gen_random_uuid()",
+      "primaryKey": true
+    },
+    "name": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "geojson": {
+      "type": "JSON",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "centroidLat": {
+      "type": "DOUBLE PRECISION",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "centroidLng": {
+      "type": "DOUBLE PRECISION",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    }
+  },
+  "SalesGroupMembers": {
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "salesGroupId": {
+      "type": "INTEGER",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": true
+    },
+    "dealerId": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": true
+    }
+  },
+  "Users": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": true
+    },
+    "username": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "email": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "password": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "role": {
+      "type": "TEXT",
+      "allowNull": false,
+      "defaultValue": "dealer",
+      "primaryKey": false
+    },
+    "isActive": {
+      "type": "BOOLEAN",
+      "allowNull": true,
+      "defaultValue": true,
+      "primaryKey": false
+    },
+    "isBlocked": {
+      "type": "BOOLEAN",
+      "allowNull": true,
+      "defaultValue": false,
+      "primaryKey": false
+    },
+    "lastLogin": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "otp": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "otpExpiry": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "phoneNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "dealerId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "roleId": {
+      "type": "INTEGER",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "regionId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "managerId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "areaId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "territoryId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "salesGroupId": {
+      "type": "INTEGER",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "createdBy": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    }
+  },
+  "areas": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": true
+    },
+    "name": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "regionId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "geojson": {
+      "type": "JSONB",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "centroidLat": {
+      "type": "DOUBLE PRECISION",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "centroidLng": {
+      "type": "DOUBLE PRECISION",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    }
+  },
+  "chat_messages": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": true
+    },
+    "conversationId": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "senderId": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "content": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "messageType": {
+      "type": "USER-DEFINED",
+      "allowNull": true,
+      "defaultValue": "text",
+      "primaryKey": false
+    },
+    "attachments": {
+      "type": "JSON",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "status": {
+      "type": "USER-DEFINED",
+      "allowNull": true,
+      "defaultValue": "sent",
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    }
+  },
+  "conversations": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": true
+    },
+    "type": {
+      "type": "USER-DEFINED",
+      "allowNull": true,
+      "defaultValue": "one_to_one",
+      "primaryKey": false
+    },
+    "title": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "meta": {
+      "type": "JSON",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    }
+  },
+  "dealer_materials": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": true
+    },
+    "dealerId": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "materialId": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "isActive": {
+      "type": "BOOLEAN",
+      "allowNull": true,
+      "defaultValue": true,
+      "primaryKey": false
+    },
+    "price": {
+      "type": "NUMERIC",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "stockQty": {
+      "type": "INTEGER",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": "now()",
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": "now()",
+      "primaryKey": false
+    }
+  },
+  "dealers": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": true
+    },
+    "dealerCode": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "businessName": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "contactPerson": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "email": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "phoneNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "address": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "city": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "state": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "pincode": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "gstNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "panNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "bankName": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "bankAccountNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "bankIFSC": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "paymentTerms": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "creditLimit": {
+      "type": "NUMERIC",
+      "allowNull": true,
+      "defaultValue": "0",
+      "primaryKey": false
+    },
+    "outstandingAmount": {
+      "type": "NUMERIC",
+      "allowNull": true,
+      "defaultValue": "0",
+      "primaryKey": false
+    },
+    "territory": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "sapCustomerNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "sapVendorNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "isActive": {
+      "type": "BOOLEAN",
+      "allowNull": true,
+      "defaultValue": true,
+      "primaryKey": false
+    },
+    "isBlocked": {
+      "type": "BOOLEAN",
+      "allowNull": true,
+      "defaultValue": false,
+      "primaryKey": false
+    },
+    "blockReason": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "isVerified": {
+      "type": "BOOLEAN",
+      "allowNull": true,
+      "defaultValue": false,
+      "primaryKey": false
+    },
+    "licenseNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "licenseDocument": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "verifiedBy": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "verifiedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "licenses": {
+      "type": "JSON",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "managerId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "regionId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "lat": {
+      "type": "DOUBLE PRECISION",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "lng": {
+      "type": "DOUBLE PRECISION",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "territoryId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "areaId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "status": {
+      "type": "USER-DEFINED",
+      "allowNull": false,
+      "defaultValue": "pending_approval",
+      "primaryKey": false
+    },
+    "approvalStage": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "approvalStatus": {
+      "type": "USER-DEFINED",
+      "allowNull": false,
+      "defaultValue": "pending",
+      "primaryKey": false
+    },
+    "approvedBy": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "approvedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "rejectionReason": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "currentSlaExpiresAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    }
+  },
+  "documents": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": true
+    },
+    "dealerId": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "documentType": {
+      "type": "USER-DEFINED",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "documentName": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "filePath": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "fileSize": {
+      "type": "INTEGER",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "mimeType": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "uploadedBy": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "description": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "status": {
+      "type": "USER-DEFINED",
+      "allowNull": true,
+      "defaultValue": "pending",
+      "primaryKey": false
+    },
+    "sapDocumentId": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "approvalStage": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "approvalStatus": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": "pending",
+      "primaryKey": false
+    },
+    "approvedBy": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "approvedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "rejectionReason": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "currentSlaExpiresAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    }
+  },
+  "feature_toggles": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": true
+    },
+    "key": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "name": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "description": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "isEnabled": {
+      "type": "BOOLEAN",
+      "allowNull": true,
+      "defaultValue": true,
+      "primaryKey": false
+    },
+    "config": {
+      "type": "JSONB",
+      "allowNull": true,
+      "defaultValue": "{}",
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    }
+  },
+  "invoices": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": true
+    },
+    "dealerId": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "invoiceNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "invoiceDate": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "dueDate": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "taxAmount": {
+      "type": "NUMERIC",
+      "allowNull": false,
+      "defaultValue": "0",
+      "primaryKey": false
+    },
+    "totalAmount": {
+      "type": "NUMERIC",
+      "allowNull": false,
+      "defaultValue": "0",
+      "primaryKey": false
+    },
+    "paidAmount": {
+      "type": "NUMERIC",
+      "allowNull": false,
+      "defaultValue": "0",
+      "primaryKey": false
+    },
+    "balanceAmount": {
+      "type": "NUMERIC",
+      "allowNull": false,
+      "defaultValue": "0",
+      "primaryKey": false
+    },
+    "status": {
+      "type": "USER-DEFINED",
+      "allowNull": true,
+      "defaultValue": "unpaid",
+      "primaryKey": false
+    },
+    "productGroup": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "description": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "pdfPath": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "sapDocumentNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "paymentDate": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "baseAmount": {
+      "type": "NUMERIC",
+      "allowNull": false,
+      "defaultValue": "0",
+      "primaryKey": false
+    },
+    "orderId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "approvalStage": {
+      "type": "USER-DEFINED",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "approvalStatus": {
+      "type": "USER-DEFINED",
+      "allowNull": false,
+      "defaultValue": "pending",
+      "primaryKey": false
+    },
+    "approvedBy": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "approvedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "rejectionReason": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "currentSlaExpiresAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    }
+  },
+  "material_groups": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": true
+    },
+    "code": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "name": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "description": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    }
+  },
+  "materials": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": true
+    },
+    "materialNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "name": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "description": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "uom": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "plant": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "stock": {
+      "type": "INTEGER",
+      "allowNull": true,
+      "defaultValue": "0",
+      "primaryKey": false
+    },
+    "materialGroupId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "reorderLevel": {
+      "type": "INTEGER",
+      "allowNull": true,
+      "defaultValue": "0",
+      "primaryKey": false
+    },
+    "expiryDate": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    }
+  },
+  "messages": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": true
+    },
+    "senderId": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "recipientId": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "subject": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "body": {
+      "type": "TEXT",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "status": {
+      "type": "USER-DEFINED",
+      "allowNull": true,
+      "defaultValue": "unread",
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "messageType": {
+      "type": "USER-DEFINED",
+      "allowNull": true,
+      "defaultValue": "chat",
+      "primaryKey": false
+    }
+  },
+  "order_items": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": true
+    },
+    "orderId": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "materialId": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "qty": {
+      "type": "INTEGER",
+      "allowNull": false,
+      "defaultValue": "1",
+      "primaryKey": false
+    },
+    "unitPrice": {
+      "type": "NUMERIC",
+      "allowNull": false,
+      "defaultValue": "0",
+      "primaryKey": false
+    },
+    "lineTotal": {
+      "type": "NUMERIC",
+      "allowNull": false,
+      "defaultValue": "0",
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    }
+  },
+  "orders": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": true
+    },
+    "dealerId": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "orderNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "status": {
+      "type": "USER-DEFINED",
+      "allowNull": true,
+      "defaultValue": "Pending",
+      "primaryKey": false
+    },
+    "totalAmount": {
+      "type": "NUMERIC",
+      "allowNull": true,
+      "defaultValue": "0",
+      "primaryKey": false
+    },
+    "notes": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "approvalStage": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "approvalStatus": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": "draft",
+      "primaryKey": false
+    },
+    "approvedBy": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "approvedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "rejectionReason": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "currentSlaExpiresAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "truckAssignmentId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    }
+  },
+  "participants": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": true
+    },
+    "conversationId": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "userId": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "role": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "lastReadAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    }
+  },
+  "payment_requests": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": true
+    },
+    "amount": {
+      "type": "NUMERIC",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "status": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": "pending",
+      "primaryKey": false
+    },
+    "dealerId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": "now()",
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": "now()",
+      "primaryKey": false
+    },
+    "approvalStage": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "approvalStatus": {
+      "type": "USER-DEFINED",
+      "allowNull": false,
+      "defaultValue": "pending",
+      "primaryKey": false
+    },
+    "rejectionReason": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    }
+  },
+  "permissions": {
+    "id": {
+      "type": "INTEGER",
+      "allowNull": false,
+      "defaultValue": "nextval(permissions_id_seq::regclass)",
+      "primaryKey": true
+    },
+    "key": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "description": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    }
+  },
+  "region_materials": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": true
+    },
+    "regionId": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "materialId": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "isActive": {
+      "type": "BOOLEAN",
+      "allowNull": true,
+      "defaultValue": true,
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": "now()",
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": "now()",
+      "primaryKey": false
+    }
+  },
+  "regions": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": "gen_random_uuid()",
+      "primaryKey": true
+    },
+    "name": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "geojson": {
+      "type": "JSON",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "centroidLat": {
+      "type": "DOUBLE PRECISION",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "centroidLng": {
+      "type": "DOUBLE PRECISION",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    }
+  },
+  "rolepermissions": {
+    "roleId": {
+      "type": "INTEGER",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "permissionId": {
+      "type": "INTEGER",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "id": {
+      "type": "INTEGER",
+      "allowNull": false,
+      "defaultValue": "nextval(rolepermissions_id_seq::regclass)",
+      "primaryKey": false
+    }
+  },
+  "roles": {
+    "id": {
+      "type": "INTEGER",
+      "allowNull": false,
+      "defaultValue": "nextval(roles_id_seq::regclass)",
+      "primaryKey": true
+    },
+    "name": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "category": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "description": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    }
+  },
+  "sales_groups": {
+    "id": {
+      "type": "INTEGER",
+      "allowNull": false,
+      "defaultValue": "nextval(sales_groups_id_seq::regclass)",
+      "primaryKey": true
+    },
+    "name": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "region": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "description": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "metadata": {
+      "type": "JSONB",
+      "allowNull": true,
+      "defaultValue": "{}",
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    }
+  },
+  "territories": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": "gen_random_uuid()",
+      "primaryKey": true
+    },
+    "name": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "regionId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "geojson": {
+      "type": "JSONB",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "centroidLat": {
+      "type": "DOUBLE PRECISION",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "centroidLng": {
+      "type": "DOUBLE PRECISION",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "areaId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    }
+  },
+  "truck_assignments": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": true
+    },
+    "orderId": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "truckId": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "warehouseId": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "driverName": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "driverPhone": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "assignedBy": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "assignedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": "CURRENT_TIMESTAMP",
+      "primaryKey": false
+    },
+    "status": {
+      "type": "USER-DEFINED",
+      "allowNull": true,
+      "defaultValue": "assigned",
+      "primaryKey": false
+    },
+    "pickupAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "deliveredAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "estimatedDeliveryAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "notes": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": "CURRENT_TIMESTAMP",
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": "CURRENT_TIMESTAMP",
+      "primaryKey": false
+    },
+    "startLocationLat": {
+      "type": "DOUBLE PRECISION",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "startLocationLng": {
+      "type": "DOUBLE PRECISION",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "startTrackingAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "warehouseArrivedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "currentEta": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    }
+  },
+  "truck_location_history": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": true
+    },
+    "truckId": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "truckAssignmentId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "lat": {
+      "type": "DOUBLE PRECISION",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "lng": {
+      "type": "DOUBLE PRECISION",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "speed": {
+      "type": "DOUBLE PRECISION",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "heading": {
+      "type": "DOUBLE PRECISION",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "timestamp": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": "CURRENT_TIMESTAMP",
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": "CURRENT_TIMESTAMP",
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": "CURRENT_TIMESTAMP",
+      "primaryKey": false
+    }
+  },
+  "trucks": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": true
+    },
+    "truckName": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "licenseNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "truckType": {
+      "type": "USER-DEFINED",
+      "allowNull": true,
+      "defaultValue": "medium",
+      "primaryKey": false
+    },
+    "capacity": {
+      "type": "NUMERIC",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "status": {
+      "type": "USER-DEFINED",
+      "allowNull": true,
+      "defaultValue": "available",
+      "primaryKey": false
+    },
+    "currentLat": {
+      "type": "DOUBLE PRECISION",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "currentLng": {
+      "type": "DOUBLE PRECISION",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "lastLocationUpdate": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "isActive": {
+      "type": "BOOLEAN",
+      "allowNull": true,
+      "defaultValue": true,
+      "primaryKey": false
+    },
+    "regionId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": "CURRENT_TIMESTAMP",
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": "CURRENT_TIMESTAMP",
+      "primaryKey": false
+    }
+  },
+  "user_dealers": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": true
+    },
+    "userId": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "dealerId": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "isPrimary": {
+      "type": "BOOLEAN",
+      "allowNull": true,
+      "defaultValue": false,
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": "now()",
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": "now()",
+      "primaryKey": false
+    }
+  },
+  "warehouses": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": true
+    },
+    "warehouseCode": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "name": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "address": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "city": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "state": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "pincode": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "lat": {
+      "type": "DOUBLE PRECISION",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "lng": {
+      "type": "DOUBLE PRECISION",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "regionId": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "areaId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "contactPerson": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "phoneNumber": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "email": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "isActive": {
+      "type": "BOOLEAN",
+      "allowNull": true,
+      "defaultValue": true,
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": "CURRENT_TIMESTAMP",
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": "CURRENT_TIMESTAMP",
+      "primaryKey": false
+    }
+  },
+  "workflow_timelines": {
+    "id": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": true
+    },
+    "entityType": {
+      "type": "USER-DEFINED",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "entityId": {
+      "type": "UUID",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "stage": {
+      "type": "CHARACTER VARYING(255)",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "action": {
+      "type": "USER-DEFINED",
+      "allowNull": false,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "actorId": {
+      "type": "UUID",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "remarks": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "rejectionReason": {
+      "type": "TEXT",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "slaStart": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "slaEnd": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": true,
+      "defaultValue": null,
+      "primaryKey": false
+    },
+    "metadata": {
+      "type": "JSONB",
+      "allowNull": true,
+      "defaultValue": "{}",
+      "primaryKey": false
+    },
+    "createdAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": "CURRENT_TIMESTAMP",
+      "primaryKey": false
+    },
+    "updatedAt": {
+      "type": "TIMESTAMP WITH TIME ZONE",
+      "allowNull": false,
+      "defaultValue": "CURRENT_TIMESTAMP",
+      "primaryKey": false
+    }
+  }
+}

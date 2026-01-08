@@ -12,7 +12,7 @@ if (process.env.DATABASE_URL) {
     dialect: 'postgres',
     logging: false,
     dialectOptions: {
-      ssl: {
+      ssl: (process.env.DB_SSL && process.env.DB_SSL.trim() === 'false') ? false : {
         require: true,
         rejectUnauthorized: false
       }
@@ -53,7 +53,7 @@ if (process.env.DATABASE_URL) {
       // Only use SSL if we are sure we are remote (e.g., host contains 'railway')
       // or explicitly requested. Standard Railway internal connection usually needs it.
       dialectOptions: {
-        ssl: {
+        ssl: (process.env.DB_SSL && process.env.DB_SSL.trim() === 'false') ? false : {
           require: true,
           rejectUnauthorized: false
         }
