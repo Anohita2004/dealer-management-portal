@@ -483,8 +483,8 @@ const getAdminSummary = async (req, res) => {
 // =======================================================
 const getAccountStatementReport = async (req, res) => {
   try {
-    // Month-end Closing Logic
-    if (isReportLocked()) {
+    // Month-end Closing Logic (Bypass for super_admin)
+    if (isReportLocked() && req.user.role !== 'super_admin') {
       return res.status(403).json({
         error: "Report is temporarily unavailable due to month-end closing (last 3 days of the month)."
       });
@@ -536,8 +536,8 @@ const getAccountStatementReport = async (req, res) => {
 // =======================================================
 const getInvoiceRegisterReport = async (req, res) => {
   try {
-    // Month-end Closing Logic
-    if (isReportLocked()) {
+    // Month-end Closing Logic (Bypass for super_admin)
+    if (isReportLocked() && req.user.role !== 'super_admin') {
       return res.status(403).json({
         error: "Report is temporarily unavailable due to month-end closing (last 3 days of the month)."
       });
