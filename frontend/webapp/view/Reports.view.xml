@@ -6,51 +6,124 @@
     <Page title="Reports" showNavButton="true" navButtonPress="onNavBack">
         <content>
             <l:VerticalLayout width="100%" class="sapUiContentPadding">
-                <Title text="Available Reports" level="H2" class="sapUiSmallMarginBottom"/>
-                
-                <List>
+                <Title text="Finance Reports" level="H2" class="sapUiSmallMarginBottom"/>
+                <List class="sapUiSmallMarginBottom">
                     <StandardListItem
                         title="Dealer Performance Report"
                         description="Sales vs targets, product-wise volumes"
                         icon="sap-icon://performance"
                         type="Navigation"
                         press="onGenerateDealerPerformance"/>
-                    
                     <StandardListItem
-                        title="Account Statement Report"
+                        title="Account Statement (Le Register)"
                         description="Customer ledger with opening/closing balance"
                         icon="sap-icon://account"
                         type="Navigation"
                         press="onGenerateAccountStatement"/>
-                    
+                    <StandardListItem
+                        title="FI Daywise Report"
+                        description="Daily financial transactions and activities"
+                        icon="sap-icon://calendar"
+                        type="Navigation"
+                        press="onGenerateFIDaywise"/>
                     <StandardListItem
                         title="Invoice Register Report"
                         description="Invoice-wise list of sales to dealer"
                         icon="sap-icon://document"
                         type="Navigation"
                         press="onGenerateInvoiceRegister"/>
-                    
                     <StandardListItem
-                        title="Credit/Debit Note Report"
-                        description="Notes generated against dealer"
+                        title="Credit/Debit Note Register"
+                        description="Register for all Debit and Credit notes issued"
                         icon="sap-icon://receipt"
                         type="Navigation"
                         press="onGenerateCreditDebitNote"/>
-                    
                     <StandardListItem
-                        title="Outstanding Receivables Report"
-                        description="Aging analysis of dealer outstanding amounts"
-                        icon="sap-icon://money-bills"
+                        title="Collection Report"
+                        description="Tracks payments and collections from dealers"
+                        icon="sap-icon://list"
                         type="Navigation"
-                        press="onGenerateOutstandingReceivables"/>
-                    
+                        press="onGenerateCollection"/>
+                    <StandardListItem
+                        title="Ageing Analysis (SAP External)"
+                        description="External link for performing ageing analysis"
+                        icon="sap-icon://chain-link"
+                        type="Navigation"
+                        press="onOpenAgeingReport"/>
+                </List>
+
+                <Title text="Inventory &amp; Stock Reports" level="H2" class="sapUiSmallMarginBottom"/>
+                <List class="sapUiSmallMarginBottom">
+                    <StandardListItem
+                        title="Stock Overview"
+                        description="Real-time overview of current stock levels"
+                        icon="sap-icon://inventory"
+                        type="Navigation"
+                        press="onGenerateStockOverview"/>
+                    <StandardListItem
+                        title="Comparative Stock Report"
+                        description="Compare stock data across plant vs depots"
+                        icon="sap-icon://compare"
+                        type="Navigation"
+                        press="onGenerateStockComparative"/>
+                    <StandardListItem
+                        title="Compliance Report"
+                        description="Tracks compliance-related metrics and expiry"
+                        icon="sap-icon://official-service"
+                        type="Navigation"
+                        press="onGenerateStockCompliance"/>
+                    <StandardListItem
+                        title="RR Summary Report"
+                        description="Summary of Railway Receipt (RR) documents"
+                        icon="sap-icon://shipping-status"
+                        type="Navigation"
+                        press="onGenerateRRSummary"/>
+                </List>
+
+                <Title text="Rake &amp; Damage Reports" level="H2" class="sapUiSmallMarginBottom" 
+                       visible="{= ${app>/user/role} !== 'dealer'}"/>
+                <List class="sapUiSmallMarginBottom" visible="{= ${app>/user/role} !== 'dealer'}">
+                    <StandardListItem
+                        title="Rake Arrival Report"
+                        description="Consolidated report of incoming rakes"
+                        icon="sap-icon://BusinessSuiteInAppSymbols/icon-outbound-delivery"
+                        type="Navigation"
+                        press="onGenerateRakeArrival"/>
+                    <StandardListItem
+                        title="Consolidated Exception Report"
+                        description="Highlights discrepancies or damages in rakes"
+                        icon="sap-icon://unpaid-leave"
+                        type="Navigation"
+                        press="onGenerateRakeExceptions"/>
+                    <StandardListItem
+                        title="Rake Report Approval"
+                        description="Approve rake data entries"
+                        icon="sap-icon://approvals"
+                        type="Navigation"
+                        press="onGenerateRakeApprovals"/>
+                </List>
+
+                <Title text="Geographic &amp; Technical" level="H2" class="sapUiSmallMarginBottom"/>
+                <List>
                     <StandardListItem
                         title="Territory/Region Report"
-                        description="Consolidated sales & receivables by geography"
+                        description="Consolidated sales &amp; receivables by geography"
                         icon="sap-icon://map"
                         type="Navigation"
                         press="onGenerateTerritoryReport"
                         visible="{= ${app>/user/role} !== 'dealer'}"/>
+                    <StandardListItem
+                        title="Diversion Report"
+                        description="Track diverted shipments"
+                        icon="sap-icon://shipping-status"
+                        type="Navigation"
+                        press="onGenerateDiversion"/>
+                    <StandardListItem
+                        title="DMS Order Requests"
+                        description="Track requests from Dealer Management System"
+                        icon="sap-icon://order-status"
+                        type="Navigation"
+                        press="onGenerateDMSOrders"/>
                 </List>
             </l:VerticalLayout>
         </content>
