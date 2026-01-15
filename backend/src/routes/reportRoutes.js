@@ -37,14 +37,15 @@ router.get(
 );
 
 // --- New Finance Reports ---
-router.get('/fi-daywise', authenticate, checkPermission('reports.view'), reportController.getFIDaywiseReport);
-router.get('/finance/fi-daywise', authenticate, checkPermission('reports.view'), reportController.getFIDaywiseReport);
-router.get('/collections', authenticate, checkPermission('reports.view'), reportController.getCollectionReport);
-router.get('/finance/collection', authenticate, checkPermission('reports.view'), reportController.getCollectionReport);
-router.get('/finance/le-register', authenticate, checkPermission('reports.view'), applyScope(['Dealer']), reportController.getAccountStatementReport);
-router.get('/finance/drcr-note', authenticate, checkPermission('reports.view'), applyScope(['Dealer']), reportController.getCreditDebitNoteReport);
-router.get('/finance/sales-register', authenticate, checkPermission('reports.view'), applyScope(['Invoice']), reportController.getInvoiceRegisterReport);
-router.get('/ageing-link', authenticate, (req, res) => res.json({ url: "https://sap.external.system/ageing-analysis" }));
+const financeRoles = ["super_admin", "finance_admin", "accounts_user"];
+router.get('/fi-daywise', authenticate, authorize(...financeRoles), checkPermission('reports.view'), reportController.getFIDaywiseReport);
+router.get('/finance/fi-daywise', authenticate, authorize(...financeRoles), checkPermission('reports.view'), reportController.getFIDaywiseReport);
+router.get('/collections', authenticate, authorize(...financeRoles), checkPermission('reports.view'), reportController.getCollectionReport);
+router.get('/finance/collection', authenticate, authorize(...financeRoles), checkPermission('reports.view'), reportController.getCollectionReport);
+router.get('/finance/le-register', authenticate, authorize(...financeRoles), checkPermission('reports.view'), applyScope(['Dealer']), reportController.getAccountStatementReport);
+router.get('/finance/drcr-note', authenticate, authorize(...financeRoles), checkPermission('reports.view'), applyScope(['Dealer']), reportController.getCreditDebitNoteReport);
+router.get('/finance/sales-register', authenticate, authorize(...financeRoles), checkPermission('reports.view'), applyScope(['Invoice']), reportController.getInvoiceRegisterReport);
+router.get('/ageing-link', authenticate, authorize(...financeRoles), (req, res) => res.json({ url: "https://sap.external.system/ageing-analysis" }));
 
 // --- Inventory & Stock Reports ---
 router.get('/stock-overview', authenticate, checkPermission('reports.view'), reportController.getStockOverview);
