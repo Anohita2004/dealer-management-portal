@@ -13,7 +13,7 @@ sap.ui.define([
             var oAppModel = this.getOwnerComponent().getModel("app");
             var sApiUrl = oAppModel.getProperty("/apiUrl");
             var sToken = oAppModel.getProperty("/token");
-            
+
             jQuery.ajax({
                 url: sApiUrl + "/reports/" + sReportType,
                 method: "GET",
@@ -37,6 +37,10 @@ sap.ui.define([
             this._generateReport("account-statement");
         },
 
+        onGenerateFIDaywise: function () {
+            this._generateReport("fi-daywise");
+        },
+
         onGenerateInvoiceRegister: function () {
             this._generateReport("invoice-register");
         },
@@ -45,12 +49,68 @@ sap.ui.define([
             this._generateReport("credit-debit-notes");
         },
 
-        onGenerateOutstandingReceivables: function () {
-            this._generateReport("outstanding-receivables");
+        onGenerateCollection: function () {
+            this._generateReport("collections");
+        },
+
+        onOpenAgeingReport: function () {
+            var oAppModel = this.getOwnerComponent().getModel("app");
+            var sApiUrl = oAppModel.getProperty("/apiUrl");
+            var sToken = oAppModel.getProperty("/token");
+
+            jQuery.ajax({
+                url: sApiUrl + "/reports/ageing-link",
+                method: "GET",
+                headers: { "Authorization": "Bearer " + sToken },
+                success: function (oData) {
+                    if (oData && oData.url) {
+                        sap.m.URLHelper.redirect(oData.url, true);
+                    }
+                },
+                error: function () {
+                    MessageBox.error("Failed to fetch Ageing Report link");
+                }
+            });
+        },
+
+        onGenerateStockOverview: function () {
+            this._generateReport("stock-overview");
+        },
+
+        onGenerateStockComparative: function () {
+            this._generateReport("stock-comparative");
+        },
+
+        onGenerateStockCompliance: function () {
+            this._generateReport("stock-compliance");
+        },
+
+        onGenerateRRSummary: function () {
+            this._generateReport("rr-summary");
+        },
+
+        onGenerateRakeArrival: function () {
+            this._generateReport("rakes");
+        },
+
+        onGenerateRakeExceptions: function () {
+            this._generateReport("rakes-exceptions");
+        },
+
+        onGenerateRakeApprovals: function () {
+            this._generateReport("rakes-approvals");
         },
 
         onGenerateTerritoryReport: function () {
             this._generateReport("territory");
+        },
+
+        onGenerateDiversion: function () {
+            this._generateReport("diversion");
+        },
+
+        onGenerateDMSOrders: function () {
+            this._generateReport("dms-orders");
         },
 
         onNavBack: function () {

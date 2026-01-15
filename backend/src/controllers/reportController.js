@@ -16,6 +16,10 @@ const {
   Region,
   Area,
   Territory,
+  Inventory,
+  Material,
+  RakeArrival,
+  RailwayReceipt,
   sequelize,
 } = require("../models");
 
@@ -29,6 +33,16 @@ const RBACEngine = require("../services/rbacEngine");
 // -------------------------------------------------
 // Helpers for dashboards
 // -------------------------------------------------
+const isReportLocked = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  const currentDay = now.getDate();
+  // Return true if it's the last 3 days of the month
+  return (lastDay - currentDay) < 3;
+};
+
 const buildDealerWhere = async (req) => {
   // Use RBAC engine for scoping
   if (req.scope?.dealer) {
@@ -469,6 +483,13 @@ const getAdminSummary = async (req, res) => {
 // =======================================================
 const getAccountStatementReport = async (req, res) => {
   try {
+    // Month-end Closing Logic
+    if (isReportLocked()) {
+      return res.status(403).json({
+        error: "Report is temporarily unavailable due to month-end closing (last 3 days of the month)."
+      });
+    }
+
     const { dealerId, startDate, endDate, productGroup } = req.query;
 
     const where = {};
@@ -515,6 +536,13 @@ const getAccountStatementReport = async (req, res) => {
 // =======================================================
 const getInvoiceRegisterReport = async (req, res) => {
   try {
+    // Month-end Closing Logic
+    if (isReportLocked()) {
+      return res.status(403).json({
+        error: "Report is temporarily unavailable due to month-end closing (last 3 days of the month)."
+      });
+    }
+
     const { dealerId, productGroup, invoiceNumber, startDate, endDate, status } =
       req.query;
 
@@ -895,6 +923,235 @@ const getRegionalSalesSummary = async (req, res) => {
 };
 
 // =======================================================
+// ✅ NEW FINANCE REPORTS
+// =======================================================
+
+const getFIDaywiseReport = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const where = {};
+    if (startDate && endDate) {
+      where.createdAt = { [Op.between]: [new Date(startDate), new Date(endDate)] };
+    }
+
+    // Combine Invoices and Payments for a daywise view
+    const invoices = await Invoice.findAll({
+      where,
+      attributes: [
+        [sequelize.fn('DATE', sequelize.col('createdAt')), 'date'],
+        [sequelize.fn('SUM', sequelize.col('totalAmount')), 'totalSales'],
+        [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+      ],
+      group: [sequelize.fn('DATE', sequelize.col('createdAt'))],
+      raw: true
+    });
+
+    const payments = await PaymentRequest.findAll({
+      where: { ...where, status: 'approved' },
+      attributes: [
+        [sequelize.fn('DATE', sequelize.col('createdAt')), 'date'],
+        [sequelize.fn('SUM', sequelize.col('amount')), 'totalCollection'],
+        [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+      ],
+      group: [sequelize.fn('DATE', sequelize.col('createdAt'))],
+      raw: true
+    });
+
+    res.json({ invoices, payments });
+  } catch (error) {
+    console.error("FI Daywise error:", error);
+    res.status(500).json({ error: "Failed to generate FI Daywise report" });
+  }
+};
+
+const getCollectionReport = async (req, res) => {
+  try {
+    const { dealerId, startDate, endDate } = req.query;
+    const where = { status: 'approved' };
+    if (dealerId) where.dealerId = dealerId;
+    if (startDate && endDate) {
+      where.createdAt = { [Op.between]: [new Date(startDate), new Date(endDate)] };
+    }
+
+    const collections = await PaymentRequest.findAll({
+      where,
+      include: [{ model: Dealer, as: "dealer", attributes: ["businessName", "dealerCode"] }],
+      order: [["createdAt", "DESC"]]
+    });
+
+    res.json({ collections });
+  } catch (error) {
+    console.error("Collection report error:", error);
+    res.status(500).json({ error: "Failed to generate collection report" });
+  }
+};
+
+// =======================================================
+// ✅ INVENTORY & STOCK REPORTS
+// =======================================================
+
+const getStockOverview = async (req, res) => {
+  try {
+    const inventory = await Inventory.findAll({
+      include: [{ model: Material, as: "material" }]
+    });
+    res.json({ inventory });
+  } catch (error) {
+    console.error("Stock overview error:", error);
+    res.status(500).json({ error: "Failed to load stock overview" });
+  }
+};
+
+const getComparativeStockReport = async (req, res) => {
+  try {
+    // Compare Current Stock with Reorder Level
+    const materials = await Material.findAll();
+    const inventory = await Inventory.findAll();
+
+    const report = materials.map(m => {
+      const inv = inventory.find(i => i.materialNumber === m.materialNumber) || { stock: 0 };
+      return {
+        materialNumber: m.materialNumber,
+        name: m.name,
+        plantStock: m.stock, // Stock at central plant
+        depotStock: inv.stock, // Stock at dealer/depot
+        reorderLevel: m.reorderLevel,
+        status: inv.stock < m.reorderLevel ? 'LOW' : 'OPTIMAL'
+      };
+    });
+
+    res.json(report);
+  } catch (error) {
+    console.error("Comparative stock error:", error);
+    res.status(500).json({ error: "Failed to generate comparative stock report" });
+  }
+};
+
+const getComplianceReport = async (req, res) => {
+  try {
+    // Tracks nearing expiry or low compliance materials
+    const materials = await Material.findAll({
+      where: {
+        expiryDate: { [Op.lt]: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) } // Expiry in 30 days
+      }
+    });
+    res.json({ expringSoon: materials });
+  } catch (error) {
+    console.error("Compliance report error:", error);
+    res.status(500).json({ error: "Failed to generate compliance report" });
+  }
+};
+
+const getRRSummaryReport = async (req, res) => {
+  try {
+    const receipts = await RailwayReceipt.findAll({
+      include: [{ model: RakeArrival, as: "rake" }]
+    });
+    res.json({ receipts });
+  } catch (error) {
+    console.error("RR Summary error:", error);
+    res.status(500).json({ error: "Failed to generate RR summary report" });
+  }
+};
+
+// =======================================================
+// ✅ RAKE & DAMAGE REPORTS
+// =======================================================
+
+const getRakeArrivalReport = async (req, res) => {
+  try {
+    const rakes = await RakeArrival.findAll({
+      order: [['arrivalDate', 'DESC']]
+    });
+    res.json({ rakes });
+  } catch (error) {
+    console.error("Rake arrival report error:", error);
+    res.status(500).json({ error: "Failed to generate rake arrival report" });
+  }
+};
+
+const getRakeDetail = async (req, res) => {
+  try {
+    const rake = await RakeArrival.findByPk(req.params.id, {
+      include: [{ model: RailwayReceipt, as: "railwayReceipts" }]
+    });
+    if (!rake) return res.status(404).json({ error: "Rake not found" });
+    res.json(rake);
+  } catch (error) {
+    console.error("Rake detail error:", error);
+    res.status(500).json({ error: "Failed to fetch rake details" });
+  }
+};
+
+const getConsolidatedExceptionReport = async (req, res) => {
+  try {
+    const rakes = await RakeArrival.findAll({
+      where: {
+        [Op.or]: [
+          { damagedQuantity: { [Op.gt]: 0 } },
+          { exceptions: { [Op.ne]: null } }
+        ]
+      }
+    });
+    res.json({ exceptions: rakes });
+  } catch (error) {
+    console.error("Exception report error:", error);
+    res.status(500).json({ error: "Failed to generate exception report" });
+  }
+};
+
+const getRakeApprovals = async (req, res) => {
+  try {
+    const rakes = await RakeArrival.findAll({
+      where: { approvalStatus: 'pending' }
+    });
+    res.json({ pendingApprovals: rakes });
+  } catch (error) {
+    console.error("Rake approvals error:", error);
+    res.status(500).json({ error: "Failed to fetch rake approvals" });
+  }
+};
+
+// =======================================================
+// ✅ TECHNICAL / DATA MANAGEMENT
+// =======================================================
+
+const getDiversionReport = async (req, res) => {
+  try {
+    // Diversion usually tracked via notes or a special status in orders
+    const diversions = await Order.findAll({
+      where: {
+        [Op.or]: [
+          { status: 'Diverted' },
+          { notes: { [Op.iLike]: '%diversion%' } }
+        ]
+      },
+      include: [{ model: Dealer, as: "dealer" }]
+    });
+    res.json({ diversions });
+  } catch (error) {
+    console.error("Diversion report error:", error);
+    res.status(500).json({ error: "Failed to generate diversion report" });
+  }
+};
+
+const getDMSOrderRequestReport = async (req, res) => {
+  try {
+    // Tracks orders coming specifically from DMS integration
+    const orders = await Order.findAll({
+      where: {
+        orderNumber: { [Op.iLike]: 'DMS-%' }
+      },
+      include: [{ model: Dealer, as: "dealer" }]
+    });
+    res.json({ dmsOrders: orders });
+  } catch (error) {
+    console.error("DMS order report error:", error);
+    res.status(500).json({ error: "Failed to generate DMS order report" });
+  }
+};
+
+// =======================================================
 // ✅ EXPORT
 // =======================================================
 module.exports = {
@@ -911,4 +1168,17 @@ module.exports = {
   getRegionalDashboard,
   getManagerDashboard,
   getDealerDashboard,
+  // New Reports
+  getFIDaywiseReport,
+  getCollectionReport,
+  getStockOverview,
+  getComparativeStockReport,
+  getComplianceReport,
+  getRRSummaryReport,
+  getRakeArrivalReport,
+  getRakeDetail,
+  getConsolidatedExceptionReport,
+  getRakeApprovals,
+  getDiversionReport,
+  getDMSOrderRequestReport
 };
