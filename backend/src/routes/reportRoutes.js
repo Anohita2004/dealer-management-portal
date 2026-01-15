@@ -38,23 +38,38 @@ router.get(
 
 // --- New Finance Reports ---
 router.get('/fi-daywise', authenticate, checkPermission('reports.view'), reportController.getFIDaywiseReport);
+router.get('/finance/fi-daywise', authenticate, checkPermission('reports.view'), reportController.getFIDaywiseReport);
 router.get('/collections', authenticate, checkPermission('reports.view'), reportController.getCollectionReport);
+router.get('/finance/collection', authenticate, checkPermission('reports.view'), reportController.getCollectionReport);
+router.get('/finance/le-register', authenticate, checkPermission('reports.view'), applyScope(['Dealer']), reportController.getAccountStatementReport);
+router.get('/finance/drcr-note', authenticate, checkPermission('reports.view'), applyScope(['Dealer']), reportController.getCreditDebitNoteReport);
+router.get('/finance/sales-register', authenticate, checkPermission('reports.view'), applyScope(['Invoice']), reportController.getInvoiceRegisterReport);
 router.get('/ageing-link', authenticate, (req, res) => res.json({ url: "https://sap.external.system/ageing-analysis" }));
 
 // --- Inventory & Stock Reports ---
 router.get('/stock-overview', authenticate, checkPermission('reports.view'), reportController.getStockOverview);
+router.get('/inventory/stock-overview', authenticate, checkPermission('reports.view'), reportController.getStockOverview);
 router.get('/stock-comparative', authenticate, checkPermission('reports.view'), reportController.getComparativeStockReport);
+router.get('/inventory/comparative', authenticate, checkPermission('reports.view'), reportController.getComparativeStockReport);
 router.get('/stock-compliance', authenticate, checkPermission('reports.view'), reportController.getComplianceReport);
+router.get('/inventory/compliance', authenticate, checkPermission('reports.view'), reportController.getComplianceReport);
 router.get('/rr-summary', authenticate, checkPermission('reports.view'), reportController.getRRSummaryReport);
+router.get('/inventory/rr-summary', authenticate, checkPermission('reports.view'), reportController.getRRSummaryReport);
 
 // --- Rake & Damage Reports ---
 router.get('/rakes', authenticate, checkPermission('reports.view'), reportController.getRakeArrivalReport);
+router.get('/rake/arrival', authenticate, checkPermission('reports.view'), reportController.getRakeArrivalReport);
 router.get('/rakes/:id', authenticate, checkPermission('reports.view'), reportController.getRakeDetail);
 router.get('/rakes-exceptions', authenticate, checkPermission('reports.view'), reportController.getConsolidatedExceptionReport);
+router.get('/rake/exceptions', authenticate, checkPermission('reports.view'), reportController.getConsolidatedExceptionReport);
 router.get('/rakes-approvals', authenticate, authorize("super_admin", "regional_manager"), reportController.getRakeApprovals);
+router.get('/rake/approvals', authenticate, authorize("super_admin", "regional_manager"), reportController.getRakeApprovals);
 
 // --- Technical / Data Management ---
 router.get('/diversion', authenticate, checkPermission('reports.view'), reportController.getDiversionReport);
 router.get('/dms-orders', authenticate, checkPermission('reports.view'), reportController.getDMSOrderRequestReport);
+router.get('/dms-requests', authenticate, checkPermission('reports.view'), reportController.getDMSOrderRequestReport);
+router.get('/technical/dms-requests', authenticate, checkPermission('reports.view'), reportController.getDMSOrderRequestReport);
+router.get('/technical/diversion', authenticate, checkPermission('reports.view'), reportController.getDiversionReport);
 
 module.exports = router;

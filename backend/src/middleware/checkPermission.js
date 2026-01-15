@@ -6,6 +6,11 @@ module.exports = (permissionKey) => {
       const roleId = req.user?.roleId;
       if (!roleId) return res.status(401).json({ error: "Unauthorized – No role found" });
 
+      // Super Admin bypass
+      if (req.user.role === 'super_admin' || req.user.role === 'admin') {
+        return next();
+      }
+
       const hasPermission = await Permission.findOne({
         where: { key: permissionKey },
         include: [
@@ -20,7 +25,7 @@ module.exports = (permissionKey) => {
       });
 
       if (!hasPermission) {
-        return res.status(403).json({ 
+        return res.status(403).json({
           error: "Access Denied — Missing Permission",
           requiredPermission: permissionKey,
           userRole: req.user.role || req.user.roleDetails?.name,
