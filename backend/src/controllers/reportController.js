@@ -1044,8 +1044,17 @@ const getComplianceReport = async (req, res) => {
 
 const getRRSummaryReport = async (req, res) => {
   try {
+    const { startDate, endDate } = req.query;
+    const where = {};
+
+    if (startDate && endDate) {
+      where.rrDate = { [Op.between]: [new Date(startDate), new Date(endDate)] };
+    }
+
     const receipts = await RailwayReceipt.findAll({
-      include: [{ model: RakeArrival, as: "rake" }]
+      where,
+      include: [{ model: RakeArrival, as: "rake" }],
+      order: [['rrDate', 'DESC']]
     });
     res.json({ receipts });
   } catch (error) {
@@ -1060,7 +1069,16 @@ const getRRSummaryReport = async (req, res) => {
 
 const getRakeArrivalReport = async (req, res) => {
   try {
+    const { regionId, startDate, endDate } = req.query;
+    const where = {};
+
+    if (regionId) where.regionId = regionId;
+    if (startDate && endDate) {
+      where.arrivalDate = { [Op.between]: [new Date(startDate), new Date(endDate)] };
+    }
+
     const rakes = await RakeArrival.findAll({
+      where,
       order: [['arrivalDate', 'DESC']]
     });
     res.json({ rakes });
@@ -1085,13 +1103,21 @@ const getRakeDetail = async (req, res) => {
 
 const getConsolidatedExceptionReport = async (req, res) => {
   try {
+    const { regionId, startDate, endDate } = req.query;
+    const where = {
+      [Op.or]: [
+        { damagedQuantity: { [Op.gt]: 0 } },
+        { exceptions: { [Op.ne]: null } }
+      ]
+    };
+
+    if (regionId) where.regionId = regionId;
+    if (startDate && endDate) {
+      where.arrivalDate = { [Op.between]: [new Date(startDate), new Date(endDate)] };
+    }
+
     const rakes = await RakeArrival.findAll({
-      where: {
-        [Op.or]: [
-          { damagedQuantity: { [Op.gt]: 0 } },
-          { exceptions: { [Op.ne]: null } }
-        ]
-      }
+      where
     });
     res.json({ exceptions: rakes });
   } catch (error) {
@@ -1118,15 +1144,23 @@ const getRakeApprovals = async (req, res) => {
 
 const getDiversionReport = async (req, res) => {
   try {
-    // Diversion usually tracked via notes or a special status in orders
+    const { startDate, endDate, dealerId } = req.query;
+    const where = {
+      [Op.or]: [
+        { status: 'Diverted' },
+        { notes: { [Op.iLike]: '%diversion%' } }
+      ]
+    };
+
+    if (startDate && endDate) {
+      where.createdAt = { [Op.between]: [new Date(startDate), new Date(endDate)] };
+    }
+    if (dealerId) where.dealerId = dealerId;
+
     const diversions = await Order.findAll({
-      where: {
-        [Op.or]: [
-          { status: 'Diverted' },
-          { notes: { [Op.iLike]: '%diversion%' } }
-        ]
-      },
-      include: [{ model: Dealer, as: "dealer" }]
+      where,
+      include: [{ model: Dealer, as: "dealer" }],
+      order: [['createdAt', 'DESC']]
     });
     res.json({ diversions });
   } catch (error) {
