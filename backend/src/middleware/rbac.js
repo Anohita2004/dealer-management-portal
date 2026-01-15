@@ -17,7 +17,7 @@ const requirePermission = (permissionKey) => {
 
       const hasPermission = await RBACEngine.hasPermission(req.user, permissionKey);
       if (!hasPermission) {
-        return res.status(403).json({ 
+        return res.status(403).json({
           error: 'Access Denied - Missing Permission',
           required: permissionKey
         });
@@ -45,7 +45,7 @@ const requireAnyPermission = (permissionKeys) => {
 
       const hasPermission = await RBACEngine.hasAnyPermission(req.user, permissionKeys);
       if (!hasPermission) {
-        return res.status(403).json({ 
+        return res.status(403).json({
           error: 'Access Denied - Missing Required Permission',
           required: permissionKeys
         });
@@ -73,7 +73,7 @@ const requireAllPermissions = (permissionKeys) => {
 
       const hasPermission = await RBACEngine.hasAllPermissions(req.user, permissionKeys);
       if (!hasPermission) {
-        return res.status(403).json({ 
+        return res.status(403).json({
           error: 'Access Denied - Missing Required Permissions',
           required: permissionKeys
         });
@@ -104,8 +104,8 @@ const applyScope = (entityTypes = []) => {
 
       const roleName = req.user.roleDetails?.name || req.user.role;
 
-      // Super Admin & Technical Admin see all
-      if (['super_admin', 'technical_admin'].includes(roleName)) {
+      // Super Admin, Technical Admin, and Finance/Accounts roles see all
+      if (['super_admin', 'technical_admin', 'finance_admin', 'accounts_user'].includes(roleName)) {
         req.scope = {};
         return next();
       }

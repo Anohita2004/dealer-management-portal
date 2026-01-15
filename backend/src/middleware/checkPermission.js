@@ -6,8 +6,9 @@ module.exports = (permissionKey) => {
       const roleId = req.user?.roleId;
       if (!roleId) return res.status(401).json({ error: "Unauthorized – No role found" });
 
-      // Super Admin bypass
-      if (req.user.role === 'super_admin' || req.user.role === 'admin') {
+      // System Roles bypass (Roles that have inherent access to specific modules)
+      const bypassRoles = ['super_admin', 'admin', 'finance_admin', 'accounts_user'];
+      if (bypassRoles.includes(req.user.role)) {
         return next();
       }
 
