@@ -2,7 +2,7 @@ require('dotenv').config();
 const { Sequelize } = require('sequelize');
 const fs = require('fs');
 
-const TARGET_TABLES = ['regions', 'territories', 'areas'];
+const TARGET_TABLES = ['sales_groups', 'rolepermissions'];
 
 async function forceFixTables() {
     const sequelize = new Sequelize(parseConnectionString(process.env.DATABASE_URL), {

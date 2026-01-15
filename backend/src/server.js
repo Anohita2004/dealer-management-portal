@@ -44,6 +44,8 @@ const warehouseRoutes = require('./routes/warehouseRoutes');
 const truckRoutes = require('./routes/truckRoutes');
 const fleetRoutes = require('./routes/fleetRoutes');
 const trackingRoutes = require('./routes/trackingRoutes');
+const barcodeRoutes = require('./routes/barcodeRoutes');
+const goodsReceiptRoutes = require('./routes/goodsReceiptRoutes');
 
 // --- Express app setup ---
 const app = express();
@@ -113,6 +115,8 @@ app.use('/api/warehouses', warehouseRoutes);
 app.use('/api/trucks', truckRoutes);
 app.use('/api/fleet', fleetRoutes);
 app.use('/api/tracking', trackingRoutes);
+app.use('/api/barcodes', barcodeRoutes);
+app.use('/api/goods-receipt', goodsReceiptRoutes);
 
 // --- Error handling (keep your behavior) ---
 app.use((err, req, res, next) => {
@@ -287,11 +291,11 @@ io.on('connection', (socket) => {
       // Check permissions using chat controller
       const { getAllowedUsersInternal } = require('./controllers/chatController');
       const { User, Role } = require('./models');
-      
+
       const sender = await User.findByPk(senderId, {
         include: [{ model: Role, as: 'roleDetails', attributes: ['id', 'name'] }]
       });
-      
+
       if (!sender) {
         socket.emit('message_error', { error: 'sender_not_found' });
         return;
@@ -300,7 +304,7 @@ io.on('connection', (socket) => {
       // Check if sender is allowed to message recipient
       const allowedUsers = await getAllowedUsersInternal(sender);
       const isAllowed = allowedUsers.some(u => String(u.id) === String(recipientId));
-      
+
       if (!isAllowed) {
         socket.emit('message_error', { error: 'not_allowed_to_message_user' });
         return;

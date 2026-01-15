@@ -40,6 +40,11 @@ module.exports = (sequelize, DataTypes) => {
     materialGroupId: {
       type: DataTypes.UUID,
       allowNull: true
+    },
+    barcode: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      unique: true
     }
   }, {
     tableName: 'materials',
