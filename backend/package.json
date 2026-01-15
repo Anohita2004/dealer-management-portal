@@ -13,7 +13,8 @@
     "migrate:workflow": "node scripts/run-migrations.js",
     "test:workflow": "node scripts/test-workflow.js",
     "migrate": "sequelize-cli db:migrate",
-    "seed": "node src/utils/seed.js"
+    "seed": "node src/utils/seed.js",
+    "seed:reports": "node scripts/seed_reports_data.js"
   },
   "keywords": [],
   "author": "",

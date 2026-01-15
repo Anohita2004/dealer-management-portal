@@ -63,5 +63,13 @@ module.exports = (sequelize, DataTypes) => {
     timestamps: true
   });
 
+  Inventory.associate = (models) => {
+    Inventory.belongsTo(models.Material, {
+      foreignKey: 'materialNumber',
+      targetKey: 'materialNumber',
+      as: 'material'
+    });
+  };
+
   return Inventory;
 };
