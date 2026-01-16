@@ -42,6 +42,14 @@ module.exports = (sequelize, DataTypes) => {
     },
     sapDocumentNumber: {
       type: DataTypes.STRING
+    },
+    dealerId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      references: {
+        model: 'dealers',
+        key: 'id'
+      }
     }
   }, {
     timestamps: true
