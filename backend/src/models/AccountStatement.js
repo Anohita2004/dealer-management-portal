@@ -43,5 +43,12 @@ module.exports = (sequelize, DataTypes) => {
     timestamps: true
   });
 
+  AccountStatement.associate = (models) => {
+    AccountStatement.belongsTo(models.Dealer, {
+      foreignKey: 'dealerId',
+      as: 'dealer'
+    });
+  };
+
   return AccountStatement;
 };

@@ -47,5 +47,12 @@ module.exports = (sequelize, DataTypes) => {
     timestamps: true
   });
 
+  CreditDebitNote.associate = (models) => {
+    CreditDebitNote.belongsTo(models.Dealer, {
+      foreignKey: 'dealerId',
+      as: 'dealer'
+    });
+  };
+
   return CreditDebitNote;
 };
