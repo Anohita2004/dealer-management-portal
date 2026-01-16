@@ -1215,7 +1215,7 @@ module.exports = {
   getRakeApprovals,
   getDiversionReport,
   getDMSOrderRequestReport
-,
+  ,
 
   // New Exports
   exportReportPDF,
@@ -1226,8 +1226,6 @@ module.exports = {
 // ✅ EXPORT CONTROLLERS
 // =======================================================
 
-const PDFDocument = require("pdfkit");
-const ExcelJS = require("exceljs");
 
 const exportReportPDF = async (req, res) => {
   try {
@@ -1247,7 +1245,7 @@ const exportReportPDF = async (req, res) => {
     // Title
     doc.fontSize(16).font('Helvetica-Bold').text(title || 'Report Export', { align: 'center' });
     doc.moveDown();
-    
+
     // Timestamp
     doc.fontSize(10).font('Helvetica').text(`Generated on: ${new Date().toLocaleString()}`, { align: 'right' });
     doc.moveDown();
@@ -1264,7 +1262,7 @@ const exportReportPDF = async (req, res) => {
       columns.forEach((col, i) => {
         doc.text(col.header, startX + (i * colWidth), currentY, { width: colWidth - 5, align: 'left', ellipsis: true });
       });
-      
+
       currentY += 12;
       doc.moveTo(startX, currentY).lineTo(startX + pageWidth, currentY).stroke();
       currentY += 8;
@@ -1274,7 +1272,7 @@ const exportReportPDF = async (req, res) => {
 
     // Rows
     doc.fontSize(9).font('Helvetica');
-    
+
     for (const row of data) {
       // Check page break
       if (currentY > doc.page.height - 50) {
@@ -1290,7 +1288,7 @@ const exportReportPDF = async (req, res) => {
 
       columns.forEach((col, i) => {
         const val = row[col.key] !== null && row[col.key] !== undefined ? String(row[col.key]) : '-';
-        
+
         // Calculate height
         const height = doc.heightOfString(val, { width: colWidth - 5 });
         if (height > maxCellHeight) maxCellHeight = height;
@@ -1299,7 +1297,7 @@ const exportReportPDF = async (req, res) => {
       });
 
       currentY += maxCellHeight + 8; // Add passing
-      
+
       // Light separator line
       doc.save();
       doc.opacity(0.1);
