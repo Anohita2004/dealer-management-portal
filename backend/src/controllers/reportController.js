@@ -1197,28 +1197,23 @@ const exportReportPDF = async (req, res) => {
 
     // Flexible Data Extraction
     if (Array.isArray(req.body)) {
-        data = req.body;
-        columns = null;
+      data = req.body;
+      columns = null;
     } else if (typeof req.body === 'object') {
-        data = data || req.body.rows || req.body.tableData || req.body.items;
-        columns = columns || req.body.headers || req.body.fields;
+      data = data || req.body.rows || req.body.tableData || req.body.items;
+      columns = columns || req.body.headers || req.body.fields;
     }
 
     // Validate Data
-    if (!data || !Array.isArray(data)) {
-      return res.status(400).json({ 
-          error: "Invalid data format.", 
-          message: "Expected JSON body with { data: [] } or just []",
-          receivedKeys: Object.keys(req.body)
-      });
-    }
+    // If no data found, we can still generate an empty report if title is present, or just initialize empty
+    if (!data) data = [];
 
     // Auto-generate columns if missing (from first data row)
     if ((!columns || !Array.isArray(columns) || columns.length === 0) && data.length > 0) {
-        columns = Object.keys(data[0]).map(key => ({
-            header: key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1').trim(), // Readable Case
-            key: key
-        }));
+      columns = Object.keys(data[0]).map(key => ({
+        header: key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1').trim(), // Readable Case
+        key: key
+      }));
     }
 
     // Fallback if still no columns (empty data case)
@@ -1234,7 +1229,7 @@ const exportReportPDF = async (req, res) => {
     // Title
     doc.fontSize(16).font('Helvetica-Bold').text(title || 'Report Export', { align: 'center' });
     doc.moveDown();
-    
+
     // Timestamp
     doc.fontSize(10).font('Helvetica').text(`Generated on: ${new Date().toLocaleString()}`, { align: 'right' });
     doc.moveDown();
@@ -1253,19 +1248,19 @@ const exportReportPDF = async (req, res) => {
         const headerText = col.header || col.key || '-';
         doc.text(headerText, startX + (i * colWidth), currentY, { width: colWidth - 5, align: 'left', ellipsis: true });
       });
-      
+
       currentY += 12;
       doc.moveTo(startX, currentY).lineTo(startX + pageWidth, currentY).stroke();
       currentY += 8;
     };
 
     if (columns.length > 0) {
-        printHeader();
+      printHeader();
     }
 
     // Rows
     doc.fontSize(9).font('Helvetica');
-    
+
     for (const row of data) {
       // Check page break
       if (currentY > doc.page.height - 50) {
@@ -1282,7 +1277,7 @@ const exportReportPDF = async (req, res) => {
       columns.forEach((col, i) => {
         const key = col.key || col; // Handle if column is just string
         const val = row[key] !== null && row[key] !== undefined ? String(row[key]) : '-';
-        
+
         // Calculate height
         const height = doc.heightOfString(val, { width: colWidth - 5 });
         if (height > maxCellHeight) maxCellHeight = height;
@@ -1291,7 +1286,7 @@ const exportReportPDF = async (req, res) => {
       });
 
       currentY += maxCellHeight + 8; // Add passing
-      
+
       // Light separator line
       doc.save();
       doc.opacity(0.1);
@@ -1313,23 +1308,21 @@ const exportReportExcel = async (req, res) => {
 
     // Flexible Data Extraction
     if (Array.isArray(req.body)) {
-        data = req.body;
-        columns = null;
+      data = req.body;
+      columns = null;
     } else if (typeof req.body === 'object') {
-        data = data || req.body.rows || req.body.tableData || req.body.items;
-        columns = columns || req.body.headers || req.body.fields;
+      data = data || req.body.rows || req.body.tableData || req.body.items;
+      columns = columns || req.body.headers || req.body.fields;
     }
 
-    if (!data || !Array.isArray(data)) {
-      return res.status(400).json({ error: "Invalid data format. Expected array or object with data/rows." });
-    }
+    if (!data) data = [];
 
     // Auto-generate columns
     if ((!columns || !Array.isArray(columns) || columns.length === 0) && data.length > 0) {
-        columns = Object.keys(data[0]).map(key => ({
-             header: key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1').trim(),
-             key: key
-        }));
+      columns = Object.keys(data[0]).map(key => ({
+        header: key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1').trim(),
+        key: key
+      }));
     }
     if (!columns) columns = [];
 
