@@ -109,7 +109,49 @@ const getPendingReceipts = async (req, res) => {
     }
 };
 
+// --- CRUD and workflow stubs for advanced workflow ---
+// These stubs return 501 Not Implemented and can be filled in as needed
+async function createGoodsReceipt(req, res) {
+    return res.status(501).json({ message: 'Not implemented yet' });
+}
+
+async function getAllGoodsReceipts(req, res) {
+    return res.status(501).json({ message: 'Not implemented yet' });
+}
+
+async function getGoodsReceiptById(req, res) {
+    return res.status(501).json({ message: 'Not implemented yet' });
+}
+
+async function updateGoodsReceipt(req, res) {
+    return res.status(501).json({ message: 'Not implemented yet' });
+}
+
+async function deleteGoodsReceipt(req, res) {
+    return res.status(501).json({ message: 'Not implemented yet' });
+}
+
+async function approveGoodsReceipt(req, res) {
+    return res.status(501).json({ message: 'Not implemented yet' });
+}
+
+async function rejectGoodsReceipt(req, res) {
+    return res.status(501).json({ message: 'Not implemented yet' });
+}
+
+async function postGoodsReceiptToSAP(req, res) {
+    return res.status(501).json({ message: 'Not implemented yet' });
+}
+
 module.exports = {
     postGoodsReceipt,
-    getPendingReceipts
+    getPendingReceipts,
+    createGoodsReceipt,
+    getAllGoodsReceipts,
+    getGoodsReceiptById,
+    updateGoodsReceipt,
+    deleteGoodsReceipt,
+    approveGoodsReceipt,
+    rejectGoodsReceipt,
+    postGoodsReceiptToSAP
 };

@@ -1,0 +1,2877 @@
+================================================================================
+BIRLA DEPOT PORTAL - COMPLETE WORKFLOWS & INTERRELATIONSHIP DOCUMENTATION
+================================================================================
+
+Date: January 16, 2026
+System: Birla Depot Portal Backend
+Technology: Node.js/Express, SAP RFC Integration, MongoDB, MySQL
+
+================================================================================
+TABLE OF CONTENTS
+================================================================================
+
+1. CORE WORKFLOWS
+2. WORKFLOW INTERRELATIONSHIPS
+3. DATA FLOW ARCHITECTURE
+4. PROCESS DEPENDENCIES
+5. USER JOURNEY MAPS
+6. ERROR HANDLING & RECOVERY
+7. WORKFLOW TIMING & SEQUENCES
+8. SYSTEM INTEGRATION POINTS
+
+
+================================================================================
+SECTION 1: CORE WORKFLOWS
+================================================================================
+
+---WORKFLOW 1: USER AUTHENTICATION & SESSION MANAGEMENT---
+
+TRIGGER: User attempts to access portal
+ENTRY POINT: /login endpoint (POST)
+
+SEQUENCE:
+  1. User Input
+     ├── Provide user_code
+     ├── Provide password
+     └── Submit credentials
+
+  2. Validation Phase
+     ├── Query MySQL users table
+     ├── Check if user exists
+     ├── Verify user status != 1 (not revoked)
+     └── Validate user is not disabled
+
+  3. Authentication Phase
+     ├── Retrieve stored password hash from database
+     ├── Compare provided password with bcrypt hash
+     ├── If mismatch → Return "Invalid username or password"
+     └── If match → Proceed to token generation
+
+  4. Token Generation
+     ├── Extract user data:
+     │   ├── user_code
+     │   ├── userId
+     │   └── rfc_password (for SAP access)
+     ├── Generate JWT token with payload:
+     │   ├── user_code
+     │   ├── userId
+     │   └── rfc_password
+     ├── Set expiration: 3 hours
+     └── Sign with secret key: "this_string_should_be_longer"
+
+  5. Response & Session
+     ├── Return JWT token to client
+     ├── Return user details (user_code, userId, name, email)
+     ├── Return status: true, code: 0
+     └── Client stores token for subsequent requests
+
+  6. Token Validation (Middleware)
+     └── On every protected API request:
+        ├── Extract token from Authorization header
+        ├── Verify token signature
+        ├── Check expiration
+        ├── Decode user information
+        ├── Attach to req.user
+        └── If invalid/expired → Return 401 Auth Failed
+
+EXIT POINT: User authenticated, token valid, can access protected routes
+DURATION: 3 hours per session
+STATUS CHECKS: status = 0 (Active), status = 1 (Revoked), status = 2 (Default)
+
+---WORKFLOW 2: USER MANAGEMENT---
+
+TRIGGER: Administrator performs user operations
+ENTRY POINT: /create, /update, /allUser endpoints (POST/GET)
+
+SEQUENCE A: CREATE NEW USER
+  1. Admin Input
+     ├── name: Full name
+     ├── user_code: Unique identifier
+     ├── email: Contact email
+     ├── password: Portal login password
+     ├── rfc_password: SAP system password
+     ├── mobile: Phone number
+     ├── user_type: Role (1=Admin, 2=Standard, default=2)
+     └── status: Active status (0=Active, 1=Revoked, 2=Default)
+
+  2. Validation
+     ├── Check all required fields present
+     ├── Query users table for duplicate user_code
+     ├── If exists → Return "User Already Exists"
+     └── If new → Proceed to creation
+
+  3. Password Encryption
+     ├── Hash password using bcrypt (10 salt rounds)
+     ├── Store hashed password (original never stored)
+     └── rfc_password stored in plain text (for SAP)
+
+  4. Database Insert
+     ├── INSERT INTO users table:
+     │   ├── name
+     │   ├── user_code
+     │   ├── email
+     │   ├── password (hashed)
+     │   ├── user_type
+     │   ├── mobile
+     │   ├── status
+     │   └── rfc_password
+     └── Return success with user ID
+
+  5. Post-Creation Setup
+     ├── Assign plants to user (UserPlant mapping)
+     ├── Assign permissions (UserPermission schema)
+     └── Set initial status = Active (0)
+
+SEQUENCE B: UPDATE EXISTING USER
+  1. Admin Input
+     ├── User ID (required)
+     ├── Updated fields (selective):
+     │   ├── name
+     │   ├── user_code
+     │   ├── email
+     │   ├── mobile
+     │   ├── user_type
+     │   ├── status
+     │   ├── password (optional)
+     │   └── rfc_password (optional)
+
+  2. Duplicate Check
+     ├── Check new user_code not already assigned to another user
+     ├── If duplicate → Return error
+     └── If unique → Proceed
+
+  3. Update Logic (4 scenarios)
+     Scenario A: No password/rfc_password change
+        └── Update name, user_code, email, user_type, mobile, status
+
+     Scenario B: Only password change
+        ├── Hash new password with bcrypt
+        └── Update password field
+
+     Scenario C: Only rfc_password change
+        └── Update rfc_password field (stored plain)
+
+     Scenario D: Both password and rfc_password change
+        ├── Hash password
+        └── Update both fields
+
+  4. Database Update
+     ├── UPDATE users SET [fields] WHERE id = user_id
+     └── Return success
+
+SEQUENCE C: REVOKE USER ACCESS
+  1. Admin Action
+     ├── Select user to revoke
+     └── Set status = 1
+
+  2. Immediate Effect
+     ├── Next login attempt → Return "Login Privilege Revoked"
+     ├── JWT token still valid (expires in 3 hours)
+     └── API calls still work with existing token
+
+  3. Complete Revocation (manual step)
+     └── Admin terminates existing sessions or users logout
+
+SEQUENCE D: FETCH USER DATA
+  1. Query Operations
+     ├── GET /allUser → Retrieve all users
+     ├── POST /user_data → Get specific user by ID
+     ├── POST /get_mulple_users → Fetch multiple users by codes array
+     └── POST /search_users → Search with filters
+
+  2. Response
+     └── Return user details without password/rfc_password visible
+
+EXIT POINT: User created/updated/disabled
+DURATION: Immediate (create), Real-time (update/revoke)
+DEPENDENCIES: None (independent operation)
+
+---WORKFLOW 3: SALES ORDER CREATION---
+
+TRIGGER: User needs to create new sales order
+ENTRY POINT: /create_sales_order endpoint (POST)
+AUTHENTICATION: JWT token required (checkAuth middleware)
+SAP INTEGRATION: Yes (RFC calls)
+
+PREREQUISITE DATA:
+  ├── User has valid plant assignment (UserPlant)
+  ├── User has sales order creation permission
+  └── RFC password valid for SAP connectivity
+
+SEQUENCE:
+
+  PHASE 1: DATA GATHERING (Dropdown/Master Data)
+
+  1.1 Plant Selection
+      ├── User requests plants: POST /get_zfm_plants
+      ├── RFC Call: ZFM_PLANT(LV_USER)
+      ├── SAP returns: Plant list accessible to user
+      └── User selects plant
+
+  1.2 Material Selection
+      ├── User requests materials: POST /get_materials_of_plants
+      ├── RFC Call: ZFM_MATERIAL(LV_PLANT)
+      ├── SAP returns: All materials available in plant
+      └── User selects materials and quantities
+
+  1.3 Customer Selection
+      ├── User requests customers: POST /get_sold_to_party
+      ├── RFC Call: ZFM_SOLD_TO_PARTY
+      ├── SAP returns: List of valid customers
+      └── User selects sold-to party (Bill-To)
+
+  1.4 Ship-To Party Selection
+      ├── User requests: POST /get_ship_to_party
+      ├── RFC Call: ZFM_SHIP_TO_PARTY
+      ├── SAP returns: Valid ship-to locations
+      └── User selects delivery destination
+
+  1.5 Shipping Configuration
+      ├── Shipping Type: POST /get_shipping_type
+      ├── Shipping Point: POST /get_shipping_point
+      ├── Loading Points: POST /get-loading-points
+      ├── Quantity Units: POST /get_quantity_unit
+      └── User selects all shipping parameters
+
+  1.6 Sales Area Data
+      ├── User requests: POST /get_sales_area
+      ├── RFC Call: ZFM_SALES_AREA
+      ├── SAP returns: Sales areas accessible to user
+      └── User selects sales area
+
+  1.7 Order Type Selection
+      ├── User requests: POST /get_orders_type_dropdown
+      ├── RFC Call: ZFM_ORDER_TYPE(VBELN)
+      ├── SAP returns: Available order types
+      └── User selects order type (Standard, Rush, etc.)
+
+  1.8 Status List Retrieval
+      ├── User requests: POST /get_status_list
+      ├── RFC Call: ZFM_STATUS
+      ├── SAP returns: Status options
+      └── Used for order status management
+
+  PHASE 2: ORDER ASSEMBLY
+
+  2.1 Compile Order Data
+      └── Aggregate all selected data into order structure:
+         ├── Customer details (SOLD_TO_PARTY, SHIP_TO_PARTY)
+         ├── Plant code (WERKS)
+         ├── Materials and quantities (MATNR, MENGE)
+         ├── Pricing details
+         ├── Shipping information
+         ├── Sales area data
+         ├── Delivery dates
+         └── Special conditions/notes
+
+  2.2 Client-Side Validation
+      ├── Check all required fields filled
+      ├── Validate quantities > 0
+      ├── Verify customer active
+      └── Validate material available in plant
+
+  PHASE 3: SAP SUBMISSION
+
+  3.1 Order Creation Request
+      ├── POST /create_sales_order
+      ├── Attach JWT token in Authorization header
+      ├── Pool middleware creates RFC pool (poolCreator)
+      └── Acquire connection from RFC pool
+
+  3.2 RFC Function Call
+      ├── Function: ZRFC_CREATE_SALES_ORDER
+      ├── Parameters:
+      │   ├── IM_CUSTOMER (sold-to party)
+      │   ├── IM_SHIP_TO (ship-to party)
+      │   ├── IM_PLANT (plant code)
+      │   ├── IM_MATERIALS (material details array)
+      │   ├── IM_QUANTITIES (quantities)
+      │   ├── IM_SHIPPING (shipping details)
+      │   ├── IM_SALES_AREA (sales area code)
+      │   └── IM_USER (login user ID)
+      └── Send to SAP
+
+  3.3 SAP Processing
+      ├── SAP validates order
+      ├── Checks credit limits
+      ├── Validates material availability
+      ├── Generates sales order number (VBELN)
+      ├── Creates delivery schedule
+      └── Returns confirmation
+
+  3.4 Response Handling
+      ├── RFC pool releases connection
+      ├── IF Success:
+      │   ├── Capture generated VBELN (order number)
+      │   ├── Capture delivery schedule
+      │   ├── Return to client: status=true, order_number, details
+      │   └── Order now in SAP system
+      └── IF Error:
+         ├── Return error details
+         └── No order created in SAP
+
+  PHASE 4: POST-CREATION
+
+  4.1 Client-Side Actions
+      ├── Display success confirmation
+      ├── Show generated sales order number
+      ├── Show delivery schedule
+      ├── Offer options:
+      │   ├── Create Delivery Order
+      │   ├── View Order Details
+      │   ├── Print Order Confirmation
+      │   └── Close
+      └── Update local UI
+
+  4.2 Data Persistence
+      ├── Order stored in SAP (persistent)
+      ├── Order accessible for delivery creation
+      ├── Order visible in order listings/reports
+      └── Order linked to customer
+
+EXIT POINT: Sales order created in SAP with VBELN
+DURATION: 5-30 seconds (depending on SAP response)
+DEPENDENCIES: Plant assignment, material master, customer master, SAP connectivity
+NEXT WORKFLOWS: Delivery Order Creation, Physical Inventory, Invoicing
+ERROR SCENARIOS: Credit limit exceeded, Material not available, Plant access denied
+
+---WORKFLOW 4: DELIVERY ORDER CREATION---
+
+TRIGGER: Sales order created, need to arrange shipment
+ENTRY POINT: /get-order-details, /get-storage-location, /get-loading-points (POST)
+PREREQUISITES: Active sales order exists
+AUTHENTICATION: JWT token required
+SAP INTEGRATION: Yes (RFC calls)
+
+SEQUENCE:
+
+  PHASE 1: ORDER RETRIEVAL
+
+  1.1 Get Order Details
+      ├── POST /get-order-details
+      ├── Input: order_id (VBELN)
+      ├── RFC Call: ZRFC_SALESORDER_DETAILS(IM_SALES_ORDER)
+      ├── SAP returns: IT_FINAL[0] with:
+      │   ├── Customer details
+      │   ├── Material line items
+      │   ├── Quantities ordered
+      │   ├── Pricing
+      │   ├── Delivery schedule
+      │   └── Special conditions
+      └── Display to user
+
+  1.2 Validate Order Status
+      ├── Check order is not cancelled
+      ├── Check delivery not already created
+      ├── Check materials available
+      └── Proceed if valid
+
+  PHASE 2: WAREHOUSE ALLOCATION
+
+  2.1 Get Storage Locations
+      ├── POST /get-storage-location
+      ├── Input: plant (WERKS)
+      ├── RFC Call: ZFM_SLOC_DO_CREATE(LV_PLANT)
+      ├── SAP returns: IT_FINAL[] array of available storage locations
+      │   ├── SLOC (storage location code)
+      │   ├── SLOC_DESC (description)
+      │   ├── CAPACITY (available capacity)
+      │   ├── QTY_ON_HAND (current quantity)
+      │   └── BLOCK_STATUS (blocked/available)
+      └── User selects storage location for each material
+
+  2.2 Warehouse Assignment Logic
+      ├── For each material in order:
+      │   ├── Check quantity needed
+      │   ├── Check available quantity in storage location
+      │   ├── Allocate material to location
+      │   ├── Reserve quantity
+      │   └── Block inventory
+      └── Build allocation map
+
+  PHASE 3: LOADING POINT SELECTION
+
+  3.1 Get Loading Points
+      ├── POST /get-loading-points
+      ├── Input: shipping_point (LV_SHIP_POINT)
+      ├── RFC Call: ZFM_LOADING_POINT(LV_SHIP_POINT)
+      ├── SAP returns: IT_FINAL[] with available loading points
+      │   ├── LOAD_POINT (code)
+      │   ├── LOAD_POINT_DESC (description)
+      │   ├── CAPACITY (current usage %)
+      │   ├── EQUIPMENT (dock, crane, etc.)
+      │   └── AVAILABILITY (available/occupied)
+      └── User selects loading point
+
+  3.2 Dock Assignment
+      ├── Schedule dock reservation
+      ├── Set loading time window
+      ├── Assign loading equipment
+      └── Configure vehicle type
+
+  PHASE 4: DELIVERY ORDER CREATION
+
+  4.1 Compile Delivery Data
+      └── Aggregate:
+         ├── Order details (VBELN, line items)
+         ├── Storage locations (per material)
+         ├── Loading point
+         ├── Delivery date
+         ├── Transport info
+         ├── Special handling instructions
+         └── Customer delivery address
+
+  4.2 Create Delivery in SAP
+      ├── RFC Call: ZRFC_CREATE_DELIVERY
+      ├── Parameters:
+      │   ├── IM_VBELN (sales order number)
+      │   ├── IM_SLOC (storage locations array)
+      │   ├── IM_LOAD_POINT (loading point)
+      │   ├── IM_DELIVERY_DATE (date)
+      │   └── IM_USER (login ID)
+      ├── SAP processes:
+      │   ├── Validates material availability
+      │   ├── Checks warehouse capacity
+      │   ├── Confirms dock availability
+      │   ├── Generates delivery number (LIKP)
+      │   ├── Creates delivery items (LIPS)
+      │   └── Updates inventory reservations
+      └── Returns delivery confirmation
+
+  4.3 Delivery Confirmation
+      ├── IF Success:
+      │   ├── Capture generated LIKP (delivery number)
+      │   ├── Store allocation details
+      │   ├── Return status=true, delivery_number
+      │   ├── Delivery now in SAP
+      │   └── Next: Goods dispatch
+      └── IF Error:
+         ├── Return error (capacity exceeded, material not available, etc.)
+         └── User must resolve and retry
+
+  PHASE 5: POST-CREATION
+
+  5.1 Delivery Status
+      ├── Status: "Ready for Shipping"
+      ├── Inventory: Reserved (not yet decremented)
+      ├── Dock: Assigned
+      ├── Loading point: Scheduled
+      └── Awaiting: Physical shipment
+
+  5.2 Subsequent Operations
+      ├── Print delivery documents
+      ├── Prepare picking list
+      ├── Arrange transport
+      ├── Track shipment progress
+      └── Confirm goods dispatch
+
+EXIT POINT: Delivery order created in SAP with LIKP number
+DURATION: 10-45 seconds
+DEPENDENCIES: Sales order, storage locations, loading points, SAP connectivity
+RELATED WORKFLOWS: Sales Order Creation (prerequisite), Goods Receipt (outbound flow), Invoicing
+CONSTRAINTS: Inventory must be available, Capacity limits, Dock availability
+ERROR RECOVERY: Retry with different storage location, Adjust delivery date, Use alternative loading point
+
+---WORKFLOW 5: GOODS RECEIPT (GR) MANAGEMENT---
+
+TRIGGER: Supplier delivery arrives at depot
+ENTRY POINT: /search-customer, /initial-good-receipt-list endpoints (POST)
+AUTHENTICATION: JWT token required
+SAP INTEGRATION: Yes (RFC calls)
+
+SEQUENCE:
+
+  PHASE 1: SUPPLIER/CUSTOMER IDENTIFICATION
+
+  1.1 Search Customer
+      ├── POST /search-customer
+      ├── Input: search_key (supplier code or name)
+      ├── RFC Call: ZFM_RECEIVING_PLANT_GR(VBELN, IM_LOGIN_ID)
+      ├── SAP returns: IT_FINAL[] array with:
+      │   ├── KUNNR (customer/supplier code)
+      │   ├── NAME1 (supplier name)
+      │   ├── ADDRESS (address)
+      │   ├── CONTACT (contact person)
+      │   └── PHONE (contact number)
+      ├── Filter locally by search_key (case-insensitive):
+      │   ├── Match on KUNNR
+      │   ├── Match on NAME1
+      │   └── Partial matching supported
+      └── Display matching results
+
+  1.2 Select Supplier
+      └── User selects supplier for GR creation
+
+  PHASE 2: GOODS RECEIPT LIST RETRIEVAL
+
+  2.1 Fetch GR List
+      ├── POST /initial-good-receipt-list
+      ├── Input parameters:
+      │   ├── customer_number: KUNNR (required)
+      │   ├── delivery_date_from: DATE_FROM (required)
+      │   ├── delivery_date_to: DATE_TO (required)
+      │   ├── delivery_number_from: DELV_FROM (optional)
+      │   └── delivery_number_to: DELV_TO (optional)
+      ├── Build query object:
+      │   ├── IM_KUNNR: customer_number
+      │   ├── DATE_FROM: delivery_date_from
+      │   ├── DATE_TO: delivery_date_to
+      │   └── [Optional] DELV_FROM, DELV_TO
+      ├── RFC Call: ZFM_RECEIVING_PLANT_GR(query)
+      └── SAP returns: IT_FINAL[] with pending GR documents:
+         ├── EBELN (PO number)
+         ├── EBELP (PO item)
+         ├── VBELN (Delivery number if linked)
+         ├── MATNR (Material code)
+         ├── MENGE (Quantity expected)
+         ├── MEINS (Unit of measure)
+         ├── NETPR (Net price)
+         ├── KUNNR (Supplier)
+         ├── WERKS (Plant)
+         ├── DATE (Expected delivery date)
+         └── STATUS (PO status)
+
+  2.2 Filter & Display Results
+      ├── Filter by date range
+      ├── Sort by delivery number
+      ├── Show expected vs. arrived quantities
+      ├── Highlight overdue deliveries
+      └── Display in tabular format
+
+  PHASE 3: GOODS RECEIPT DETAILS
+
+  3.1 Fetch GR Details
+      ├── POST /fetch-gr-details
+      ├── Input: PO number (EBELN), Item (EBELP)
+      ├── RFC Call: ZRFC_GR_DETAILS(IM_EBELN, IM_EBELP)
+      ├── SAP returns detailed information:
+      │   ├── Material information
+      │   ├── Expected quantity
+      │   ├── Unit price
+      │   ├── Delivery conditions
+      │   ├── Expiry date (for perishables)
+      │   ├── Batch information
+      │   ├── Quality certificates
+      │   └── Special handling requirements
+      └── Display full details to GR operator
+
+  3.2 Physical Goods Inspection
+      ├── Operator receives goods
+      ├── Physically counts/verifies quantity
+      ├── Checks packaging condition
+      ├── Verifies expiry dates
+      ├── Checks quality documents
+      ├── Inspects for damage
+      └── Records findings
+
+  PHASE 4: ACCEPTANCE/REJECTION DECISION
+
+  4.1 Goods Accepted Path
+      ├── Operator confirms all checks passed
+      ├── Quantity matches expected
+      ├── Condition acceptable
+      ├── Documents in order
+      ├── Proceed to POST PHASE
+
+  4.2 Goods Rejected Path
+      ├── POST /reject-gr
+      ├── RFC Call: ZRFC_GR_REJECTION
+      ├── Required inputs:
+      │   ├── PO number (EBELN)
+      │   ├── Item (EBELP)
+      │   ├── Rejected quantity
+      │   ├── Rejection reason code (from dropdown)
+      │   └── Comments/observations
+      ├── Rejection reason codes (from /fetch-all-reason-of-rejections):
+      │   ├── Damage during transit
+      │   ├── Quality not matching
+      │   ├── Quantity mismatch
+      │   ├── Specification not matching
+      │   ├── Expired goods
+      │   ├── Documentation issues
+      │   └── Other (with notes)
+      ├── RFC Call processed:
+      │   ├── Create rejection document
+      │   ├── Update PO status
+      │   ├── Initiate return process
+      │   ├── Send alert to procurement
+      │   └── Track for follow-up
+      └── User sees: Rejection confirmed, return document created
+
+  PHASE 5: DAMAGE DOCUMENTATION (if applicable)
+
+  5.1 Damage Recording
+      ├── If damage found during inspection:
+      ├── POST to DamageDataSchema:
+      │   ├── USER_ID: Inspector ID
+      │   ├── USER_NAME: Inspector name
+      │   ├── RR_NO: GR number (unique)
+      │   ├── DEPOT: Receiving depot
+      │   ├── DEPOT_NAME: Depot name
+      │   ├── RAKE_NO: Transportation reference
+      │   ├── DATE_OF_RAKE_RECEIVED: Receipt date
+      │   ├── RECEIVE_TIME: Time of receipt
+      │   ├── RR_QTY: Total received quantity
+      │   ├── DAMAGE_DATA: Array of damage details
+      │   │   └── Each damage record:
+      │   │       ├── Damage type
+      │   │       ├── Damaged quantity
+      │   │       ├── Cause
+      │   │       ├── Photos/attachments
+      │   │       └── Inspector notes
+      │   ├── HANDLING_PARTY: 3PL/Transport company
+      │   ├── HANDLING_PARTY_PHONE_NO
+      │   └── HANDLING_PARTY_CODE
+      └── Data stored in MongoDB for tracking
+
+  5.2 Claim Initiation
+      ├── Create insurance claim:
+      │   ├── CLAIM_NO: Generated claim number
+      │   ├── CLAIM_DATE: Date of claim
+      │   ├── CLAIM_QTY: Damaged quantity
+      │   ├── CLAIM_AMOUNT: Calculated claim value
+      │   ├── CLAIM_STATUS: "Initiated"
+      │   ├── CLAIM_INTIMATION_STATUS: "Pending"
+      │   └── MAT_DOC_NO: Link to material document
+      ├── Send email notification to insurance team
+      └── Track claim status and approvals
+
+  PHASE 6: COST CENTER ALLOCATION
+
+  6.1 Cost Center Selection
+      ├── POST /fetch-cost-center
+      ├── RFC Call: ZFM_COST_CENTER
+      ├── SAP returns: Available cost centers for plant
+      │   ├── KOSTL (cost center code)
+      │   ├── KOSTL_DESC (description)
+      │   ├── RESPONSIBILITY (manager)
+      │   └── BUDGET_STATUS (available funds)
+      └── User selects cost center
+
+  6.2 Allocation Assignment
+      └── For accepted goods:
+         ├── Assign to selected cost center
+         ├── Link PO to cost center
+         └── Prepare for posting
+
+  PHASE 7: GOODS RECEIPT POSTING IN SAP
+
+  7.1 Create MIGO (Material Document)
+      ├── POST /create-gr
+      ├── RFC Call: ZRFC_CREATE_GR (MIGO posting)
+      ├── Parameters:
+      │   ├── IM_EBELN: PO number
+      │   ├── IM_EBELP: PO item
+      │   ├── IM_MENGE: GR quantity
+      │   ├── IM_PLANT: Plant code
+      │   ├── IM_SLOC: Storage location
+      │   ├── IM_KOSTL: Cost center
+      │   ├── IM_BATCH: Batch number (if applicable)
+      │   ├── IM_EXPIRY_DATE: Expiry date
+      │   ├── IM_GR_DATE: GR date
+      │   ├── IM_USER: Login ID
+      │   └── [If Damage] IM_CLAIM_NO: Claim number
+      ├── SAP processes:
+      │   ├── Creates MIGO document
+      │   ├── Generates material document number (MBLNR)
+      │   ├── Updates inventory in plant/sloc
+      │   ├── Updates PO status to received
+      │   ├── Updates cost center allocations
+      │   ├── Creates accounting entries
+      │   └── If damage: Links to claim
+      └── Returns confirmation with MBLNR
+
+  7.2 GR Confirmation
+      ├── IF Success:
+      │   ├── Material document created (MBLNR)
+      │   ├── Inventory updated in SAP
+      │   ├── PO status changed to "GR Received"
+      │   ├── Cost center charged
+      │   ├── Display: status=true, MBLNR
+      │   └── Goods now in system inventory
+      └── IF Error:
+         ├── Validation error (quantity mismatch, etc.)
+         ├── SAP error (cost center blocked, etc.)
+         └── Return error details, no posting done
+
+  PHASE 8: POST-GR OPERATIONS
+
+  8.1 Email Notifications
+      ├── Send to:
+      │   ├── Warehouse manager
+      │   ├── Procurement team
+      │   ├── Finance (if damage/claim)
+      │   └── Cost center manager
+      ├── Content:
+      │   ├── GR confirmation
+      │   ├── Material document number
+      │   ├── Quantity received
+      │   ├── Cost center allocated
+      │   └── If damage: Claim details
+
+  8.2 Record Audit Trail
+      ├── Log GR creation:
+      │   ├── Timestamp
+      │   ├── User ID
+      │   ├── Supplier
+      │   ├── Material
+      │   ├── Quantity
+      │   ├── MBLNR
+      │   └── Cost center
+      └── Store in LogSchema (MongoDB)
+
+  8.3 Inventory Update
+      ├── Warehouse system updated:
+      │   ├── Stock quantity increased
+      │   ├── Storage location updated
+      │   ├── Cost center charged
+      │   ├── Batch tracking (if applicable)
+      │   ├── Expiry date recorded
+      │   └── Material status updated
+      └── Available for outbound operations (sales, transfers)
+
+EXIT POINT: Material document created in SAP, Inventory updated
+DURATION: 15-60 seconds (depending on SAP response)
+DEPENDENCIES: PO exists in SAP, Supplier master, Plant setup, Storage locations
+RELATED WORKFLOWS: Sales Order (precedes in inbound flow), Physical Inventory (uses GR data), Invoicing (links to PO)
+ERROR SCENARIOS: PO not found, Quantity exceeds PO, Cost center blocked, Batch expiry exceeded, Material code mismatch
+RECOVERY ACTIONS: Manual PO creation, Partial GR (post quantity available), Different cost center, Update batch expiry, Correct material code
+
+---WORKFLOW 6: INVOICE CREATION & MANAGEMENT---
+
+TRIGGER: Delivery completed or GR posted, need to bill customer
+ENTRY POINT: /get-delivery-details, /create-invoice endpoints (POST)
+PREREQUISITES: Delivery order exists or GR posted
+AUTHENTICATION: JWT token required
+SAP INTEGRATION: Yes (RFC calls)
+
+SEQUENCE:
+
+  PHASE 1: DELIVERY DATA RETRIEVAL
+
+  1.1 Get Delivery Details
+      ├── POST /get-delivery-details
+      ├── Input: delivery_no (array of delivery numbers - LIKP)
+      ├── RFC Call: ZRFC_INVOICE_PREVIEW(IM_VBELN)
+      ├── SAP returns: EX_INV array with delivery details:
+      │   ├── LIKP (Delivery number)
+      │   ├── LIPS (Delivery items)
+      │   ├── VBELN (Sales order linked)
+      │   ├── CUSTOMER (sold-to party)
+      │   ├── SHIP_TO (ship-to party)
+      │   ├── MATNR (Material codes)
+      │   ├── MENGE (Quantities shipped)
+      │   ├── NETPR (Net price per unit)
+      │   ├── AMOUNT (Line amount)
+      │   ├── TAX_AMOUNT (Tax)
+      │   ├── TOTAL_AMOUNT (Total with tax)
+      │   ├── DELIVERY_DATE (Delivery date)
+      │   ├── INCO_TERMS (Incoterms)
+      │   ├── CURRENCY (Currency code)
+      │   ├── PAYMENT_TERMS (Payment terms)
+      │   └── STATUS (Delivery status)
+      └── Display delivery data to invoice creator
+
+  1.2 Preview Verification
+      ├── Review all line items
+      ├── Verify quantities delivered
+      ├── Check pricing accuracy
+      ├── Validate tax calculations
+      ├── Confirm customer details
+      ├── Confirm delivery address
+      └── Proceed if all acceptable
+
+  PHASE 2: INVOICE CREATION
+
+  2.1 Single or Bulk Invoice Decision
+      ├── Option 1: Single delivery → Single invoice
+      ├── Option 2: Multiple deliveries → Single invoice
+      │   ├── User can bundle multiple deliveries
+      │   ├── System combines line items
+      │   ├── Consolidates amounts
+      │   └── Single invoice number generated
+      └── User makes selection
+
+  2.2 Create Invoice Request
+      ├── POST /create-invoice
+      ├── Input:
+      │   ├── delivery_no: Array of delivery numbers
+      │   ├── IM_LOGIN_ID: User ID
+      │   └── [Optional] invoice_date, invoice_currency
+      ├── RFC Call: ZRFC_CREATE_INVOICE
+      ├── Parameters to SAP:
+      │   ├── IM_VBELN: Delivery numbers array
+      │   ├── IM_LOGIN_ID: Logged-in user
+      │   └── IM_INVOICE_DATE: Today's date (or specified)
+      └── Sent to SAP for processing
+
+  2.3 SAP Invoice Generation
+      ├── SAP processes:
+      │   ├── Creates billing document (VBRK header)
+      │   ├── Creates billing items (VBRP items)
+      │   ├── Generates invoice number (VBRK-VBELN)
+      │   ├── Calculates taxes and amounts
+      │   ├── Sets payment terms
+      │   ├── Links to sales order (VBELN)
+      │   ├── Links to delivery (LIKP)
+      │   ├── Updates sales order status to "Invoiced"
+      │   ├── Creates accounting entries:
+      │   │   ├── Sales revenue GL account
+      │   │   ├── Accounts receivable GL account
+      │   │   └── Tax payable account
+      │   ├── Updates customer open items
+      │   └── Generates invoice document
+      └── Returns invoice number
+
+  2.4 Response & Confirmation
+      ├── IF Success:
+      │   ├── Capture IM_VBELN (invoice number)
+      │   ├── Return to client: status=true
+      │   ├── Display: Invoice created, invoice number
+      │   ├── Invoice now in SAP
+      │   └── Available for printing/dispatch
+      └── IF Error:
+         ├── Return error (delivery already invoiced, etc.)
+         └── No invoice created
+
+  PHASE 3: INVOICE LISTING & SEARCH
+
+  3.1 Invoice List Retrieval
+      ├── POST /invoice-list
+      ├── Input filters (all optional):
+      │   ├── customer_from: First customer number (range start)
+      │   ├── customer_to: Last customer number (range end)
+      │   ├── invoice_date_from: Start date
+      │   ├── invoice_date_to: End date
+      │   ├── invoice_from: First invoice number
+      │   ├── invoice_to: Last invoice number
+      │   ├── plant: Plant filter
+      │   └── lv_user: Login user ID
+      ├── Build RFC query:
+      │   ├── IM_LOGIN_ID: lv_user
+      │   ├── CUST_FROM: customer_from (if provided)
+      │   ├── CUST_TO: customer_to (if provided)
+      │   ├── DATE_FROM: invoice_date_from (if provided)
+      │   ├── DATE_TO: invoice_date_to (if provided)
+      │   ├── INV_FROM: invoice_from (if provided)
+      │   ├── INV_TO: invoice_to (if provided)
+      │   └── PLANT: plant (if provided)
+      ├── RFC Call: ZRFC_INVOICE_LIST(query_params)
+      └── SAP returns: Invoice list matching criteria
+
+  3.2 Invoice List Display
+      ├── Receive invoice array:
+      │   ├── Invoice number
+      │   ├── Customer name/code
+      │   ├── Invoice date
+      │   ├── Net amount
+      │   ├── Tax amount
+      │   ├── Total amount
+      │   ├── Outstanding amount
+      │   ├── Payment status
+      │   ├── Due date
+      │   └── Invoice status
+      ├── Sort and filter:
+      │   ├── Sort by invoice number, date, or amount
+      │   ├── Filter by status (open, paid, partial)
+      │   ├── Highlight overdue invoices
+      │   └── Show aging information
+      └── Display in searchable, filterable table
+
+  PHASE 4: INVOICE PRINTING & EXPORT
+
+  4.1 Print Invoice Request
+      ├── POST /print-invoice
+      ├── Input:
+      │   ├── invoice_number(s): Single or array
+      │   ├── IM_LOGIN_ID: User ID
+      │   └── [Optional] format (PDF, DOCX, etc.)
+      ├── RFC Call: ZRFC_PRINT_INVOICE
+      ├── Parameters:
+      │   ├── IM_VBRK: Invoice number(s)
+      │   ├── IM_LOGIN_ID: User ID
+      │   ├── FORMAT: Output format
+      │   └── [Optional] OUTPUT_DEVICE: Printer, Email, etc.
+      └── SAP generates printable document
+
+  4.2 Invoice Formatting
+      ├── SAP formats invoice with:
+      │   ├── Company header (Birla logo, address)
+      │   ├── Invoice number and date
+      │   ├── Customer details:
+      │   │   ├── Bill-to address
+      │   │   ├── Ship-to address
+      │   │   └── Customer reference
+      │   ├── Line items:
+      │   │   ├── Material description
+      │   │   ├── Quantity
+      │   │   ├── Unit price
+      │   │   ├── Line amount
+      │   │   └── Tax
+      │   ├── Summary:
+      │   │   ├── Subtotal
+      │   │   ├── Tax amount
+      │   │   ├── Total amount
+      │   │   └── Outstanding amount
+      │   ├── Payment terms and conditions
+      │   ├── Bank account details
+      │   ├── Contact information
+      │   └── Legal footer
+      └── Document ready for output
+
+  4.3 Distribution Options
+      ├── Print to Printer:
+      │   ├── Select printer
+      │   ├── Set number of copies
+      │   └── Print
+      ├── Email to Customer:
+      │   ├── Automatically attach invoice PDF
+      │   ├── Send to customer email
+      │   ├── CC: Accounts team
+      │   └── Log sent status
+      ├── Save as PDF:
+      │   ├── User downloads
+      │   ├── Store locally
+      │   └── Share as needed
+      └── Portal Download:
+         └── Invoice available for customer download
+
+  PHASE 5: PAYMENT TRACKING
+
+  5.1 Invoice Status Monitoring
+      ├── Invoice status updated as:
+      │   ├── Open: Issued, awaiting payment
+      │   ├── Partially Paid: Payment received < Total
+      │   ├── Fully Paid: Payment received = Total
+      │   ├── Overdue: Past due date, open amount
+      │   └── Cancelled: Manually cancelled (if applicable)
+      └── Link to payment records
+
+  5.2 Outstanding Amount Tracking
+      ├── Calculate outstanding:
+      │   ├── Outstanding = Total - Payments received
+      │   ├── Updated with each payment posting
+      │   └── Visible in accounts receivable
+      └── Aging analysis:
+         ├── 0-30 days
+         ├── 31-60 days
+         ├── 61-90 days
+         └── 90+ days
+
+  PHASE 6: POST-INVOICE OPERATIONS
+
+  6.1 Email Notifications
+      ├── Send to:
+      │   ├── Customer (if configured)
+      │   ├── Accounts department
+      │   ├── Sales manager
+      │   └── Finance team
+      ├── Content:
+      │   ├── Invoice number
+      │   ├── Amount
+      │   ├── Due date
+      │   ├── Payment terms
+      │   └── Invoice attachment
+
+  6.2 Accounting Integration
+      ├── GL entries created:
+      │   ├── Sales revenue account (credit)
+      │   ├── Accounts receivable account (debit)
+      │   ├── Tax payable account (credit)
+      │   └── Cost of goods sold (if applicable)
+      ├── Cost allocation:
+      │   ├── Revenue linked to sales order
+      │   ├── Revenue linked to delivery
+      │   └── Revenue linked to cost center
+      └── Period closing preparation
+
+  6.3 Audit Trail
+      ├── Log created:
+      │   ├── Invoice number
+      │   ├── Creation date/time
+      │   ├── Creator user ID
+      │   ├── Customer
+      │   ├── Amount
+      │   ├── Delivery links
+      │   └── Print/Email history
+      └── Stored in LogSchema (MongoDB)
+
+EXIT POINT: Invoice created in SAP, Available for dispatch to customer
+DURATION: 5-20 seconds
+DEPENDENCIES: Delivery order exists, Customer master active, Pricing configured in SAP
+RELATED WORKFLOWS: Delivery Order Creation (prerequisite), Sales Order (linked), Payment Posting (subsequent), Physical Inventory (uses pricing)
+ERROR SCENARIOS: Delivery already invoiced, Customer credit limit exceeded, Price variance, Tax calculation error
+RECOVERY ACTIONS: Correct delivery reference, Review customer credit, Adjust price if authorized, Check tax configuration, Resubmit
+
+---WORKFLOW 7: PHYSICAL INVENTORY MANAGEMENT---
+
+TRIGGER: Scheduled or ad-hoc physical stock count
+ENTRY POINT: /create-physical-inventory endpoint (POST)
+AUTHENTICATION: Not required (can be initiated by warehouse staff)
+DATA STORAGE: MongoDB (PhysicalInventoryModel)
+
+SEQUENCE:
+
+  PHASE 1: INVENTORY COUNT INITIATION
+
+  1.1 Create Physical Inventory Record
+      ├── POST /create-physical-inventory
+      ├── Input parameters:
+      │   ├── PHY_ID: Unique count ID (generated or provided)
+      │   ├── PHY_DATE: Count date
+      │   ├── PHY_TIME: Count time
+      │   ├── CFA_CODE: Distribution center code
+      │   ├── CFA_NAME: Distribution center name
+      │   ├── COMP_CODE: Company code
+      │   ├── COMP_NAME: Company name
+      │   ├── REGION_CODE: Region code
+      │   ├── REGION_NAME: Region name
+      │   ├── DEPOTS: Depot list (array of depot codes)
+      │   ├── PHY_INVT: Physical inventory data (initially empty array)
+      │   └── BOOK_STOCK: Book stock data (initially empty array)
+      ├── Create record in MongoDB:
+      │   ├── Insert new document
+      │   ├── Set timestamps (createdAt, updatedAt)
+      │   ├── Assign unique PHY_ID
+      │   └── Status: "Initiated"
+      └── Return success with PHY_ID
+
+  1.2 Preparation Phase
+      ├── Print count sheets for each material
+      ├── Organize by depot/location
+      ├── Assign count teams
+      ├── Set count schedule:
+      │   ├── Count start date/time
+      │   ├── Count completion deadline
+      │   └── Count shift schedules
+      └── Issue count documents to field teams
+
+  PHASE 2: PHYSICAL STOCK COUNTING (Field Teams)
+
+  2.1 Count Execution
+      ├── Field teams at depot locations
+      ├── For each material location:
+      │   ├── Physically verify stock present
+      │   ├── Count quantity
+      │   ├── Record count on paper/mobile
+      │   ├── Note any issues:
+      │   │   ├── Damaged goods found
+      │   │   ├── Expired materials
+      │   │   ├── Misplaced items
+      │   │   └── Discrepancies with records
+      │   ├── Capture material codes
+      │   ├── Record unit of measure
+      │   └── Add count date/time/counter name
+      └── Complete full material listing
+
+  2.2 Data Collection
+      ├── Methods:
+      │   ├── Paper-based count sheets (later entered)
+      │   ├── Mobile app (real-time entry)
+      │   └── Handheld scanners (barcode)
+      ├── Data captured:
+      │   ├── Material code (MATNR)
+      │   ├── Material description
+      │   ├── Count quantity (PHY_QTY)
+      │   ├── Unit of measure (MEINS)
+      │   ├── Batch number (if applicable)
+      │   ├── Storage location (SLOC)
+      │   ├── Depot code
+      │   ├── CFA code
+      │   ├── Count date/time
+      │   ├── Counter ID/name
+      │   ├── Remarks (condition, damage, etc.)
+      │   └── Photo (if applicable)
+      └── Prepare for system entry
+
+  PHASE 3: DATA ENTRY & SYSTEM UPLOAD
+
+  3.1 Physical Count Entry
+      ├── Warehouse supervisor or staff enters counts:
+      │   ├── Manual entry in system
+      │   ├── Bulk upload from Excel/CSV
+      │   └── Mobile app sync
+      ├── For each counted item:
+      │   ├── Enter MATNR (material code)
+      │   ├── Enter PHY_QTY (physical quantity counted)
+      │   ├── Enter MEINS (unit)
+      │   ├── Add batch/serial (if applicable)
+      │   ├── Confirm SLOC (storage location)
+      │   ├── Add remarks/notes
+      │   └── Submit item
+      ├── Build PHY_INVT array:
+      │   ├── [Item1: MATNR, PHY_QTY, SLOC, ...]
+      │   ├── [Item2: MATNR, PHY_QTY, SLOC, ...]
+      │   └── [ItemN: ...]
+      └── Continue until all items entered
+
+  3.2 Update MongoDB Record
+      ├── POST update to existing PHY_ID:
+      │   ├── Update PHY_INVT array (physical counts)
+      │   ├── Timestamp: Count completion time
+      │   ├── Status: "Count Completed"
+      │   └── Validation checks:
+      │       ├── All required fields present
+      │       ├── Quantities numeric
+      │       ├── Materials exist
+      │       └── No duplicates
+      ├── Save updated record
+      └── Ready for book stock comparison
+
+  PHASE 4: BOOK STOCK RETRIEVAL
+
+  4.1 Fetch System Inventory
+      ├── Query SAP or warehouse system:
+      │   ├── Fetch all materials in depots
+      │   ├── Get quantities by storage location
+      │   ├── Include batch information
+      │   ├── Include cost/valuation
+      │   └── Include last movement date
+      ├── Build BOOK_STOCK array:
+      │   ├── [Item1: MATNR, BOOK_QTY, SLOC, ...]
+      │   ├── [Item2: MATNR, BOOK_QTY, SLOC, ...]
+      │   └── [ItemN: ...]
+      └── Store in MongoDB BOOK_STOCK field
+
+  4.2 Update Record with Book Stock
+      ├── Update existing PHY_ID document:
+      │   ├── Add BOOK_STOCK array
+      │   ├── Timestamp: Book stock fetch time
+      │   └── Status: "Ready for Reconciliation"
+      └── Both arrays now available for comparison
+
+  PHASE 5: VARIANCE ANALYSIS & RECONCILIATION
+
+  5.1 Variance Calculation
+      ├── For each material in PHY_INVT:
+      │   ├── Find matching BOOK_STOCK entry by:
+      │   │   ├── MATNR (material code)
+      │   │   ├── SLOC (storage location)
+      │   │   └── Batch (if applicable)
+      │   ├── Calculate variance:
+      │   │   ├── VARIANCE = PHY_QTY - BOOK_QTY
+      │   │   ├── If VARIANCE > 0 → Excess/Gain
+      │   │   ├── If VARIANCE < 0 → Short/Loss
+      │   │   └── If VARIANCE = 0 → Matched
+      │   ├── Calculate variance %:
+      │   │   └── VAR_PCT = (VARIANCE / BOOK_QTY) * 100
+      │   ├── Flag for review:
+      │   │   ├── If ABS(VARIANCE) > threshold (e.g., >5%) → Flag
+      │   │   ├── If ABS(VAR_PCT) > percentage (e.g., >2%) → Flag
+      │   │   └── Mark for investigation
+      │   └── Create variance record:
+      │       ├── Material
+      │       ├── Expected quantity
+      │       ├── Counted quantity
+      │       ├── Variance quantity
+      │       ├── Variance %
+      │       ├── Status: "Flagged" or "OK"
+      │       └── Remarks field (for explanation)
+      └── Build VARIANCE array
+
+  5.2 Variance Summary
+      ├── Categorize variances:
+      │   ├── Matched items (VAR=0): Count, Total value
+      │   ├── Minor variances (<threshold): Count, Total variance value
+      │   ├── Significant variances (>threshold):
+      │   │   ├── Excess items: Materials counted more than system
+      │   │   ├── Short items: Materials counted less than system
+      │   │   ├── Missing items: In system but not counted
+      │   │   └── New items: Counted but not in system
+      │   └── Total variance impact in value terms
+      └── Generate summary report:
+         ├── Total materials counted
+         ├── Total matched
+         ├── Total variances
+         ├── Variance ratio
+         ├── Total variance value
+         ├── Top 10 variance items
+         └── Items requiring investigation
+
+  5.3 Investigation Phase
+      ├── For each flagged variance:
+      │   ├── Warehouse team investigates:
+      │   │   ├── Physical recount of item
+      │   │   ├── Check for misplacement
+      │   │   ├── Check stock movement records
+      │   │   ├── Check for damage/expiry
+      │   │   ├── Review recent transactions
+      │   │   └── Document findings
+      │   ├── Update variance record:
+      │   │   ├── Add investigation notes
+      │   │   ├── Set status: "Under Investigation"
+      │   │   ├── If resolved → "Resolved"
+      │   │   └── If unresolved → "Pending Review"
+      │   └── Assign responsibility if needed
+      └── Document all findings
+
+  PHASE 6: EMAIL ALERTS & NOTIFICATIONS
+
+  6.1 Alert Generation
+      ├── Threshold-based alerts:
+      │   ├── If total variance % > critical level (e.g., >5%) → Critical alert
+      │   ├── If any single item variance > major level (e.g., >10%) → Major alert
+      │   ├── If excess/short items found → Notification
+      │   └── If damaged goods found → Quality alert
+      └── Determine recipient list
+
+  6.2 Email Dispatch
+      ├── sendEmail utility called with:
+      │   ├── subject: "Physical Inventory Variance Alert - [CFA] [Date]"
+      │   ├── to: Warehouse manager, Finance manager, Inventory supervisor
+      │   ├── cc: Regional manager, Finance head
+      │   ├── html content includes:
+      │   │   ├── Summary of variances
+      │   │   ├── Critical items requiring attention
+      │   │   ├── Top 10 variance items
+      │   │   ├── Variance percentages
+      │   │   ├── Estimated financial impact
+      │   │   ├── Investigation status
+      │   │   ├── Recommended actions
+      │   │   └── Link to detailed report
+      │   └── Send via SMTP (noreply@birlacorp.com)
+      └── Log email sent to database
+
+  6.3 Dashboard Update
+      ├── Real-time dashboard updated:
+      │   ├── Inventory count status
+      │   ├── Variance alerts
+      │   ├── Investigation progress
+      │   ├── Historical trend analysis
+      │   └── Action items
+      └── Accessible to management team
+
+  PHASE 7: ADJUSTMENT POSTING IN SAP
+
+  7.1 Approval Process
+      ├── Finance/Warehouse manager review:
+      │   ├── Review variance analysis
+      │   ├── Verify investigation complete
+      │   ├── Approve adjustment amounts
+      │   ├── For each adjustment:
+      │   │   ├── Material code
+      │   │   ├── Quantity adjustment
+      │   │   ├── Reason/cause
+      │   │   ├── GL account for variance
+      │   │   └── Cost center
+      │   └── Authorize posting
+      └── Document approval
+
+  7.2 Create Adjustment Documents
+      ├── For each approved adjustment:
+      │   ├── Type determination:
+      │   │   ├── If short: Create negative GR (return)
+      │   │   ├── If excess: Create positive GR (receipt)
+      │   │   └── If damaged: Create scrap document
+      │   ├── RFC Call: ZRFC_CREATE_GR or ZRFC_SCRAP_DOCUMENT
+      │   ├── Parameters:
+      │   │   ├── MATNR: Material
+      │   │   ├── QUANTITY: Adjustment qty
+      │   │   ├── SLOC: Storage location
+      │   │   ├── PLANT: Plant
+      │   │   ├── REASON: Variance reason
+      │   │   ├── KOSTL: Cost center
+      │   │   ├── GL_ACCOUNT: Variance GL
+      │   │   └── USER: Authorizing user
+      │   ├── SAP processes:
+      │   │   ├── Creates adjustment document
+      │   │   ├── Updates inventory
+      │   │   ├── Creates GL entries:
+      │   │   │   ├── Inventory GL account
+      │   │   │   └── Variance/Adjustment GL account
+      │   │   ├── Updates cost center
+      │   │   └── Generates material document
+      │   └── Capture document number
+      └── Document all adjustments
+
+  7.3 Adjustment Confirmation
+      ├── IF Success:
+      │   ├── Inventory updated to match physical count
+      │   ├── GL entries posted
+      │   ├── Material documents created
+      │   └── Variance reconciled
+      └── IF Error:
+         ├── Return details
+         └── Manual intervention required
+
+  PHASE 8: RECORD COMPLETION & ARCHIVAL
+
+  8.1 Physical Inventory Closure
+      ├── Mark PHY_ID as "Completed"
+      ├── Store final record:
+      │   ├── PHY_ID: Count ID
+      │   ├── PHY_DATE: Count date
+      │   ├── PHY_TIME: Count time
+      │   ├── PHY_INVT: Physical inventory details
+      │   ├── BOOK_STOCK: Book stock details
+      │   ├── VARIANCES: Variance analysis
+      │   ├── ADJUSTMENTS: Posted adjustments
+      │   ├── CFA_CODE/NAME: Distribution center
+      │   ├── DEPOTS: Depot list
+      │   ├── REGION_CODE/NAME: Region
+      │   ├── Timestamps: createdAt, updatedAt
+      │   └── Status: "Completed"
+      └── Locked for editing (audit trail)
+
+  8.2 Report Generation
+      ├── Create detailed reports:
+      │   ├── Full inventory count report
+      │   ├── Variance analysis report
+      │   ├── Investigation summary
+      │   ├── Adjustment posting report
+      │   ├── Financial impact analysis
+      │   └── Trend analysis (if multiple counts)
+      ├── Distribution:
+      │   ├── Warehouse manager
+      │   ├── Finance team
+      │   ├── Regional management
+      │   ├── Archives (for compliance)
+      │   └── Portal (for stakeholder review)
+      └── Export options (PDF, Excel, etc.)
+
+  8.3 Audit Trail
+      ├── Complete record logged:
+      │   ├── Count initiation
+      │   ├── Count execution
+      │   ├── Data entry
+      │   ├── Variance analysis
+      │   ├── Alerts sent
+      │   ├── Investigation activity
+      │   ├── Approvals
+      │   ├── Adjustments posted
+      │   ├── All user actions
+      │   └── Timestamps for each action
+      └── Stored in MongoDB (retention per policy)
+
+  8.4 Deletion Option
+      ├── POST /delete-physical-inventory/:id
+      ├── Deletes by PHY_ID
+      ├── Used for:
+      │   ├── Invalid counts (false start)
+      │   ├── Duplicate counts
+      │   └── Test data cleanup
+      ├── Cannot delete if:
+      │   ├── Adjustments posted
+      │   ├── Status = "Completed"
+      │   └── After compliance retention period
+      └── Logs deletion (audit trail)
+
+  PHASE 9: DAMAGE DATA TRACKING (Related)
+
+  9.1 Damage Recording During Count
+      ├── If damage found during counting:
+      ├── Create DamageDataSchema record:
+      │   ├── USER_ID: Counter ID
+      │   ├── USER_NAME: Counter name
+      │   ├── DEPOT: Location of damage
+      │   ├── DEPOT_NAME: Depot name
+      │   ├── DATE_OF_RAKE_RECEIVED: Date found
+      │   ├── RECEIVE_TIME: Time found
+      │   ├── RR_QTY: Total quantity affected
+      │   ├── DAMAGE_DATA: Array of damages
+      │   │   ├── Material
+      │   │   ├── Damage type
+      │   │   ├── Quantity damaged
+      │   │   ├── Cause
+      │   │   └── Photos
+      │   └── [Other fields as applicable]
+      └── Link to physical inventory record
+
+  9.2 Insurance Claim (if applicable)
+      ├── Initiate claim:
+      │   ├── CLAIM_NO: Generated claim number
+      │   ├── CLAIM_QTY: Damaged quantity
+      │   ├── CLAIM_AMOUNT: Claim value
+      │   ├── CLAIM_STATUS: "Initiated"
+      │   └── Reference to physical inventory
+      └── Send email to insurance team
+
+EXIT POINT: Physical inventory count completed, Adjustments posted, Variances reconciled
+DURATION: 1-3 days (field work), 1-2 days (office work), 1-3 days (approval/posting)
+DEPENDENCIES: Materials in warehouse, Access to SAP for posting
+RELATED WORKFLOWS: Goods Receipt (provides stock), Sales Orders (use stock), Damage Tracking (detects issues)
+ERROR SCENARIOS: Material not found, Batch mismatch, GL account blocked, Cost center inactive
+RECOVERY ACTIONS: Verify material code, Correct batch number, Unblock GL account, Activate cost center
+
+---WORKFLOW 8: RFC & SAP INTEGRATION---
+
+TRIGGER: Any API call requiring SAP data
+ENTRY POINT: Middleware (poolCreator, clientCreator)
+AUTHENTICATION: JWT token + RFC password
+TECHNOLOGY: node-rfc library, SAP remote function calls
+
+SEQUENCE:
+
+  PHASE 1: CONNECTION POOL MANAGEMENT
+
+  1.1 Pool Creation (poolCreator Middleware)
+      ├── Triggered on: Any protected API endpoint
+      ├── Extract from JWT token:
+      │   ├── user_code
+      │   ├── userId
+      │   └── rfc_password (SAP login)
+      ├── Retrieve RFC settings:
+      │   ├── SAP host address
+      │   ├── SAP system ID (sysid)
+      │   ├── System number (sysnr)
+      │   ├── Client (client)
+      │   └── Language
+      ├── Build RFC settings object:
+      │   {
+      │     "user": rfc_password_user,
+      │     "passwd": rfc_password_password,
+      │     "ashost": "52.172.130.94",
+      │     "sysid": "BSQ",
+      │     "sysnr": "90",
+      │     "client": "700",
+      │     "lang": "EN"
+      │   }
+      ├── Create RFC Pool:
+      │   ├── const pool = new rfc.Pool(rfcSettings)
+      │   ├── Pool configuration:
+      │   │   ├── Max connections: 10 (or configured)
+      │   │   ├── Timeout: 30 seconds
+      │   │   ├── Connection timeout: 20 seconds
+      │   │   └── Reuse connections: true
+      │   └── Pool ready for requests
+      └── Attach to req.pool
+
+  1.2 Connection Acquisition
+      ├── When API endpoint needs SAP data:
+      │   ├── pool.acquire()
+      │   ├── Waits if no available connections
+      │   ├── Acquires from pool or creates new
+      │   ├── Maximum wait: 30 seconds
+      │   └── Returns client ready for use
+      ├── If timeout:
+      │   └── Return error: "RFC connection timeout"
+      └── If success: Proceed to RFC call
+
+  PHASE 2: RFC FUNCTION CALL EXECUTION
+
+  2.1 Build RFC Parameters
+      ├── For each RFC call, parameters assembled:
+      │   ├── Example: ZFM_PLANT
+      │   │   └── { LV_USER: "user_code" }
+      │   ├── Example: ZRFC_SALESORDER_DETAILS
+      │   │   └── { IM_SALES_ORDER: "12345" }
+      │   ├── Example: ZRFC_CREATE_SALES_ORDER
+      │   │   └── {
+      │   │       IM_CUSTOMER: "CUST001",
+      │   ================================================================================
+BIRLA DEPOT PORTAL - COMPLETE WORKFLOWS & INTERRELATIONSHIP DOCUMENTATION
+================================================================================
+
+Date: January 16, 2026
+System: Birla Depot Portal Backend
+Technology: Node.js/Express, SAP RFC Integration, MongoDB, MySQL
+
+================================================================================
+TABLE OF CONTENTS
+================================================================================
+
+1. CORE WORKFLOWS
+2. WORKFLOW INTERRELATIONSHIPS
+3. DATA FLOW ARCHITECTURE
+4. PROCESS DEPENDENCIES
+5. USER JOURNEY MAPS
+6. ERROR HANDLING & RECOVERY
+7. WORKFLOW TIMING & SEQUENCES
+8. SYSTEM INTEGRATION POINTS
+
+
+================================================================================
+SECTION 1: CORE WORKFLOWS
+================================================================================
+
+---WORKFLOW 1: USER AUTHENTICATION & SESSION MANAGEMENT---
+
+TRIGGER: User attempts to access portal
+ENTRY POINT: /login endpoint (POST)
+
+SEQUENCE:
+  1. User Input
+     ├── Provide user_code
+     ├── Provide password
+     └── Submit credentials
+
+  2. Validation Phase
+     ├── Query MySQL users table
+     ├── Check if user exists
+     ├── Verify user status != 1 (not revoked)
+     └── Validate user is not disabled
+
+  3. Authentication Phase
+     ├── Retrieve stored password hash from database
+     ├── Compare provided password with bcrypt hash
+     ├── If mismatch → Return "Invalid username or password"
+     └── If match → Proceed to token generation
+
+  4. Token Generation
+     ├── Extract user data:
+     │   ├── user_code
+     │   ├── userId
+     │   └── rfc_password (for SAP access)
+     ├── Generate JWT token with payload:
+     │   ├── user_code
+     │   ├── userId
+     │   └── rfc_password
+     ├── Set expiration: 3 hours
+     └── Sign with secret key: "this_string_should_be_longer"
+
+  5. Response & Session
+     ├── Return JWT token to client
+     ├── Return user details (user_code, userId, name, email)
+     ├── Return status: true, code: 0
+     └── Client stores token for subsequent requests
+
+  6. Token Validation (Middleware)
+     └── On every protected API request:
+        ├── Extract token from Authorization header
+        ├── Verify token signature
+        ├── Check expiration
+        ├── Decode user information
+        ├── Attach to req.user
+        └── If invalid/expired → Return 401 Auth Failed
+
+EXIT POINT: User authenticated, token valid, can access protected routes
+DURATION: 3 hours per session
+STATUS CHECKS: status = 0 (Active), status = 1 (Revoked), status = 2 (Default)
+
+---WORKFLOW 2: USER MANAGEMENT---
+
+TRIGGER: Administrator performs user operations
+ENTRY POINT: /create, /update, /allUser endpoints (POST/GET)
+
+SEQUENCE A: CREATE NEW USER
+  1. Admin Input
+     ├── name: Full name
+     ├── user_code: Unique identifier
+     ├── email: Contact email
+     ├── password: Portal login password
+     ├── rfc_password: SAP system password
+     ├── mobile: Phone number
+     ├── user_type: Role (1=Admin, 2=Standard, default=2)
+     └── status: Active status (0=Active, 1=Revoked, 2=Default)
+
+  2. Validation
+     ├── Check all required fields present
+     ├── Query users table for duplicate user_code
+     ├── If exists → Return "User Already Exists"
+     └── If new → Proceed to creation
+
+  3. Password Encryption
+     ├── Hash password using bcrypt (10 salt rounds)
+     ├── Store hashed password (original never stored)
+     └── rfc_password stored in plain text (for SAP)
+
+  4. Database Insert
+     ├── INSERT INTO users table:
+     │   ├── name
+     │   ├── user_code
+     │   ├── email
+     │   ├── password (hashed)
+     │   ├── user_type
+     │   ├── mobile
+     │   ├── status
+     │   └── rfc_password
+     └── Return success with user ID
+
+  5. Post-Creation Setup
+     ├── Assign plants to user (UserPlant mapping)
+     ├── Assign permissions (UserPermission schema)
+     └── Set initial status = Active (0)
+
+SEQUENCE B: UPDATE EXISTING USER
+  1. Admin Input
+     ├── User ID (required)
+     ├── Updated fields (selective):
+     │   ├── name
+     │   ├── user_code
+     │   ├── email
+     │   ├── mobile
+     │   ├── user_type
+     │   ├── status
+     │   ├── password (optional)
+     │   └── rfc_password (optional)
+
+  2. Duplicate Check
+     ├── Check new user_code not already assigned to another user
+     ├── If duplicate → Return error
+     └── If unique → Proceed
+
+  3. Update Logic (4 scenarios)
+     Scenario A: No password/rfc_password change
+        └── Update name, user_code, email, user_type, mobile, status
+
+     Scenario B: Only password change
+        ├── Hash new password with bcrypt
+        └── Update password field
+
+     Scenario C: Only rfc_password change
+        └── Update rfc_password field (stored plain)
+
+     Scenario D: Both password and rfc_password change
+        ├── Hash password
+        └── Update both fields
+
+  4. Database Update
+     ├── UPDATE users SET [fields] WHERE id = user_id
+     └── Return success
+
+SEQUENCE C: REVOKE USER ACCESS
+  1. Admin Action
+     ├── Select user to revoke
+     └── Set status = 1
+
+  2. Immediate Effect
+     ├── Next login attempt → Return "Login Privilege Revoked"
+     ├── JWT token still valid (expires in 3 hours)
+     └── API calls still work with existing token
+
+  3. Complete Revocation (manual step)
+     └── Admin terminates existing sessions or users logout
+
+SEQUENCE D: FETCH USER DATA
+  1. Query Operations
+     ├── GET /allUser → Retrieve all users
+     ├── POST /user_data → Get specific user by ID
+     ├── POST /get_mulple_users → Fetch multiple users by codes array
+     └── POST /search_users → Search with filters
+
+  2. Response
+     └── Return user details without password/rfc_password visible
+
+EXIT POINT: User created/updated/disabled
+DURATION: Immediate (create), Real-time (update/revoke)
+DEPENDENCIES: None (independent operation)
+
+---WORKFLOW 3: SALES ORDER CREATION---
+
+TRIGGER: User needs to create new sales order
+ENTRY POINT: /create_sales_order endpoint (POST)
+AUTHENTICATION: JWT token required (checkAuth middleware)
+SAP INTEGRATION: Yes (RFC calls)
+
+PREREQUISITE DATA:
+  ├── User has valid plant assignment (UserPlant)
+  ├── User has sales order creation permission
+  └── RFC password valid for SAP connectivity
+
+SEQUENCE:
+
+  PHASE 1: DATA GATHERING (Dropdown/Master Data)
+
+  1.1 Plant Selection
+      ├── User requests plants: POST /get_zfm_plants
+      ├── RFC Call: ZFM_PLANT(LV_USER)
+      ├── SAP returns: Plant list accessible to user
+      └── User selects plant
+
+  1.2 Material Selection
+      ├── User requests materials: POST /get_materials_of_plants
+      ├── RFC Call: ZFM_MATERIAL(LV_PLANT)
+      ├── SAP returns: All materials available in plant
+      └── User selects materials and quantities
+
+  1.3 Customer Selection
+      ├── User requests customers: POST /get_sold_to_party
+      ├── RFC Call: ZFM_SOLD_TO_PARTY
+      ├── SAP returns: List of valid customers
+      └── User selects sold-to party (Bill-To)
+
+  1.4 Ship-To Party Selection
+      ├── User requests: POST /get_ship_to_party
+      ├── RFC Call: ZFM_SHIP_TO_PARTY
+      ├── SAP returns: Valid ship-to locations
+      └── User selects delivery destination
+
+  1.5 Shipping Configuration
+      ├── Shipping Type: POST /get_shipping_type
+      ├── Shipping Point: POST /get_shipping_point
+      ├── Loading Points: POST /get-loading-points
+      ├── Quantity Units: POST /get_quantity_unit
+      └── User selects all shipping parameters
+
+  1.6 Sales Area Data
+      ├── User requests: POST /get_sales_area
+      ├── RFC Call: ZFM_SALES_AREA
+      ├── SAP returns: Sales areas accessible to user
+      └── User selects sales area
+
+  1.7 Order Type Selection
+      ├── User requests: POST /get_orders_type_dropdown
+      ├── RFC Call: ZFM_ORDER_TYPE(VBELN)
+      ├── SAP returns: Available order types
+      └── User selects order type (Standard, Rush, etc.)
+
+  1.8 Status List Retrieval
+      ├── User requests: POST /get_status_list
+      ├── RFC Call: ZFM_STATUS
+      ├── SAP returns: Status options
+      └── Used for order status management
+
+  PHASE 2: ORDER ASSEMBLY
+
+  2.1 Compile Order Data
+      └── Aggregate all selected data into order structure:
+         ├── Customer details (SOLD_TO_PARTY, SHIP_TO_PARTY)
+         ├── Plant code (WERKS)
+         ├── Materials and quantities (MATNR, MENGE)
+         ├── Pricing details
+         ├── Shipping information
+         ├── Sales area data
+         ├── Delivery dates
+         └── Special conditions/notes
+
+  2.2 Client-Side Validation
+      ├── Check all required fields filled
+      ├── Validate quantities > 0
+      ├── Verify customer active
+      └── Validate material available in plant
+
+  PHASE 3: SAP SUBMISSION
+
+  3.1 Order Creation Request
+      ├── POST /create_sales_order
+      ├── Attach JWT token in Authorization header
+      ├── Pool middleware creates RFC pool (poolCreator)
+      └── Acquire connection from RFC pool
+
+  3.2 RFC Function Call
+      ├── Function: ZRFC_CREATE_SALES_ORDER
+      ├── Parameters:
+      │   ├── IM_CUSTOMER (sold-to party)
+      │   ├── IM_SHIP_TO (ship-to party)
+      │   ├── IM_PLANT (plant code)
+      │   ├── IM_MATERIALS (material details array)
+      │   ├── IM_QUANTITIES (quantities)
+      │   ├── IM_SHIPPING (shipping details)
+      │   ├── IM_SALES_AREA (sales area code)
+      │   └── IM_USER (login user ID)
+      └── Send to SAP
+
+  3.3 SAP Processing
+      ├── SAP validates order
+      ├── Checks credit limits
+      ├── Validates material availability
+      ├── Generates sales order number (VBELN)
+      ├── Creates delivery schedule
+      └── Returns confirmation
+
+  3.4 Response Handling
+      ├── RFC pool releases connection
+      ├── IF Success:
+      │   ├── Capture generated VBELN (order number)
+      │   ├── Capture delivery schedule
+      │   ├── Return to client: status=true, order_number, details
+      │   └── Order now in SAP system
+      └── IF Error:
+         ├── Return error details
+         └── No order created in SAP
+
+  PHASE 4: POST-CREATION
+
+  4.1 Client-Side Actions
+      ├── Display success confirmation
+      ├── Show generated sales order number
+      ├── Show delivery schedule
+      ├── Offer options:
+      │   ├── Create Delivery Order
+      │   ├── View Order Details
+      │   ├── Print Order Confirmation
+      │   └── Close
+      └── Update local UI
+
+  4.2 Data Persistence
+      ├── Order stored in SAP (persistent)
+      ├── Order accessible for delivery creation
+      ├── Order visible in order listings/reports
+      └── Order linked to customer
+
+EXIT POINT: Sales order created in SAP with VBELN
+DURATION: 5-30 seconds (depending on SAP response)
+DEPENDENCIES: Plant assignment, material master, customer master, SAP connectivity
+NEXT WORKFLOWS: Delivery Order Creation, Physical Inventory, Invoicing
+ERROR SCENARIOS: Credit limit exceeded, Material not available, Plant access denied
+
+---WORKFLOW 4: DELIVERY ORDER CREATION---
+
+TRIGGER: Sales order created, need to arrange shipment
+ENTRY POINT: /get-order-details, /get-storage-location, /get-loading-points (POST)
+PREREQUISITES: Active sales order exists
+AUTHENTICATION: JWT token required
+SAP INTEGRATION: Yes (RFC calls)
+
+SEQUENCE:
+
+  PHASE 1: ORDER RETRIEVAL
+
+  1.1 Get Order Details
+      ├── POST /get-order-details
+      ├── Input: order_id (VBELN)
+      ├── RFC Call: ZRFC_SALESORDER_DETAILS(IM_SALES_ORDER)
+      ├── SAP returns: IT_FINAL[0] with:
+      │   ├── Customer details
+      │   ├── Material line items
+      │   ├── Quantities ordered
+      │   ├── Pricing
+      │   ├── Delivery schedule
+      │   └── Special conditions
+      └── Display to user
+
+  1.2 Validate Order Status
+      ├── Check order is not cancelled
+      ├── Check delivery not already created
+      ├── Check materials available
+      └── Proceed if valid
+
+  PHASE 2: WAREHOUSE ALLOCATION
+
+  2.1 Get Storage Locations
+      ├── POST /get-storage-location
+      ├── Input: plant (WERKS)
+      ├── RFC Call: ZFM_SLOC_DO_CREATE(LV_PLANT)
+      ├── SAP returns: IT_FINAL[] array of available storage locations
+      │   ├── SLOC (storage location code)
+      │   ├── SLOC_DESC (description)
+      │   ├── CAPACITY (available capacity)
+      │   ├── QTY_ON_HAND (current quantity)
+      │   └── BLOCK_STATUS (blocked/available)
+      └── User selects storage location for each material
+
+  2.2 Warehouse Assignment Logic
+      ├── For each material in order:
+      │   ├── Check quantity needed
+      │   ├── Check available quantity in storage location
+      │   ├── Allocate material to location
+      │   ├── Reserve quantity
+      │   └── Block inventory
+      └── Build allocation map
+
+  PHASE 3: LOADING POINT SELECTION
+
+  3.1 Get Loading Points
+      ├── POST /get-loading-points
+      ├── Input: shipping_point (LV_SHIP_POINT)
+      ├── RFC Call: ZFM_LOADING_POINT(LV_SHIP_POINT)
+      ├── SAP returns: IT_FINAL[] with available loading points
+      │   ├── LOAD_POINT (code)
+      │   ├── LOAD_POINT_DESC (description)
+      │   ├── CAPACITY (current usage %)
+      │   ├── EQUIPMENT (dock, crane, etc.)
+      │   └── AVAILABILITY (available/occupied)
+      └── User selects loading point
+
+  3.2 Dock Assignment
+      ├── Schedule dock reservation
+      ├── Set loading time window
+      ├── Assign loading equipment
+      └── Configure vehicle type
+
+  PHASE 4: DELIVERY ORDER CREATION
+
+  4.1 Compile Delivery Data
+      └── Aggregate:
+         ├── Order details (VBELN, line items)
+         ├── Storage locations (per material)
+         ├── Loading point
+         ├── Delivery date
+         ├── Transport info
+         ├── Special handling instructions
+         └── Customer delivery address
+
+  4.2 Create Delivery in SAP
+      ├── RFC Call: ZRFC_CREATE_DELIVERY
+      ├── Parameters:
+      │   ├── IM_VBELN (sales order number)
+      │   ├── IM_SLOC (storage locations array)
+      │   ├── IM_LOAD_POINT (loading point)
+      │   ├── IM_DELIVERY_DATE (date)
+      │   └── IM_USER (login ID)
+      ├── SAP processes:
+      │   ├── Validates material availability
+      │   ├── Checks warehouse capacity
+      │   ├── Confirms dock availability
+      │   ├── Generates delivery number (LIKP)
+      │   ├── Creates delivery items (LIPS)
+      │   └── Updates inventory reservations
+      └── Returns delivery confirmation
+
+  4.3 Delivery Confirmation
+      ├── IF Success:
+      │   ├── Capture generated LIKP (delivery number)
+      │   ├── Store allocation details
+      │   ├── Return status=true, delivery_number
+      │   ├── Delivery now in SAP
+      │   └── Next: Goods dispatch
+      └── IF Error:
+         ├── Return error (capacity exceeded, material not available, etc.)
+         └── User must resolve and retry
+
+  PHASE 5: POST-CREATION
+
+  5.1 Delivery Status
+      ├── Status: "Ready for Shipping"
+      ├── Inventory: Reserved (not yet decremented)
+      ├── Dock: Assigned
+      ├── Loading point: Scheduled
+      └── Awaiting: Physical shipment
+
+  5.2 Subsequent Operations
+      ├── Print delivery documents
+      ├── Prepare picking list
+      ├── Arrange transport
+      ├── Track shipment progress
+      └── Confirm goods dispatch
+
+EXIT POINT: Delivery order created in SAP with LIKP number
+DURATION: 10-45 seconds
+DEPENDENCIES: Sales order, storage locations, loading points, SAP connectivity
+RELATED WORKFLOWS: Sales Order Creation (prerequisite), Goods Receipt (outbound flow), Invoicing
+CONSTRAINTS: Inventory must be available, Capacity limits, Dock availability
+ERROR RECOVERY: Retry with different storage location, Adjust delivery date, Use alternative loading point
+
+---WORKFLOW 5: GOODS RECEIPT (GR) MANAGEMENT---
+
+TRIGGER: Supplier delivery arrives at depot
+ENTRY POINT: /search-customer, /initial-good-receipt-list endpoints (POST)
+AUTHENTICATION: JWT token required
+SAP INTEGRATION: Yes (RFC calls)
+
+SEQUENCE:
+
+  PHASE 1: SUPPLIER/CUSTOMER IDENTIFICATION
+
+  1.1 Search Customer
+      ├── POST /search-customer
+      ├── Input: search_key (supplier code or name)
+      ├── RFC Call: ZFM_RECEIVING_PLANT_GR(VBELN, IM_LOGIN_ID)
+      ├── SAP returns: IT_FINAL[] array with:
+      │   ├── KUNNR (customer/supplier code)
+      │   ├── NAME1 (supplier name)
+      │   ├── ADDRESS (address)
+      │   ├── CONTACT (contact person)
+      │   └── PHONE (contact number)
+      ├── Filter locally by search_key (case-insensitive):
+      │   ├── Match on KUNNR
+      │   ├── Match on NAME1
+      │   └── Partial matching supported
+      └── Display matching results
+
+  1.2 Select Supplier
+      └── User selects supplier for GR creation
+
+  PHASE 2: GOODS RECEIPT LIST RETRIEVAL
+
+  2.1 Fetch GR List
+      ├── POST /initial-good-receipt-list
+      ├── Input parameters:
+      │   ├── customer_number: KUNNR (required)
+      │   ├── delivery_date_from: DATE_FROM (required)
+      │   ├── delivery_date_to: DATE_TO (required)
+      │   ├── delivery_number_from: DELV_FROM (optional)
+      │   └── delivery_number_to: DELV_TO (optional)
+      ├── Build query object:
+      │   ├── IM_KUNNR: customer_number
+      │   ├── DATE_FROM: delivery_date_from
+      │   ├── DATE_TO: delivery_date_to
+      │   └── [Optional] DELV_FROM, DELV_TO
+      ├── RFC Call: ZFM_RECEIVING_PLANT_GR(query)
+      └── SAP returns: IT_FINAL[] with pending GR documents:
+         ├── EBELN (PO number)
+         ├── EBELP (PO item)
+         ├── VBELN (Delivery number if linked)
+         ├── MATNR (Material code)
+         ├── MENGE (Quantity expected)
+         ├── MEINS (Unit of measure)
+         ├── NETPR (Net price)
+         ├── KUNNR (Supplier)
+         ├── WERKS (Plant)
+         ├── DATE (Expected delivery date)
+         └── STATUS (PO status)
+
+  2.2 Filter & Display Results
+      ├── Filter by date range
+      ├── Sort by delivery number
+      ├── Show expected vs. arrived quantities
+      ├── Highlight overdue deliveries
+      └── Display in tabular format
+
+  PHASE 3: GOODS RECEIPT DETAILS
+
+  3.1 Fetch GR Details
+      ├── POST /fetch-gr-details
+      ├── Input: PO number (EBELN), Item (EBELP)
+      ├── RFC Call: ZRFC_GR_DETAILS(IM_EBELN, IM_EBELP)
+      ├── SAP returns detailed information:
+      │   ├── Material information
+      │   ├── Expected quantity
+      │   ├── Unit price
+      │   ├── Delivery conditions
+      │   ├── Expiry date (for perishables)
+      │   ├── Batch information
+      │   ├── Quality certificates
+      │   └── Special handling requirements
+      └── Display full details to GR operator
+
+  3.2 Physical Goods Inspection
+      ├── Operator receives goods
+      ├── Physically counts/verifies quantity
+      ├── Checks packaging condition
+      ├── Verifies expiry dates
+      ├── Checks quality documents
+      ├── Inspects for damage
+      └── Records findings
+
+  PHASE 4: ACCEPTANCE/REJECTION DECISION
+
+  4.1 Goods Accepted Path
+      ├── Operator confirms all checks passed
+      ├── Quantity matches expected
+      ├── Condition acceptable
+      ├── Documents in order
+      ├── Proceed to POST PHASE
+
+  4.2 Goods Rejected Path
+      ├── POST /reject-gr
+      ├── RFC Call: ZRFC_GR_REJECTION
+      ├── Required inputs:
+      │   ├── PO number (EBELN)
+      │   ├── Item (EBELP)
+      │   ├── Rejected quantity
+      │   ├── Rejection reason code (from dropdown)
+      │   └── Comments/observations
+      ├── Rejection reason codes (from /fetch-all-reason-of-rejections):
+      │   ├── Damage during transit
+      │   ├── Quality not matching
+      │   ├── Quantity mismatch
+      │   ├── Specification not matching
+      │   ├── Expired goods
+      │   ├── Documentation issues
+      │   └── Other (with notes)
+      ├── RFC Call processed:
+      │   ├── Create rejection document
+      │   ├── Update PO status
+      │   ├── Initiate return process
+      │   ├── Send alert to procurement
+      │   └── Track for follow-up
+      └── User sees: Rejection confirmed, return document created
+
+  PHASE 5: DAMAGE DOCUMENTATION (if applicable)
+
+  5.1 Damage Recording
+      ├── If damage found during inspection:
+      ├── POST to DamageDataSchema:
+      │   ├── USER_ID: Inspector ID
+      │   ├── USER_NAME: Inspector name
+      │   ├── RR_NO: GR number (unique)
+      │   ├── DEPOT: Receiving depot
+      │   ├── DEPOT_NAME: Depot name
+      │   ├── RAKE_NO: Transportation reference
+      │   ├── DATE_OF_RAKE_RECEIVED: Receipt date
+      │   ├── RECEIVE_TIME: Time of receipt
+      │   ├── RR_QTY: Total received quantity
+      │   ├── DAMAGE_DATA: Array of damage details
+      │   │   └── Each damage record:
+      │   │       ├── Damage type
+      │   │       ├── Damaged quantity
+      │   │       ├── Cause
+      │   │       ├── Photos/attachments
+      │   │       └── Inspector notes
+      │   ├── HANDLING_PARTY: 3PL/Transport company
+      │   ├── HANDLING_PARTY_PHONE_NO
+      │   └── HANDLING_PARTY_CODE
+      └── Data stored in MongoDB for tracking
+
+  5.2 Claim Initiation
+      ├── Create insurance claim:
+      │   ├── CLAIM_NO: Generated claim number
+      │   ├── CLAIM_DATE: Date of claim
+      │   ├── CLAIM_QTY: Damaged quantity
+      │   ├── CLAIM_AMOUNT: Calculated claim value
+      │   ├── CLAIM_STATUS: "Initiated"
+      │   ├── CLAIM_INTIMATION_STATUS: "Pending"
+      │   └── MAT_DOC_NO: Link to material document
+      ├── Send email notification to insurance team
+      └── Track claim status and approvals
+
+  PHASE 6: COST CENTER ALLOCATION
+
+  6.1 Cost Center Selection
+      ├── POST /fetch-cost-center
+      ├── RFC Call: ZFM_COST_CENTER
+      ├── SAP returns: Available cost centers for plant
+      │   ├── KOSTL (cost center code)
+      │   ├── KOSTL_DESC (description)
+      │   ├── RESPONSIBILITY (manager)
+      │   └── BUDGET_STATUS (available funds)
+      └── User selects cost center
+
+  6.2 Allocation Assignment
+      └── For accepted goods:
+         ├── Assign to selected cost center
+         ├── Link PO to cost center
+         └── Prepare for posting
+
+  PHASE 7: GOODS RECEIPT POSTING IN SAP
+
+  7.1 Create MIGO (Material Document)
+      ├── POST /create-gr
+      ├── RFC Call: ZRFC_CREATE_GR (MIGO posting)
+      ├── Parameters:
+      │   ├── IM_EBELN: PO number
+      │   ├── IM_EBELP: PO item
+      │   ├── IM_MENGE: GR quantity
+      │   ├── IM_PLANT: Plant code
+      │   ├── IM_SLOC: Storage location
+      │   ├── IM_KOSTL: Cost center
+      │   ├── IM_BATCH: Batch number (if applicable)
+      │   ├── IM_EXPIRY_DATE: Expiry date
+      │   ├── IM_GR_DATE: GR date
+      │   ├── IM_USER: Login ID
+      │   └── [If Damage] IM_CLAIM_NO: Claim number
+      ├── SAP processes:
+      │   ├── Creates MIGO document
+      │   ├── Generates material document number (MBLNR)
+      │   ├── Updates inventory in plant/sloc
+      │   ├── Updates PO status to received
+      │   ├── Updates cost center allocations
+      │   ├── Creates accounting entries
+      │   └── If damage: Links to claim
+      └── Returns confirmation with MBLNR
+
+  7.2 GR Confirmation
+      ├── IF Success:
+      │   ├── Material document created (MBLNR)
+      │   ├── Inventory updated in SAP
+      │   ├── PO status changed to "GR Received"
+      │   ├── Cost center charged
+      │   ├── Display: status=true, MBLNR
+      │   └── Goods now in system inventory
+      └── IF Error:
+         ├── Validation error (quantity mismatch, etc.)
+         ├── SAP error (cost center blocked, etc.)
+         └── Return error details, no posting done
+
+  PHASE 8: POST-GR OPERATIONS
+
+  8.1 Email Notifications
+      ├── Send to:
+      │   ├── Warehouse manager
+      │   ├── Procurement team
+      │   ├── Finance (if damage/claim)
+      │   └── Cost center manager
+      ├── Content:
+      │   ├── GR confirmation
+      │   ├── Material document number
+      │   ├── Quantity received
+      │   ├── Cost center allocated
+      │   └── If damage: Claim details
+
+  8.2 Record Audit Trail
+      ├── Log GR creation:
+      │   ├── Timestamp
+      │   ├── User ID
+      │   ├── Supplier
+      │   ├── Material
+      │   ├── Quantity
+      │   ├── MBLNR
+      │   └── Cost center
+      └── Store in LogSchema (MongoDB)
+
+  8.3 Inventory Update
+      ├── Warehouse system updated:
+      │   ├── Stock quantity increased
+      │   ├── Storage location updated
+      │   ├── Cost center charged
+      │   ├── Batch tracking (if applicable)
+      │   ├── Expiry date recorded
+      │   └── Material status updated
+      └── Available for outbound operations (sales, transfers)
+
+EXIT POINT: Material document created in SAP, Inventory updated
+DURATION: 15-60 seconds (depending on SAP response)
+DEPENDENCIES: PO exists in SAP, Supplier master, Plant setup, Storage locations
+RELATED WORKFLOWS: Sales Order (precedes in inbound flow), Physical Inventory (uses GR data), Invoicing (links to PO)
+ERROR SCENARIOS: PO not found, Quantity exceeds PO, Cost center blocked, Batch expiry exceeded, Material code mismatch
+RECOVERY ACTIONS: Manual PO creation, Partial GR (post quantity available), Different cost center, Update batch expiry, Correct material code
+
+---WORKFLOW 6: INVOICE CREATION & MANAGEMENT---
+
+TRIGGER: Delivery completed or GR posted, need to bill customer
+ENTRY POINT: /get-delivery-details, /create-invoice endpoints (POST)
+PREREQUISITES: Delivery order exists or GR posted
+AUTHENTICATION: JWT token required
+SAP INTEGRATION: Yes (RFC calls)
+
+SEQUENCE:
+
+  PHASE 1: DELIVERY DATA RETRIEVAL
+
+  1.1 Get Delivery Details
+      ├── POST /get-delivery-details
+      ├── Input: delivery_no (array of delivery numbers - LIKP)
+      ├── RFC Call: ZRFC_INVOICE_PREVIEW(IM_VBELN)
+      ├── SAP returns: EX_INV array with delivery details:
+      │   ├── LIKP (Delivery number)
+      │   ├── LIPS (Delivery items)
+      │   ├── VBELN (Sales order linked)
+      │   ├── CUSTOMER (sold-to party)
+      │   ├── SHIP_TO (ship-to party)
+      │   ├── MATNR (Material codes)
+      │   ├── MENGE (Quantities shipped)
+      │   ├── NETPR (Net price per unit)
+      │   ├── AMOUNT (Line amount)
+      │   ├── TAX_AMOUNT (Tax)
+      │   ├── TOTAL_AMOUNT (Total with tax)
+      │   ├── DELIVERY_DATE (Delivery date)
+      │   ├── INCO_TERMS (Incoterms)
+      │   ├── CURRENCY (Currency code)
+      │   ├── PAYMENT_TERMS (Payment terms)
+      │   └── STATUS (Delivery status)
+      └── Display delivery data to invoice creator
+
+  1.2 Preview Verification
+      ├── Review all line items
+      ├── Verify quantities delivered
+      ├── Check pricing accuracy
+      ├── Validate tax calculations
+      ├── Confirm customer details
+      ├── Confirm delivery address
+      └── Proceed if all acceptable
+
+  PHASE 2: INVOICE CREATION
+
+  2.1 Single or Bulk Invoice Decision
+      ├── Option 1: Single delivery → Single invoice
+      ├── Option 2: Multiple deliveries → Single invoice
+      │   ├── User can bundle multiple deliveries
+      │   ├── System combines line items
+      │   ├── Consolidates amounts
+      │   └── Single invoice number generated
+      └── User makes selection
+
+  2.2 Create Invoice Request
+      ├── POST /create-invoice
+      ├── Input:
+      │   ├── delivery_no: Array of delivery numbers
+      │   ├── IM_LOGIN_ID: User ID
+      │   └── [Optional] invoice_date, invoice_currency
+      ├── RFC Call: ZRFC_CREATE_INVOICE
+      ├── Parameters to SAP:
+      │   ├── IM_VBELN: Delivery numbers array
+      │   ├── IM_LOGIN_ID: Logged-in user
+      │   └── IM_INVOICE_DATE: Today's date (or specified)
+      └── Sent to SAP for processing
+
+  2.3 SAP Invoice Generation
+      ├── SAP processes:
+      │   ├── Creates billing document (VBRK header)
+      │   ├── Creates billing items (VBRP items)
+      │   ├── Generates invoice number (VBRK-VBELN)
+      │   ├── Calculates taxes and amounts
+      │   ├── Sets payment terms
+      │   ├── Links to sales order (VBELN)
+      │   ├── Links to delivery (LIKP)
+      │   ├── Updates sales order status to "Invoiced"
+      │   ├── Creates accounting entries:
+      │   │   ├── Sales revenue GL account
+      │   │   ├── Accounts receivable GL account
+      │   │   └── Tax payable account
+      │   ├── Updates customer open items
+      │   └── Generates invoice document
+      └── Returns invoice number
+
+  2.4 Response & Confirmation
+      ├── IF Success:
+      │   ├── Capture IM_VBELN (invoice number)
+      │   ├── Return to client: status=true
+      │   ├── Display: Invoice created, invoice number
+      │   ├── Invoice now in SAP
+      │   └── Available for printing/dispatch
+      └── IF Error:
+         ├── Return error (delivery already invoiced, etc.)
+         └── No invoice created
+
+  PHASE 3: INVOICE LISTING & SEARCH
+
+  3.1 Invoice List Retrieval
+      ├── POST /invoice-list
+      ├── Input filters (all optional):
+      │   ├── customer_from: First customer number (range start)
+      │   ├── customer_to: Last customer number (range end)
+      │   ├── invoice_date_from: Start date
+      │   ├── invoice_date_to: End date
+      │   ├── invoice_from: First invoice number
+      │   ├── invoice_to: Last invoice number
+      │   ├── plant: Plant filter
+      │   └── lv_user: Login user ID
+      ├── Build RFC query:
+      │   ├── IM_LOGIN_ID: lv_user
+      │   ├── CUST_FROM: customer_from (if provided)
+      │   ├── CUST_TO: customer_to (if provided)
+      │   ├── DATE_FROM: invoice_date_from (if provided)
+      │   ├── DATE_TO: invoice_date_to (if provided)
+      │   ├── INV_FROM: invoice_from (if provided)
+      │   ├── INV_TO: invoice_to (if provided)
+      │   └── PLANT: plant (if provided)
+      ├── RFC Call: ZRFC_INVOICE_LIST(query_params)
+      └── SAP returns: Invoice list matching criteria
+
+  3.2 Invoice List Display
+      ├── Receive invoice array:
+      │   ├── Invoice number
+      │   ├── Customer name/code
+      │   ├── Invoice date
+      │   ├── Net amount
+      │   ├── Tax amount
+      │   ├── Total amount
+      │   ├── Outstanding amount
+      │   ├── Payment status
+      │   ├── Due date
+      │   └── Invoice status
+      ├── Sort and filter:
+      │   ├── Sort by invoice number, date, or amount
+      │   ├── Filter by status (open, paid, partial)
+      │   ├── Highlight overdue invoices
+      │   └── Show aging information
+      └── Display in searchable, filterable table
+
+  PHASE 4: INVOICE PRINTING & EXPORT
+
+  4.1 Print Invoice Request
+      ├── POST /print-invoice
+      ├── Input:
+      │   ├── invoice_number(s): Single or array
+      │   ├── IM_LOGIN_ID: User ID
+      │   └── [Optional] format (PDF, DOCX, etc.)
+      ├── RFC Call: ZRFC_PRINT_INVOICE
+      ├── Parameters:
+      │   ├── IM_VBRK: Invoice number(s)
+      │   ├── IM_LOGIN_ID: User ID
+      │   ├── FORMAT: Output format
+      │   └── [Optional] OUTPUT_DEVICE: Printer, Email, etc.
+      └── SAP generates printable document
+
+  4.2 Invoice Formatting
+      ├── SAP formats invoice with:
+      │   ├── Company header (Birla logo, address)
+      │   ├── Invoice number and date
+      │   ├── Customer details:
+      │   │   ├── Bill-to address
+      │   │   ├── Ship-to address
+      │   │   └── Customer reference
+      │   ├── Line items:
+      │   │   ├── Material description
+      │   │   ├── Quantity
+      │   │   ├── Unit price
+      │   │   ├── Line amount
+      │   │   └── Tax
+      │   ├── Summary:
+      │   │   ├── Subtotal
+      │   │   ├── Tax amount
+      │   │   ├── Total amount
+      │   │   └── Outstanding amount
+      │   ├── Payment terms and conditions
+      │   ├── Bank account details
+      │   ├── Contact information
+      │   └── Legal footer
+      └── Document ready for output
+
+  4.3 Distribution Options
+      ├── Print to Printer:
+      │   ├── Select printer
+      │   ├── Set number of copies
+      │   └── Print
+      ├── Email to Customer:
+      │   ├── Automatically attach invoice PDF
+      │   ├── Send to customer email
+      │   ├── CC: Accounts team
+      │   └── Log sent status
+      ├── Save as PDF:
+      │   ├── User downloads
+      │   ├── Store locally
+      │   └── Share as needed
+      └── Portal Download:
+         └── Invoice available for customer download
+
+  PHASE 5: PAYMENT TRACKING
+
+  5.1 Invoice Status Monitoring
+      ├── Invoice status updated as:
+      │   ├── Open: Issued, awaiting payment
+      │   ├── Partially Paid: Payment received < Total
+      │   ├── Fully Paid: Payment received = Total
+      │   ├── Overdue: Past due date, open amount
+      │   └── Cancelled: Manually cancelled (if applicable)
+      └── Link to payment records
+
+  5.2 Outstanding Amount Tracking
+      ├── Calculate outstanding:
+      │   ├── Outstanding = Total - Payments received
+      │   ├── Updated with each payment posting
+      │   └── Visible in accounts receivable
+      └── Aging analysis:
+         ├── 0-30 days
+         ├── 31-60 days
+         ├── 61-90 days
+         └── 90+ days
+
+  PHASE 6: POST-INVOICE OPERATIONS
+
+  6.1 Email Notifications
+      ├── Send to:
+      │   ├── Customer (if configured)
+      │   ├── Accounts department
+      │   ├── Sales manager
+      │   └── Finance team
+      ├── Content:
+      │   ├── Invoice number
+      │   ├── Amount
+      │   ├── Due date
+      │   ├── Payment terms
+      │   └── Invoice attachment
+
+  6.2 Accounting Integration
+      ├── GL entries created:
+      │   ├── Sales revenue account (credit)
+      │   ├── Accounts receivable account (debit)
+      │   ├── Tax payable account (credit)
+      │   └── Cost of goods sold (if applicable)
+      ├── Cost allocation:
+      │   ├── Revenue linked to sales order
+      │   ├── Revenue linked to delivery
+      │   └── Revenue linked to cost center
+      └── Period closing preparation
+
+  6.3 Audit Trail
+      ├── Log created:
+      │   ├── Invoice number
+      │   ├── Creation date/time
+      │   ├── Creator user ID
+      │   ├── Customer
+      │   ├── Amount
+      │   ├── Delivery links
+      │   └── Print/Email history
+      └── Stored in LogSchema (MongoDB)
+
+EXIT POINT: Invoice created in SAP, Available for dispatch to customer
+DURATION: 5-20 seconds
+DEPENDENCIES: Delivery order exists, Customer master active, Pricing configured in SAP
+RELATED WORKFLOWS: Delivery Order Creation (prerequisite), Sales Order (linked), Payment Posting (subsequent), Physical Inventory (uses pricing)
+ERROR SCENARIOS: Delivery already invoiced, Customer credit limit exceeded, Price variance, Tax calculation error
+RECOVERY ACTIONS: Correct delivery reference, Review customer credit, Adjust price if authorized, Check tax configuration, Resubmit
+
+---WORKFLOW 7: PHYSICAL INVENTORY MANAGEMENT---
+
+TRIGGER: Scheduled or ad-hoc physical stock count
+ENTRY POINT: /create-physical-inventory endpoint (POST)
+AUTHENTICATION: Not required (can be initiated by warehouse staff)
+DATA STORAGE: MongoDB (PhysicalInventoryModel)
+
+SEQUENCE:
+
+  PHASE 1: INVENTORY COUNT INITIATION
+
+  1.1 Create Physical Inventory Record
+      ├── POST /create-physical-inventory
+      ├── Input parameters:
+      │   ├── PHY_ID: Unique count ID (generated or provided)
+      │   ├── PHY_DATE: Count date
+      │   ├── PHY_TIME: Count time
+      │   ├── CFA_CODE: Distribution center code
+      │   ├── CFA_NAME: Distribution center name
+      │   ├── COMP_CODE: Company code
+      │   ├── COMP_NAME: Company name
+      │   ├── REGION_CODE: Region code
+      │   ├── REGION_NAME: Region name
+      │   ├── DEPOTS: Depot list (array of depot codes)
+      │   ├── PHY_INVT: Physical inventory data (initially empty array)
+      │   └── BOOK_STOCK: Book stock data (initially empty array)
+      ├── Create record in MongoDB:
+      │   ├── Insert new document
+      │   ├── Set timestamps (createdAt, updatedAt)
+      │   ├── Assign unique PHY_ID
+      │   └── Status: "Initiated"
+      └── Return success with PHY_ID
+
+  1.2 Preparation Phase
+      ├── Print count sheets for each material
+      ├── Organize by depot/location
+      ├── Assign count teams
+      ├── Set count schedule:
+      │   ├── Count start date/time
+      │   ├── Count completion deadline
+      │   └── Count shift schedules
+      └── Issue count documents to field teams
+
+  PHASE 2: PHYSICAL STOCK COUNTING (Field Teams)
+
+  2.1 Count Execution
+      ├── Field teams at depot locations
+      ├── For each material location:
+      │   ├── Physically verify stock present
+      │   ├── Count quantity
+      │   ├── Record count on paper/mobile
+      │   ├── Note any issues:
+      │   │   ├── Damaged goods found
+      │   │   ├── Expired materials
+      │   │   ├── Misplaced items
+      │   │   └── Discrepancies with records
+      │   ├── Capture material codes
+      │   ├── Record unit of measure
+      │   └── Add count date/time/counter name
+      └── Complete full material listing
+
+  2.2 Data Collection
+      ├── Methods:
+      │   ├── Paper-based count sheets (later entered)
+      │   ├── Mobile app (real-time entry)
+      │   └── Handheld scanners (barcode)
+      ├── Data captured:
+      │   ├── Material code (MATNR)
+      │   ├── Material description
+      │   ├── Count quantity (PHY_QTY)
+      │   ├── Unit of measure (MEINS)
+      │   ├── Batch number (if applicable)
+      │   ├── Storage location (SLOC)
+      │   ├── Depot code
+      │   ├── CFA code
+      │   ├── Count date/time
+      │   ├── Counter ID/name
+      │   ├── Remarks (condition, damage, etc.)
+      │   └── Photo (if applicable)
+      └── Prepare for system entry
+
+  PHASE 3: DATA ENTRY & SYSTEM UPLOAD
+
+  3.1 Physical Count Entry
+      ├── Warehouse supervisor or staff enters counts:
+      │   ├── Manual entry in system
+      │   ├── Bulk upload from Excel/CSV
+      │   └── Mobile app sync
+      ├── For each counted item:
+      │   ├── Enter MATNR (material code)
+      │   ├── Enter PHY_QTY (physical quantity counted)
+      │   ├── Enter MEINS (unit)
+      │   ├── Add batch/serial (if applicable)
+      │   ├── Confirm SLOC (storage location)
+      │   ├── Add remarks/notes
+      │   └── Submit item
+      ├── Build PHY_INVT array:
+      │   ├── [Item1: MATNR, PHY_QTY, SLOC, ...]
+      │   ├── [Item2: MATNR, PHY_QTY, SLOC, ...]
+      │   └── [ItemN: ...]
+      └── Continue until all items entered
+
+  3.2 Update MongoDB Record
+      ├── POST update to existing PHY_ID:
+      │   ├── Update PHY_INVT array (physical counts)
+      │   ├── Timestamp: Count completion time
+      │   ├── Status: "Count Completed"
+      │   └── Validation checks:
+      │       ├── All required fields present
+      │       ├── Quantities numeric
+      │       ├── Materials exist
+      │       └── No duplicates
+      ├── Save updated record
+      └── Ready for book stock comparison
+
+  PHASE 4: BOOK STOCK RETRIEVAL
+
+  4.1 Fetch System Inventory
+      ├── Query SAP or warehouse system:
+      │   ├── Fetch all materials in depots
+      │   ├── Get quantities by storage location
+      │   ├── Include batch information
+      │   ├── Include cost/valuation
+      │   └── Include last movement date
+      ├── Build BOOK_STOCK array:
+      │   ├── [Item1: MATNR, BOOK_QTY, SLOC, ...]
+      │   ├── [Item2: MATNR, BOOK_QTY, SLOC, ...]
+      │   └── [ItemN: ...]
+      └── Store in MongoDB BOOK_STOCK field
+
+  4.2 Update Record with Book Stock
+      ├── Update existing PHY_ID document:
+      │   ├── Add BOOK_STOCK array
+      │   ├── Timestamp: Book stock fetch time
+      │   └── Status: "Ready for Reconciliation"
+      └── Both arrays now available for comparison
+
+  PHASE 5: VARIANCE ANALYSIS & RECONCILIATION
+
+  5.1 Variance Calculation
+      ├── For each material in PHY_INVT:
+      │   ├── Find matching BOOK_STOCK entry by:
+      │   │   ├── MATNR (material code)
+      │   │   ├── SLOC (storage location)
+      │   │   └── Batch (if applicable)
+      │   ├── Calculate variance:
+      │   │   ├── VARIANCE = PHY_QTY - BOOK_QTY
+      │   │   ├── If VARIANCE > 0 → Excess/Gain
+      │   │   ├── If VARIANCE < 0 → Short/Loss
+      │   │   └── If VARIANCE = 0 → Matched
+      │   ├── Calculate variance %:
+      │   │   └── VAR_PCT = (VARIANCE / BOOK_QTY) * 100
+      │   ├── Flag for review:
+      │   │   ├── If ABS(VARIANCE) > threshold (e.g., >5%) → Flag
+      │   │   ├── If ABS(VAR_PCT) > percentage (e.g., >2%) → Flag
+      │   │   └── Mark for investigation
+      │   └── Create variance record:
+      │       ├── Material
+      │       ├── Expected quantity
+      │       ├── Counted quantity
+      │       ├── Variance quantity
+      │       ├── Variance %
+      │       ├── Status: "Flagged" or "OK"
+      │       └── Remarks field (for explanation)
+      └── Build VARIANCE array
+
+  5.2 Variance Summary
+      ├── Categorize variances:
+      │   ├── Matched items (VAR=0): Count, Total value
+      │   ├── Minor variances (<threshold): Count, Total variance value
+      │   ├── Significant variances (>threshold):
+      │   │   ├── Excess items: Materials counted more than system
+      │   │   ├── Short items: Materials counted less than system
+      │   │   ├── Missing items: In system but not counted
+      │   │   └── New items: Counted but not in system
+      │   └── Total variance impact in value terms
+      └── Generate summary report:
+         ├── Total materials counted
+         ├── Total matched
+         ├── Total variances
+         ├── Variance ratio
+         ├── Total variance value
+         ├── Top 10 variance items
+         └── Items requiring investigation
+
+  5.3 Investigation Phase
+      ├── For each flagged variance:
+      │   ├── Warehouse team investigates:
+      │   │   ├── Physical recount of item
+      │   │   ├── Check for misplacement
+      │   │   ├── Check stock movement records
+      │   │   ├── Check for damage/expiry
+      │   │   ├── Review recent transactions
+      │   │   └── Document findings
+      │   ├── Update variance record:
+      │   │   ├── Add investigation notes
+      │   │   ├── Set status: "Under Investigation"
+      │   │   ├── If resolved → "Resolved"
+      │   │   └── If unresolved → "Pending Review"
+      │   └── Assign responsibility if needed
+      └── Document all findings
+
+  PHASE 6: EMAIL ALERTS & NOTIFICATIONS
+
+  6.1 Alert Generation
+      ├── Threshold-based alerts:
+      │   ├── If total variance % > critical level (e.g., >5%) → Critical alert
+      │   ├── If any single item variance > major level (e.g., >10%) → Major alert
+      │   ├── If excess/short items found → Notification
+      │   └── If damaged goods found → Quality alert
+      └── Determine recipient list
+
+  6.2 Email Dispatch
+      ├── sendEmail utility called with:
+      │   ├── subject: "Physical Inventory Variance Alert - [CFA] [Date]"
+      │   ├── to: Warehouse manager, Finance manager, Inventory supervisor
+      │   ├── cc: Regional manager, Finance head
+      │   ├── html content includes:
+      │   │   ├── Summary of variances
+      │   │   ├── Critical items requiring attention
+      │   │   ├── Top 10 variance items
+      │   │   ├── Variance percentages
+      │   │   ├── Estimated financial impact
+      │   │   ├── Investigation status
+      │   │   ├── Recommended actions
+      │   │   └── Link to detailed report
+      │   └── Send via SMTP (noreply@birlacorp.com)
+      └── Log email sent to database
+
+  6.3 Dashboard Update
+      ├── Real-time dashboard updated:
+      │   ├── Inventory count status
+      │   ├── Variance alerts
+      │   ├── Investigation progress
+      │   ├── Historical trend analysis
+      │   └── Action items
+      └── Accessible to management team
+
+  PHASE 7: ADJUSTMENT POSTING IN SAP
+
+  7.1 Approval Process
+      ├── Finance/Warehouse manager review:
+      │   ├── Review variance analysis
+      │   ├── Verify investigation complete
+      │   ├── Approve adjustment amounts
+      │   ├── For each adjustment:
+      │   │   ├── Material code
+      │   │   ├── Quantity adjustment
+      │   │   ├── Reason/cause
+      │   │   ├── GL account for variance
+      │   │   └── Cost center
+      │   └── Authorize posting
+      └── Document approval
+
+  7.2 Create Adjustment Documents
+      ├── For each approved adjustment:
+      │   ├── Type determination:
+      │   │   ├── If short: Create negative GR (return)
+      │   │   ├── If excess: Create positive GR (receipt)
+      │   │   └── If damaged: Create scrap document
+      │   ├── RFC Call: ZRFC_CREATE_GR or ZRFC_SCRAP_DOCUMENT
+      │   ├── Parameters:
+      │   │   ├── MATNR: Material
+      │   │   ├── QUANTITY: Adjustment qty
+      │   │   ├── SLOC: Storage location
+      │   │   ├── PLANT: Plant
+      │   │   ├── REASON: Variance reason
+      │   │   ├── KOSTL: Cost center
+      │   │   ├── GL_ACCOUNT: Variance GL
+      │   │   └── USER: Authorizing user
+      │   ├── SAP processes:
+      │   │   ├── Creates adjustment document
+      │   │   ├── Updates inventory
+      │   │   ├── Creates GL entries:
+      │   │   │   ├── Inventory GL account
+      │   │   │   └── Variance/Adjustment GL account
+      │   │   ├── Updates cost center
+      │   │   └── Generates material document
+      │   └── Capture document number
+      └── Document all adjustments
+
+  7.3 Adjustment Confirmation
+      ├── IF Success:
+      │   ├── Inventory updated to match physical count
+      │   ├── GL entries posted
+      │   ├── Material documents created
+      │   └── Variance reconciled
+      └── IF Error:
+         ├── Return details
+         └── Manual intervention required
+
+  PHASE 8: RECORD COMPLETION & ARCHIVAL
+
+  8.1 Physical Inventory Closure
+      ├── Mark PHY_ID as "Completed"
+      ├── Store final record:
+      │   ├── PHY_ID: Count ID
+      │   ├── PHY_DATE: Count date
+      │   ├── PHY_TIME: Count time
+      │   ├── PHY_INVT: Physical inventory details
+      │   ├── BOOK_STOCK: Book stock details
+      │   ├── VARIANCES: Variance analysis
+      │   ├── ADJUSTMENTS: Posted adjustments
+      │   ├── CFA_CODE/NAME: Distribution center
+      │   ├── DEPOTS: Depot list
+      │   ├── REGION_CODE/NAME: Region
+      │   ├── Timestamps: createdAt, updatedAt
+      │   └── Status: "Completed"
+      └── Locked for editing (audit trail)
+
+  8.2 Report Generation
+      ├── Create detailed reports:
+      │   ├── Full inventory count report
+      │   ├── Variance analysis report
+      │   ├── Investigation summary
+      │   ├── Adjustment posting report
+      │   ├── Financial impact analysis
+      │   └── Trend analysis (if multiple counts)
+      ├── Distribution:
+      │   ├── Warehouse manager
+      │   ├── Finance team
+      │   ├── Regional management
+      │   ├── Archives (for compliance)
+      │   └── Portal (for stakeholder review)
+      └── Export options (PDF, Excel, etc.)
+
+  8.3 Audit Trail
+      ├── Complete record logged:
+      │   ├── Count initiation
+      │   ├── Count execution
+      │   ├── Data entry
+      │   ├── Variance analysis
+      │   ├── Alerts sent
+      │   ├── Investigation activity
+      │   ├── Approvals
+      │   ├── Adjustments posted
+      │   ├── All user actions
+      │   └── Timestamps for each action
+      └── Stored in MongoDB (retention per policy)
+
+  8.4 Deletion Option
+      ├── POST /delete-physical-inventory/:id
+      ├── Deletes by PHY_ID
+      ├── Used for:
+      │   ├── Invalid counts (false start)
+      │   ├── Duplicate counts
+      │   └── Test data cleanup
+      ├── Cannot delete if:
+      │   ├── Adjustments posted
+      │   ├── Status = "Completed"
+      │   └── After compliance retention period
+      └── Logs deletion (audit trail)
+
+  PHASE 9: DAMAGE DATA TRACKING (Related)
+
+  9.1 Damage Recording During Count
+      ├── If damage found during counting:
+      ├── Create DamageDataSchema record:
+      │   ├── USER_ID: Counter ID
+      │   ├── USER_NAME: Counter name
+      │   ├── DEPOT: Location of damage
+      │   ├── DEPOT_NAME: Depot name
+      │   ├── DATE_OF_RAKE_RECEIVED: Date found
+      │   ├── RECEIVE_TIME: Time found
+      │   ├── RR_QTY: Total quantity affected
+      │   ├── DAMAGE_DATA: Array of damages
+      │   │   ├── Material
+      │   │   ├── Damage type
+      │   │   ├── Quantity damaged
+      │   │   ├── Cause
+      │   │   └── Photos
+      │   └── [Other fields as applicable]
+      └── Link to physical inventory record
+
+  9.2 Insurance Claim (if applicable)
+      ├── Initiate claim:
+      │   ├── CLAIM_NO: Generated claim number
+      │   ├── CLAIM_QTY: Damaged quantity
+      │   ├── CLAIM_AMOUNT: Claim value
+      │   ├── CLAIM_STATUS: "Initiated"
+      │   └── Reference to physical inventory
+      └── Send email to insurance team
+
+EXIT POINT: Physical inventory count completed, Adjustments posted, Variances reconciled
+DURATION: 1-3 days (field work), 1-2 days (office work), 1-3 days (approval/posting)
+DEPENDENCIES: Materials in warehouse, Access to SAP for posting
+RELATED WORKFLOWS: Goods Receipt (provides stock), Sales Orders (use stock), Damage Tracking (detects issues)
+ERROR SCENARIOS: Material not found, Batch mismatch, GL account blocked, Cost center inactive
+RECOVERY ACTIONS: Verify material code, Correct batch number, Unblock GL account, Activate cost center
+
+---WORKFLOW 8: RFC & SAP INTEGRATION---
+
+TRIGGER: Any API call requiring SAP data
+ENTRY POINT: Middleware (poolCreator, clientCreator)
+AUTHENTICATION: JWT token + RFC password
+TECHNOLOGY: node-rfc library, SAP remote function calls
+
+SEQUENCE:
+
+  PHASE 1: CONNECTION POOL MANAGEMENT
+
+  1.1 Pool Creation (poolCreator Middleware)
+      ├── Triggered on: Any protected API endpoint
+      ├── Extract from JWT token:
+      │   ├── user_code
+      │   ├── userId
+      │   └── rfc_password (SAP login)
+      ├── Retrieve RFC settings:
+      │   ├── SAP host address
+      │   ├── SAP system ID (sysid)
+      │   ├── System number (sysnr)
+      │   ├── Client (…
