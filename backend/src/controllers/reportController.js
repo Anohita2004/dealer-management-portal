@@ -1190,18 +1190,114 @@ const getDMSOrderRequestReport = async (req, res) => {
 // =======================================================
 
 
+return res.status(400).json({ error: "Invalid data format" });
+    }
+
+const workbook = new ExcelJS.Workbook();
+const worksheet = workbook.addWorksheet(title || 'Report');
+
+// Headers
+worksheet.columns = columns.map(col => ({
+  header: col.header,
+  key: col.key,
+  width: 20
+}));
+
+// Style header
+worksheet.getRow(1).font = { bold: true };
+worksheet.getRow(1).fill = {
+  type: 'pattern',
+  pattern: 'solid',
+  fgColor: { argb: 'FFE0E0E0' }
+};
+
+// Data
+worksheet.addRows(data);
+
+res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+res.setHeader('Content-Disposition', `attachment; filename="${title || 'report'}.xlsx"`);
+
+await workbook.xlsx.write(res);
+res.end();
+
+  } catch (error) {
+  console.error("Export Excel Error:", error);
+  if (!res.headersSent) res.status(500).json({ error: "Failed to generate Excel" });
+}
+};
+
+module.exports = {
+  getDealerPerformanceReport,
+  getAdminSummary,
+  getAccountStatementReport,
+  getInvoiceRegisterReport,
+  getCreditDebitNoteReport,
+  getOutstandingReceivablesReport,
+  getTerritoryReport,
+  getPendingApprovals,
+  getRegionalSalesSummary,
+  getSuperDashboard,
+  getRegionalDashboard,
+  getManagerDashboard,
+  getDealerDashboard,
+  // New Reports
+  getFIDaywiseReport,
+  getCollectionReport,
+  getStockOverview,
+  getComparativeStockReport,
+  getComplianceReport,
+  getRRSummaryReport,
+  getRakeArrivalReport,
+  getRakeDetail,
+  getConsolidatedExceptionReport,
+  getRakeApprovals,
+  getDiversionReport,
+  getDMSOrderRequestReport
+  ,
+
+  // New Exports
+  exportReportPDF,
+  exportReportExcel
+};
+
 // =======================================================
 // ✅ EXPORT CONTROLLERS
 // =======================================================
 
-
 const exportReportPDF = async (req, res) => {
   try {
-    const { title, columns, data } = req.body;
+    let { title, columns, data } = req.body;
 
-    if (!data || !Array.isArray(data) || !columns || !Array.isArray(columns)) {
-      return res.status(400).json({ error: "Invalid data format. Expected { title, columns: [], data: [] }" });
+    // console.log("Export PDF Payload:", JSON.stringify(req.body).substring(0, 500));
+
+    // Flexible Data Extraction
+    if (Array.isArray(req.body)) {
+        data = req.body;
+        columns = null;
+    } else if (typeof req.body === 'object') {
+        data = data || req.body.rows || req.body.tableData || req.body.items;
+        columns = columns || req.body.headers || req.body.fields;
     }
+
+    // Validate Data
+    if (!data || !Array.isArray(data)) {
+      return res.status(400).json({ 
+          error: "Invalid data format.", 
+          message: "Expected JSON body with { data: [] } or just []",
+          receivedKeys: Object.keys(req.body)
+      });
+    }
+
+    // Auto-generate columns if missing (from first data row)
+    if ((!columns || !Array.isArray(columns) || columns.length === 0) && data.length > 0) {
+        columns = Object.keys(data[0]).map(key => ({
+            header: key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1').trim(), // Readable Case
+            key: key
+        }));
+    }
+
+    // Fallback if still no columns (empty data case)
+    if (!columns) columns = [];
 
     const doc = new PDFDocument({ margin: 30, size: 'A4', layout: 'landscape' });
 
@@ -1213,7 +1309,7 @@ const exportReportPDF = async (req, res) => {
     // Title
     doc.fontSize(16).font('Helvetica-Bold').text(title || 'Report Export', { align: 'center' });
     doc.moveDown();
-
+    
     // Timestamp
     doc.fontSize(10).font('Helvetica').text(`Generated on: ${new Date().toLocaleString()}`, { align: 'right' });
     doc.moveDown();
@@ -1222,31 +1318,35 @@ const exportReportPDF = async (req, res) => {
     const startX = 30;
     let currentY = doc.y;
     const pageWidth = doc.page.width - 60;
-    const colWidth = pageWidth / columns.length;
+    // Prevent divide by zero if no columns
+    const colWidth = columns.length > 0 ? pageWidth / columns.length : pageWidth;
 
     // Header Helper
     const printHeader = () => {
       doc.fontSize(9).font('Helvetica-Bold');
       columns.forEach((col, i) => {
-        doc.text(col.header, startX + (i * colWidth), currentY, { width: colWidth - 5, align: 'left', ellipsis: true });
+        const headerText = col.header || col.key || '-';
+        doc.text(headerText, startX + (i * colWidth), currentY, { width: colWidth - 5, align: 'left', ellipsis: true });
       });
-
+      
       currentY += 12;
       doc.moveTo(startX, currentY).lineTo(startX + pageWidth, currentY).stroke();
       currentY += 8;
     };
 
-    printHeader();
+    if (columns.length > 0) {
+        printHeader();
+    }
 
     // Rows
     doc.fontSize(9).font('Helvetica');
-
+    
     for (const row of data) {
       // Check page break
       if (currentY > doc.page.height - 50) {
         doc.addPage();
         currentY = 30;
-        printHeader();
+        if (columns.length > 0) printHeader();
         doc.font('Helvetica'); // Reset font for body
       }
 
@@ -1255,8 +1355,9 @@ const exportReportPDF = async (req, res) => {
       let maxCellHeight = 0;
 
       columns.forEach((col, i) => {
-        const val = row[col.key] !== null && row[col.key] !== undefined ? String(row[col.key]) : '-';
-
+        const key = col.key || col; // Handle if column is just string
+        const val = row[key] !== null && row[key] !== undefined ? String(row[key]) : '-';
+        
         // Calculate height
         const height = doc.heightOfString(val, { width: colWidth - 5 });
         if (height > maxCellHeight) maxCellHeight = height;
@@ -1265,7 +1366,7 @@ const exportReportPDF = async (req, res) => {
       });
 
       currentY += maxCellHeight + 8; // Add passing
-
+      
       // Light separator line
       doc.save();
       doc.opacity(0.1);
@@ -1283,19 +1384,37 @@ const exportReportPDF = async (req, res) => {
 
 const exportReportExcel = async (req, res) => {
   try {
-    const { title, columns, data } = req.body;
+    let { title, columns, data } = req.body;
 
-    if (!data || !columns) {
-      return res.status(400).json({ error: "Invalid data format" });
+    // Flexible Data Extraction
+    if (Array.isArray(req.body)) {
+        data = req.body;
+        columns = null;
+    } else if (typeof req.body === 'object') {
+        data = data || req.body.rows || req.body.tableData || req.body.items;
+        columns = columns || req.body.headers || req.body.fields;
     }
+
+    if (!data || !Array.isArray(data)) {
+      return res.status(400).json({ error: "Invalid data format. Expected array or object with data/rows." });
+    }
+
+    // Auto-generate columns
+    if ((!columns || !Array.isArray(columns) || columns.length === 0) && data.length > 0) {
+        columns = Object.keys(data[0]).map(key => ({
+             header: key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1').trim(),
+             key: key
+        }));
+    }
+    if (!columns) columns = [];
 
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet(title || 'Report');
 
     // Headers
     worksheet.columns = columns.map(col => ({
-      header: col.header,
-      key: col.key,
+      header: col.header || col.key,
+      key: col.key || col,
       width: 20
     }));
 
@@ -1348,9 +1467,7 @@ module.exports = {
   getConsolidatedExceptionReport,
   getRakeApprovals,
   getDiversionReport,
-  getDMSOrderRequestReport
-  ,
-
+  getDMSOrderRequestReport,
   // New Exports
   exportReportPDF,
   exportReportExcel
