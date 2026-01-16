@@ -59,12 +59,18 @@ router.get('/inventory/rr-summary', authenticate, checkPermission('reports.view'
 
 // --- Rake & Damage Reports ---
 router.get('/rakes', authenticate, checkPermission('reports.view'), reportController.getRakeArrivalReport);
-router.get('/rake/arrival', authenticate, checkPermission('reports.view'), reportController.getRakeArrivalReport);
+router.get('/rake/arrival', authenticate, checkPermission('reports.view'), reportController.getRakeArrivalReport); // Existing alias
+router.get('/rake/data', authenticate, checkPermission('reports.view'), reportController.getRakeArrivalReport); // NEW: Matches frontend call
+
 router.get('/rakes/:id', authenticate, checkPermission('reports.view'), reportController.getRakeDetail);
+
 router.get('/rakes-exceptions', authenticate, checkPermission('reports.view'), reportController.getConsolidatedExceptionReport);
-router.get('/rake/exceptions', authenticate, checkPermission('reports.view'), reportController.getConsolidatedExceptionReport);
+router.get('/rake/exceptions', authenticate, checkPermission('reports.view'), reportController.getConsolidatedExceptionReport); // Existing alias
+router.get('/rake/exception', authenticate, checkPermission('reports.view'), reportController.getConsolidatedExceptionReport); // NEW: Matches frontend call
+
 router.get('/rakes-approvals', authenticate, authorize("super_admin", "regional_manager"), reportController.getRakeApprovals);
-router.get('/rake/approvals', authenticate, authorize("super_admin", "regional_manager"), reportController.getRakeApprovals);
+router.get('/rake/approvals', authenticate, authorize("super_admin", "regional_manager"), reportController.getRakeApprovals); // Existing alias
+router.get('/rake/approval', authenticate, authorize("super_admin", "regional_manager"), reportController.getRakeApprovals); // NEW: Matches frontend call
 
 // --- Technical / Data Management ---
 router.get('/diversion', authenticate, checkPermission('reports.view'), reportController.getDiversionReport);
