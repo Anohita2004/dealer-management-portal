@@ -1188,39 +1188,7 @@ const getDMSOrderRequestReport = async (req, res) => {
 // =======================================================
 // ✅ EXPORT
 // =======================================================
-module.exports = {
-  getDealerPerformanceReport,
-  getAdminSummary,
-  getAccountStatementReport,
-  getInvoiceRegisterReport,
-  getCreditDebitNoteReport,
-  getOutstandingReceivablesReport,
-  getTerritoryReport,
-  getPendingApprovals,
-  getRegionalSalesSummary,
-  getSuperDashboard,
-  getRegionalDashboard,
-  getManagerDashboard,
-  getDealerDashboard,
-  // New Reports
-  getFIDaywiseReport,
-  getCollectionReport,
-  getStockOverview,
-  getComparativeStockReport,
-  getComplianceReport,
-  getRRSummaryReport,
-  getRakeArrivalReport,
-  getRakeDetail,
-  getConsolidatedExceptionReport,
-  getRakeApprovals,
-  getDiversionReport,
-  getDMSOrderRequestReport
-  ,
 
-  // New Exports
-  exportReportPDF,
-  exportReportExcel
-};
 
 // =======================================================
 // ✅ EXPORT CONTROLLERS
@@ -1352,4 +1320,38 @@ const exportReportExcel = async (req, res) => {
     console.error("Export Excel Error:", error);
     if (!res.headersSent) res.status(500).json({ error: "Failed to generate Excel" });
   }
+};
+
+module.exports = {
+  getDealerPerformanceReport,
+  getAdminSummary,
+  getAccountStatementReport,
+  getInvoiceRegisterReport,
+  getCreditDebitNoteReport,
+  getOutstandingReceivablesReport,
+  getTerritoryReport,
+  getPendingApprovals,
+  getRegionalSalesSummary,
+  getSuperDashboard,
+  getRegionalDashboard,
+  getManagerDashboard,
+  getDealerDashboard,
+  // New Reports
+  getFIDaywiseReport,
+  getCollectionReport,
+  getStockOverview,
+  getComparativeStockReport,
+  getComplianceReport,
+  getRRSummaryReport,
+  getRakeArrivalReport,
+  getRakeDetail,
+  getConsolidatedExceptionReport,
+  getRakeApprovals,
+  getDiversionReport,
+  getDMSOrderRequestReport
+  ,
+
+  // New Exports
+  exportReportPDF,
+  exportReportExcel
 };
