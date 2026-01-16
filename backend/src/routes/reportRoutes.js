@@ -79,4 +79,8 @@ router.get('/dms-requests', authenticate, checkPermission('reports.view'), repor
 router.get('/technical/dms-requests', authenticate, checkPermission('reports.view'), reportController.getDMSOrderRequestReport);
 router.get('/technical/diversion', authenticate, checkPermission('reports.view'), reportController.getDiversionReport);
 
+// --- Export ---
+router.post('/export/pdf', authenticate, checkPermission('reports.view'), reportController.exportReportPDF);
+router.post('/export/excel', authenticate, checkPermission('reports.view'), reportController.exportReportExcel);
+
 module.exports = router;

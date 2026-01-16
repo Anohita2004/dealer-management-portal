@@ -1215,4 +1215,143 @@ module.exports = {
   getRakeApprovals,
   getDiversionReport,
   getDMSOrderRequestReport
+,
+
+  // New Exports
+  exportReportPDF,
+  exportReportExcel
+};
+
+// =======================================================
+// ✅ EXPORT CONTROLLERS
+// =======================================================
+
+const PDFDocument = require("pdfkit");
+const ExcelJS = require("exceljs");
+
+const exportReportPDF = async (req, res) => {
+  try {
+    const { title, columns, data } = req.body;
+
+    if (!data || !Array.isArray(data) || !columns || !Array.isArray(columns)) {
+      return res.status(400).json({ error: "Invalid data format. Expected { title, columns: [], data: [] }" });
+    }
+
+    const doc = new PDFDocument({ margin: 30, size: 'A4', layout: 'landscape' });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${title || 'report'}.pdf"`);
+
+    doc.pipe(res);
+
+    // Title
+    doc.fontSize(16).font('Helvetica-Bold').text(title || 'Report Export', { align: 'center' });
+    doc.moveDown();
+    
+    // Timestamp
+    doc.fontSize(10).font('Helvetica').text(`Generated on: ${new Date().toLocaleString()}`, { align: 'right' });
+    doc.moveDown();
+
+    // Table settings
+    const startX = 30;
+    let currentY = doc.y;
+    const pageWidth = doc.page.width - 60;
+    const colWidth = pageWidth / columns.length;
+
+    // Header Helper
+    const printHeader = () => {
+      doc.fontSize(9).font('Helvetica-Bold');
+      columns.forEach((col, i) => {
+        doc.text(col.header, startX + (i * colWidth), currentY, { width: colWidth - 5, align: 'left', ellipsis: true });
+      });
+      
+      currentY += 12;
+      doc.moveTo(startX, currentY).lineTo(startX + pageWidth, currentY).stroke();
+      currentY += 8;
+    };
+
+    printHeader();
+
+    // Rows
+    doc.fontSize(9).font('Helvetica');
+    
+    for (const row of data) {
+      // Check page break
+      if (currentY > doc.page.height - 50) {
+        doc.addPage();
+        currentY = 30;
+        printHeader();
+        doc.font('Helvetica'); // Reset font for body
+      }
+
+      // Print cells
+      const rowY = currentY;
+      let maxCellHeight = 0;
+
+      columns.forEach((col, i) => {
+        const val = row[col.key] !== null && row[col.key] !== undefined ? String(row[col.key]) : '-';
+        
+        // Calculate height
+        const height = doc.heightOfString(val, { width: colWidth - 5 });
+        if (height > maxCellHeight) maxCellHeight = height;
+
+        doc.text(val, startX + (i * colWidth), rowY, { width: colWidth - 5, align: 'left' });
+      });
+
+      currentY += maxCellHeight + 8; // Add passing
+      
+      // Light separator line
+      doc.save();
+      doc.opacity(0.1);
+      doc.moveTo(startX, currentY - 4).lineTo(startX + pageWidth, currentY - 4).stroke();
+      doc.restore();
+    }
+
+    doc.end();
+
+  } catch (error) {
+    console.error("Export PDF Error:", error);
+    if (!res.headersSent) res.status(500).json({ error: "Failed to generate PDF" });
+  }
+};
+
+const exportReportExcel = async (req, res) => {
+  try {
+    const { title, columns, data } = req.body;
+
+    if (!data || !columns) {
+      return res.status(400).json({ error: "Invalid data format" });
+    }
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet(title || 'Report');
+
+    // Headers
+    worksheet.columns = columns.map(col => ({
+      header: col.header,
+      key: col.key,
+      width: 20
+    }));
+
+    // Style header
+    worksheet.getRow(1).font = { bold: true };
+    worksheet.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFE0E0E0' }
+    };
+
+    // Data
+    worksheet.addRows(data);
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${title || 'report'}.xlsx"`);
+
+    await workbook.xlsx.write(res);
+    res.end();
+
+  } catch (error) {
+    console.error("Export Excel Error:", error);
+    if (!res.headersSent) res.status(500).json({ error: "Failed to generate Excel" });
+  }
 };
