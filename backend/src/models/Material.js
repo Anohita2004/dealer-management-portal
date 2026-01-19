@@ -41,6 +41,10 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.UUID,
       allowNull: true
     },
+    price: {
+      type: DataTypes.DECIMAL(10, 2),
+      defaultValue: 0.00
+    },
     barcode: {
       type: DataTypes.STRING,
       allowNull: true,
