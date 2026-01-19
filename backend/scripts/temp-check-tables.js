@@ -1,0 +1,29 @@
+const { Sequelize } = require('sequelize');
+
+const sequelize = new Sequelize('railway', 'postgres', 'OYFQvqCNIbELTiKSefWkqePAVLSaAHuO', {
+    host: 'caboose.proxy.rlwy.net',
+    port: 55214,
+    dialect: 'postgres',
+    logging: false,
+    dialectOptions: {
+        ssl: {
+            require: true,
+            rejectUnauthorized: false
+        }
+    }
+});
+
+async function checkTables() {
+    try {
+        const [results] = await sequelize.query(`
+      SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'
+    `);
+        console.log(JSON.stringify(results, null, 2));
+    } catch (err) {
+        console.error(err);
+    } finally {
+        await sequelize.close();
+    }
+}
+
+checkTables();

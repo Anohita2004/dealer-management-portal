@@ -15,7 +15,7 @@ module.exports = (sequelize, DataTypes) => {
       dealerId: {
         type: DataTypes.UUID,
         allowNull: false,
-        references: { model: "dealers", key: "id" },
+        references: { model: "Dealers", key: "id" },
       },
       isPrimary: {
         type: DataTypes.BOOLEAN,

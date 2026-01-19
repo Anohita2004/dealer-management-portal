@@ -51,7 +51,7 @@ module.exports = (sequelize, DataTypes) => {
       unique: true
     }
   }, {
-    tableName: 'materials',
+    tableName: 'Materials',
     timestamps: true
   });
 
