@@ -10,6 +10,24 @@ sap.ui.define([
         onInit: function () {
             this.getView().setModel(new JSONModel([]), "deliveryModel");
             this._loadDeliveryOrders();
+            this._loadMasterData();
+        },
+
+        _loadMasterData: function () {
+            // Mock master data for Select Dialogs
+            var oData = {
+                storageLocations: [
+                    { key: "SL01", text: "SL01 - Main Warehouse" },
+                    { key: "SL02", text: "SL02 - Returns" },
+                    { key: "SL03", text: "SL03 - Bonded Store" }
+                ],
+                loadingPoints: [
+                    { key: "LP01", text: "North Gate" },
+                    { key: "LP02", text: "South Gate" },
+                    { key: "LP03", text: "Express Dock" }
+                ]
+            };
+            this.getView().setModel(new JSONModel(oData), "masterData");
         },
 
         _loadDeliveryOrders: function () {
@@ -76,8 +94,20 @@ sap.ui.define([
         onCreateSubmit: function () {
             var sVbeln = this.byId("inputVbeln").getValue();
             var sDate = this.byId("inputDate").getDateValue();
-            var sSloc = this.byId("inputSloc").getValue();
-            var sLp = this.byId("inputLoadingPoint").getValue();
+            var sSloc = this.byId("inputSloc").getSelectedKey(); // Changed to getSelectedKey
+            var sLp = this.byId("inputLoadingPoint").getSelectedKey(); // Changed to getSelectedKey
+
+            // Enhancement 3: Date Validation
+            if (sDate && sDate < new Date()) {
+                // Check if it's strictly in the past (ignoring time if needed, but simple check for now)
+                // Let's reset time to 00:00:00 for strict day comparison if desired, but user said "cannot be in the past"
+                var today = new Date();
+                today.setHours(0, 0, 0, 0);
+                if (sDate < today) {
+                    MessageBox.error("Delivery Date cannot be in the past.");
+                    return;
+                }
+            }
 
             var oPayload = {
                 vbeln: sVbeln,
@@ -155,10 +185,12 @@ sap.ui.define([
         formatter: {
             statusState: function (sStatus) {
                 switch (sStatus) {
+                    case "PGI": return "Success"; // Green
+                    case "ALLOCATED": return "Information"; // Blue
+                    case "DRAFT": return "None"; // Grey
                     case "COMPLETED": return "Success";
-                    case "DRAFT": return "None";
                     case "SCHEDULED": return "Warning";
-                    default: return "Information";
+                    default: return "None";
                 }
             }
         }

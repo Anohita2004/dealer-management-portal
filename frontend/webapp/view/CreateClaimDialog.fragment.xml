@@ -1,0 +1,45 @@
+<core:FragmentDefinition
+    xmlns="sap.m"
+    xmlns:u="sap.ui.unified"
+    xmlns:core="sap.ui.core">
+    <Dialog title="Create Insurance Claim">
+        <content>
+            <VBox class="sapUiSmallMargin">
+                <Label text="Delivery Order ID"/>
+                <Input id="inputDoId" placeholder="UUID of Delivery Order" />
+
+                <Label text="Material Code"/>
+                <Input id="inputMaterial" placeholder="e.g. M-1001" />
+
+                <Label text="Quantity"/>
+                <Input id="inputQty" type="Number" />
+
+                <Label text="Reason"/>
+                <Select id="inputReason">
+                    <core:Item key="DAMAGED_IN_TRANSIT" text="Damaged In Transit" />
+                    <core:Item key="SHORT_SUPPLY" text="Short Supply" />
+                    <core:Item key="WRONG_MATERIAL" text="Wrong Material" />
+                    <core:Item key="OTHER" text="Other" />
+                </Select>
+
+                <Label text="Description"/>
+                <TextArea id="inputDesc" rows="4" />
+                
+                <Label text="Evidence (Photo/Doc)"/>
+                <u:FileUploader
+                    id="fileUploader"
+                    name="myFileUpload"
+                    uploadUrl="/api/claims/upload"
+                    tooltip="Upload your file to the local server"
+                    style="Emphasized"
+                    placeholder="Choose a file for evidence..." />
+            </VBox>
+        </content>
+        <beginButton>
+            <Button text="Create" type="Emphasized" press="onCreateSubmit"/>
+        </beginButton>
+        <endButton>
+            <Button text="Cancel" press="onCreateCancel"/>
+        </endButton>
+    </Dialog>
+</core:FragmentDefinition>

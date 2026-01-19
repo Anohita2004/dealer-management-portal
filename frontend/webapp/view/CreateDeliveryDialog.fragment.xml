@@ -11,11 +11,14 @@
                 <DatePicker id="inputDate" />
 
                 <Label text="Storage Location"/>
-                <Input id="inputSloc" placeholder="UUID of Storage Location" />
-                <!-- In real app, use Select with items="{/storageLocations}" -->
+                <Select id="inputSloc" items="{masterData>/storageLocations}">
+                    <core:Item key="{masterData>key}" text="{masterData>text}" />
+                </Select>
 
                 <Label text="Loading Point"/>
-                <Input id="inputLoadingPoint" placeholder="UUID of Loading Point" />
+                <ComboBox id="inputLoadingPoint" items="{masterData>/loadingPoints}">
+                    <core:Item key="{masterData>key}" text="{masterData>text}" />
+                </ComboBox>
             </VBox>
         </content>
         <beginButton>

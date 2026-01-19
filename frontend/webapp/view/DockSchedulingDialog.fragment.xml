@@ -8,7 +8,9 @@
                 <Input id="inputScheduleDoId" editable="false" />
 
                 <Label text="Loading Point"/>
-                <Input id="inputScheduleLp" placeholder="Loading Point ID" />
+                <ComboBox id="inputScheduleLp" items="{masterData>/loadingPoints}" placeholder="Select Loading Point">
+                    <core:Item key="{masterData>key}" text="{masterData>text}" />
+                </ComboBox>
 
                 <Label text="Start Time"/>
                 <DateTimePicker id="inputScheduleStart" />

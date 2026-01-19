@@ -1,0 +1,31 @@
+<core:FragmentDefinition
+    xmlns="sap.m"
+    xmlns:core="sap.ui.core">
+    <Dialog title="Initiate Inventory Count">
+        <content>
+            <VBox class="sapUiSmallMargin">
+                <Label text="Plant"/>
+                <Select id="inputPlant" items="{masterData>/plants}" forceSelection="false">
+                    <core:Item key="{masterData>key}" text="{masterData>text}" />
+                </Select>
+
+                <Label text="Storage Location"/>
+                <Select id="inputSloc" items="{masterData>/storageLocations}" forceSelection="false">
+                    <core:Item key="{masterData>key}" text="{masterData>text}" />
+                </Select>
+
+                <Label text="Description"/>
+                <Input id="inputDesc" placeholder="e.g. Quarterly Count" />
+
+                <Label text="Planned Date"/>
+                <DatePicker id="inputDate" />
+            </VBox>
+        </content>
+        <beginButton>
+            <Button text="Initiate" type="Emphasized" press="onInitiateSubmit"/>
+        </beginButton>
+        <endButton>
+            <Button text="Cancel" press="onInitiateCancel"/>
+        </endButton>
+    </Dialog>
+</core:FragmentDefinition>

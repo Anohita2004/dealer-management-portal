@@ -1,0 +1,96 @@
+/* Import Inter Font */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* Global Font Override */
+body,
+.sapUiBody,
+.sapMText,
+.sapMBtn,
+.sapMInputBaseContent,
+.sapMLabel,
+.sapMTitle {
+    font-family: 'Inter', sans-serif !important;
+}
+
+/* Page Header - Premium Look */
+.sapMPageHeader {
+    background-color: #f5f7fa !important;
+    border-bottom: 1px solid #e1e4e8;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+}
+
+/* Emphasized Button - Gradient & Shadow */
+.sapMBtnEmphasized .sapMBtnInner {
+    background-image: linear-gradient(to right, #0061e0, #0087ff) !important;
+    border: none !important;
+    border-radius: 6px !important;
+    color: white !important;
+    text-shadow: none !important;
+}
+
+.sapMBtnEmphasized {
+    border: none !important;
+    box-shadow: 0 4px 6px rgba(0, 97, 224, 0.3) !important;
+    border-radius: 6px !important;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.sapMBtnEmphasized:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 8px rgba(0, 97, 224, 0.4) !important;
+}
+
+.sapMBtnEmphasized:active {
+    transform: translateY(1px);
+    box-shadow: 0 2px 4px rgba(0, 97, 224, 0.3) !important;
+}
+
+/* Dialog Glassmorphism */
+.sapMDialog {
+    background-color: rgba(255, 255, 255, 0.85) !important;
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+    border-radius: 12px !important;
+}
+
+.sapMDialogSection {
+    background: transparent !important;
+}
+
+.sapMDialogTitle {
+    color: #1a1a1a !important;
+    font-weight: 600 !important;
+}
+
+/* Tiles Enhancement */
+.sapMGT {
+    border-radius: 12px !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05) !important;
+    transition: all 0.3s ease;
+    border: 1px solid transparent;
+}
+
+.sapMGT:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1) !important;
+    border-color: #0087ff;
+}
+
+/* Animations */
+@keyframes fadeInSlide {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.sapMPage {
+    animation: fadeInSlide 0.4s ease-out;
+}

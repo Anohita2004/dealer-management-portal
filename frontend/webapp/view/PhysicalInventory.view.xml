@@ -1,0 +1,46 @@
+<mvc:View
+    controllerName="dealerportal.controller.PhysicalInventory"
+    xmlns="sap.m"
+    xmlns:mvc="sap.ui.core.mvc"
+    xmlns:core="sap.ui.core"
+    displayBlock="true">
+    <Page title="Physical Inventory Management">
+        <headerContent>
+            <Button icon="sap-icon://add" text="Initiate Count" press="onInitiatePress" type="Emphasized" />
+        </headerContent>
+        <content>
+            <Table id="inventoryTable" items="{/counts}" growing="true" growingThreshold="10">
+                <headerToolbar>
+                    <Toolbar>
+                        <Title text="Inventory Counts" level="H2"/>
+                        <ToolbarSpacer/>
+                        <SearchField width="30%" search="onSearch"/>
+                    </Toolbar>
+                </headerToolbar>
+                <columns>
+                    <Column><Text text="ID"/></Column>
+                    <Column><Text text="Plant"/></Column>
+                    <Column><Text text="Description"/></Column>
+                    <Column><Text text="Date"/></Column>
+                    <Column><Text text="Status"/></Column>
+                    <Column><Text text="Actions"/></Column>
+                </columns>
+                <items>
+                    <ColumnListItem>
+                        <cells>
+                            <Text text="{id}"/>
+                            <Text text="{plant}"/>
+                            <Text text="{description}"/>
+                            <Text text="{path: 'planned_date', type: 'sap.ui.model.type.Date'}"/>
+                            <ObjectStatus text="{status}" state="{path: 'status', formatter: '.formatter.statusState'}" />
+                            <HBox>
+                                <Button icon="sap-icon://edit" press="onCountPress" type="Transparent" tooltip="Enter Counts" visible="{= ${status} === 'IN_PROGRESS' || ${status} === 'REVIEW'}"/>
+                                <Button icon="sap-icon://upload-to-cloud" press="onPostPress" type="Transparent" tooltip="Post to SAP" visible="{= ${status} === 'REVIEW'}"/>
+                            </HBox>
+                        </cells>
+                    </ColumnListItem>
+                </items>
+            </Table>
+        </content>
+    </Page>
+</mvc:View>
