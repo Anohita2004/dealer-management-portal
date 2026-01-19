@@ -115,12 +115,12 @@ module.exports = (sequelize, DataTypes) => {
     },
     {
       timestamps: true,
-      tableName: "dealers",
+      tableName: "Dealers",
       freezeTableName: true,
     }
   );
 
-Dealer.associate = (models) => {
+  Dealer.associate = (models) => {
     Dealer.hasOne(models.User, {
       foreignKey: "dealerId",
       as: "user",
