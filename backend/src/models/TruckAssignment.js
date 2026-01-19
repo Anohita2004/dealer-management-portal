@@ -13,7 +13,7 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         unique: true,
         references: {
-          model: "orders",
+          model: "Orders",
           key: "id",
         },
       },
@@ -21,7 +21,7 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.UUID,
         allowNull: false,
         references: {
-          model: "trucks",
+          model: "Trucks",
           key: "id",
         },
       },
@@ -29,7 +29,7 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.UUID,
         allowNull: false,
         references: {
-          model: "warehouses",
+          model: "Warehouses",
           key: "id",
         },
       },
@@ -107,7 +107,7 @@ module.exports = (sequelize, DataTypes) => {
       },
     },
     {
-      tableName: "truck_assignments",
+      tableName: "TruckAssignments",
       timestamps: true,
     }
   );

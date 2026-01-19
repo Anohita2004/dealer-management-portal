@@ -10,12 +10,12 @@ module.exports = (sequelize, DataTypes) => {
       dealerId: {
         type: DataTypes.UUID,
         allowNull: false,
-        references: { model: "dealers", key: "id" },
+        references: { model: "Dealers", key: "id" },
       },
       materialId: {
         type: DataTypes.UUID,
         allowNull: false,
-        references: { model: "materials", key: "id" },
+        references: { model: "Materials", key: "id" },
       },
       isActive: {
         type: DataTypes.BOOLEAN,
@@ -31,7 +31,7 @@ module.exports = (sequelize, DataTypes) => {
       },
     },
     {
-      tableName: "dealer_materials",
+      tableName: "DealerMaterials",
       timestamps: true,
       indexes: [
         {

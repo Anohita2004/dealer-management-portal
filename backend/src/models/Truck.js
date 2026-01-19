@@ -55,14 +55,14 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.UUID,
         allowNull: true,
         references: {
-          model: "regions",
+          model: "Regions",
           key: "id",
         },
         comment: "For scoping trucks by region",
       },
     },
     {
-      tableName: "trucks",
+      tableName: "Trucks",
       timestamps: true,
     }
   );

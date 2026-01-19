@@ -60,6 +60,7 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: true
     }
   }, {
+    tableName: 'Inventories',
     timestamps: true
   });
 
