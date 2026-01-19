@@ -48,6 +48,10 @@ class SapService {
                 return this.mockCreateInvoice(params);
             case 'ZFM_RECEIVING_PLANT_GR':
                 return this.mockGoodsReceiptList(params);
+            case 'ZRFC_CREATE_DELIVERY':
+                return this.mockCreateDelivery(params);
+            case 'ZFM_LOADING_POINT':
+                return this.mockLoadingPoints(params);
             default:
                 return {
                     status: 'success',
@@ -148,6 +152,25 @@ class SapService {
                     QTY: 200,
                     DATE: '2023-10-26'
                 }
+            ]
+        };
+    }
+
+    mockCreateDelivery(params) {
+        const delNum = 'DEL-' + Math.floor(Math.random() * 1000000);
+        return {
+            DELIVERY_NUM: delNum,
+            STATUS: 'S',
+            MESSAGE: 'Delivery created successfully'
+        };
+    }
+
+    mockLoadingPoints(params) {
+        return {
+            LOADING_POINTS: [
+                { LSTEL: 'LP01', BEZEI: 'Truck Dock 1' },
+                { LSTEL: 'LP02', BEZEI: 'Truck Dock 2' },
+                { LSTEL: 'LP03', BEZEI: 'Rail Siding A' }
             ]
         };
     }

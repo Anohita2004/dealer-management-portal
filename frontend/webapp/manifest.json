@@ -85,6 +85,11 @@
           "pattern": "admin",
           "name": "admin",
           "target": "admin"
+        },
+        {
+          "pattern": "delivery-orders",
+          "name": "deliveryOrders",
+          "target": "deliveryOrders"
         }
       ],
       "targets": {
@@ -114,6 +119,10 @@
         },
         "admin": {
           "viewName": "Admin",
+          "viewLevel": 2
+        },
+        "deliveryOrders": {
+          "viewName": "DeliveryOrders",
           "viewLevel": 2
         }
       }

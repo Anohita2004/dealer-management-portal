@@ -116,6 +116,7 @@ app.use('/api/trucks', truckRoutes);
 app.use('/api/fleet', fleetRoutes);
 app.use('/api/tracking', trackingRoutes);
 app.use('/api/barcodes', barcodeRoutes);
+app.use('/api/delivery', require('./routes/deliveryRoutes'));
 app.use('/api/goods-receipt', goodsReceiptRoutes);
 
 // --- Error handling (keep your behavior) ---

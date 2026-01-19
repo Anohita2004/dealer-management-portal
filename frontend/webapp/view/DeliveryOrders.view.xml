@@ -1,0 +1,45 @@
+<mvc:View
+    controllerName="dealerportal.controller.DeliveryOrders"
+    xmlns="sap.m"
+    xmlns:mvc="sap.ui.core.mvc"
+    xmlns:core="sap.ui.core"
+    displayBlock="true">
+    <Page title="Delivery Order Management">
+        <headerContent>
+            <Button icon="sap-icon://add" text="Create Delivery" press="onCreateDeliveryPress" type="Emphasized" />
+        </headerContent>
+        <content>
+            <Table id="deliveryTable" items="{/deliveryOrders}" growing="true" growingThreshold="10">
+                <headerToolbar>
+                    <Toolbar>
+                        <Title text="Delivery Orders" level="H2"/>
+                        <ToolbarSpacer/>
+                        <SearchField width="30%" search="onSearch"/>
+                    </Toolbar>
+                </headerToolbar>
+                <columns>
+                    <Column><Text text="Delivery No"/></Column>
+                    <Column><Text text="Sales Order"/></Column>
+                    <Column><Text text="Date"/></Column>
+                    <Column><Text text="Status"/></Column>
+                    <Column><Text text="Actions"/></Column>
+                </columns>
+                <items>
+                    <ColumnListItem>
+                        <cells>
+                            <Text text="{likp}"/>
+                            <Text text="{vbeln}"/>
+                            <Text text="{path: 'delivery_date', type: 'sap.ui.model.type.Date'}"/>
+                            <ObjectStatus text="{status}" state="{path: 'status', formatter: '.formatter.statusState'}" />
+                            <HBox>
+                                <Button icon="sap-icon://edit" press="onEditPress" type="Transparent"/>
+                                <Button icon="sap-icon://shipping-status" press="onSyncSAPPress" type="Transparent" tooltip="Sync with SAP"/>
+                                <Button icon="sap-icon://calendar" press="onScheduleDockPress" type="Transparent" tooltip="Schedule Dock"/>
+                            </HBox>
+                        </cells>
+                    </ColumnListItem>
+                </items>
+            </Table>
+        </content>
+    </Page>
+</mvc:View>
