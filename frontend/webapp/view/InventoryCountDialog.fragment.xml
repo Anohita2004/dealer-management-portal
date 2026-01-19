@@ -1,0 +1,39 @@
+<core:FragmentDefinition
+    xmlns="sap.m"
+    xmlns:core="sap.ui.core">
+    <Dialog title="Enter Counts" contentWidth="100%" stretchOnPhone="true">
+        <content>
+            <Table items="{detail>/counts}">
+                <columns>
+                    <Column><Text text="Material"/></Column>
+                    <Column minScreenWidth="Tablet" demandPopin="true"><Text text="Description"/></Column>
+                    <Column minScreenWidth="Tablet" demandPopin="true"><Text text="Batch"/></Column>
+                    <Column><Text text="Book Qty"/></Column>
+                    <Column><Text text="Physical Qty"/></Column>
+                    <Column><Text text="Variance"/></Column>
+                </columns>
+                <items>
+                    <ColumnListItem>
+                        <cells>
+                            <Text text="{detail>material_code}"/>
+                            <Text text="{detail>material_desc}"/>
+                            <!-- Batch Selection: Dropdown if multiple batches exist -->
+                            <ComboBox value="{detail>batch}">
+                                <core:Item key="{detail>batch}" text="{detail>batch}" />
+                            </ComboBox>
+                            <Text text="{detail>book_qty}"/>
+                            <Input value="{detail>physical_qty}" type="Number" liveChange="onQtyChange"/>
+                            <ObjectStatus text="{detail>variance}" state="{detail>varianceState}" />
+                        </cells>
+                    </ColumnListItem>
+                </items>
+            </Table>
+        </content>
+        <beginButton>
+            <Button text="Submit Counts" type="Emphasized" press="onCountSubmit"/>
+        </beginButton>
+        <endButton>
+            <Button text="Cancel" press="onCountCancel"/>
+        </endButton>
+    </Dialog>
+</core:FragmentDefinition>

@@ -116,7 +116,10 @@ app.use('/api/trucks', truckRoutes);
 app.use('/api/fleet', fleetRoutes);
 app.use('/api/tracking', trackingRoutes);
 app.use('/api/barcodes', barcodeRoutes);
+app.use('/api/delivery', require('./routes/deliveryRoutes'));
 app.use('/api/goods-receipt', goodsReceiptRoutes);
+app.use('/api/physical-inventory', require('./routes/physicalInventoryRoutes'));
+app.use('/api/claims', require('./routes/claimRoutes'));
 
 // --- Error handling (keep your behavior) ---
 app.use((err, req, res, next) => {

@@ -48,6 +48,14 @@ class SapService {
                 return this.mockCreateInvoice(params);
             case 'ZFM_RECEIVING_PLANT_GR':
                 return this.mockGoodsReceiptList(params);
+            case 'ZRFC_CREATE_DELIVERY':
+                return this.mockCreateDelivery(params);
+            case 'ZFM_LOADING_POINT':
+                return this.mockLoadingPoints(params);
+            case 'ZRFC_PHYSICAL_INVENTORY':
+                return this.mockPhysicalInventory(params);
+            case 'ZRFC_CREATE_CLAIM':
+                return this.mockCreateClaim(params);
             default:
                 return {
                     status: 'success',
@@ -149,6 +157,54 @@ class SapService {
                     DATE: '2023-10-26'
                 }
             ]
+        };
+    }
+
+    mockCreateDelivery(params) {
+        const delNum = 'DEL-' + Math.floor(Math.random() * 1000000);
+        return {
+            DELIVERY_NUM: delNum,
+            STATUS: 'S',
+            MESSAGE: 'Delivery created successfully'
+        };
+    }
+
+    mockLoadingPoints(params) {
+        return {
+            LOADING_POINTS: [
+                { LSTEL: 'LP01', BEZEI: 'Truck Dock 1' },
+                { LSTEL: 'LP02', BEZEI: 'Truck Dock 2' },
+                { LSTEL: 'LP03', BEZEI: 'Rail Siding A' }
+            ]
+        };
+    }
+
+    mockPhysicalInventory(params) {
+        // params: { ACTION: 'INIT'/'POST', PLANT, LIST: [...] }
+        if (params.ACTION === 'INIT') {
+            return {
+                SAP_DOC_NO: 'IB-' + Math.floor(Math.random() * 1000000),
+                ITEMS: [
+                    { MATNR: 'M-1001', MAKTX: 'Cement Bag 50KG', BOOK_QTY: '500', BATCH: 'B1' },
+                    { MATNR: 'M-1002', MAKTX: 'White Cement 25KG', BOOK_QTY: '200', BATCH: 'B2' },
+                    { MATNR: 'M-2001', MAKTX: 'Adhesive 5L', BOOK_QTY: '50', BATCH: 'B3' }
+                ],
+                STATUS: 'S'
+            };
+        } else if (params.ACTION === 'POST') {
+            return {
+                SAP_DOC_NO: params.SAP_DOC_NO,
+                STATUS: 'S',
+                MESSAGE: 'Inventory differences posted successfully'
+            };
+        }
+    }
+
+    mockCreateClaim(params) {
+        return {
+            CLAIM_ID: 'CLM-' + Math.floor(Math.random() * 1000000),
+            STATUS: 'S',
+            MESSAGE: 'Claim submitted successfully to SAP'
         };
     }
 }

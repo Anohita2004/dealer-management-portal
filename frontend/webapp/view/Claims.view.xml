@@ -1,0 +1,48 @@
+<mvc:View
+    controllerName="dealerportal.controller.Claims"
+    xmlns="sap.m"
+    xmlns:mvc="sap.ui.core.mvc"
+    xmlns:core="sap.ui.core"
+    displayBlock="true">
+    <Page title="Insurance Claims">
+        <headerContent>
+            <Button icon="sap-icon://pdf-attachment" text="Download Report" press="onDownloadReportPress" type="Transparent" />
+            <Button icon="sap-icon://add" text="New Claim" press="onCreateClaimPress" type="Emphasized" />
+        </headerContent>
+        <content>
+            <Table id="claimsTable" items="{/claims}" growing="true" growingThreshold="10">
+                <headerToolbar>
+                    <Toolbar>
+                        <Title text="Claims History" level="H2"/>
+                        <ToolbarSpacer/>
+                        <SearchField width="30%" search="onSearch"/>
+                    </Toolbar>
+                </headerToolbar>
+                <columns>
+                    <Column><Text text="Claim ID"/></Column>
+                    <Column><Text text="Delivery ID"/></Column>
+                    <Column><Text text="Material"/></Column>
+                    <Column><Text text="Qty"/></Column>
+                    <Column><Text text="Reason"/></Column>
+                    <Column><Text text="Status"/></Column>
+                    <Column><Text text="Actions"/></Column>
+                </columns>
+                <items>
+                    <ColumnListItem>
+                        <cells>
+                            <Text text="{id}"/>
+                            <Text text="{delivery_order_id}"/>
+                            <Text text="{material_code}"/>
+                            <Text text="{quantity}"/>
+                            <Text text="{reason}"/>
+                            <ObjectStatus text="{status}" state="{path: 'status', formatter: '.formatter.statusState'}" />
+                            <HBox>
+                                <Button icon="sap-icon://accept" press="onSubmitSAPPress" type="Transparent" tooltip="Submit to SAP" visible="{= ${status} === 'DRAFT'}"/>
+                            </HBox>
+                        </cells>
+                    </ColumnListItem>
+                </items>
+            </Table>
+        </content>
+    </Page>
+</mvc:View>

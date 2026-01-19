@@ -49,6 +49,25 @@
                             <NumericContent icon="sap-icon://settings"/>
                         </TileContent>
                     </GenericTile>
+
+                    <!-- New Modules -->
+                    <GenericTile header="Delivery Orders" subheader="Manage Shipments" press="onNavigateToDelivery">
+                        <TileContent>
+                            <ImageContent src="sap-icon://shipping-status" />
+                        </TileContent>
+                    </GenericTile>
+
+                    <GenericTile header="Physical Inventory" subheader="Stock Counts" press="onNavigateToInventory">
+                        <TileContent>
+                            <ImageContent src="sap-icon://inventory" />
+                        </TileContent>
+                    </GenericTile>
+
+                    <GenericTile header="Insurance Claims" subheader="Damage & Returns" press="onNavigateToClaims">
+                        <TileContent>
+                            <ImageContent src="sap-icon://insurance-car" />
+                        </TileContent>
+                    </GenericTile>
                 </l:Grid>
                 
                 <Panel headerText="Recent Activity" class="sapUiMediumMarginTop">

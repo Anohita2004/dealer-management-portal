@@ -112,35 +112,261 @@ const getPendingReceipts = async (req, res) => {
 // --- CRUD and workflow stubs for advanced workflow ---
 // These stubs return 501 Not Implemented and can be filled in as needed
 async function createGoodsReceipt(req, res) {
-    return res.status(501).json({ message: 'Not implemented yet' });
+    const transaction = await sequelize.transaction();
+    try {
+        const { orderId, receivedItems, remarks, damages, costCenterId } = req.body;
+        const dealerId = req.user.dealerId;
+
+        // Validate input
+        if (!orderId || !receivedItems || !Array.isArray(receivedItems) || receivedItems.length === 0) {
+            return res.status(400).json({ success: false, message: 'Invalid receipt data' });
+        }
+
+        // 1. Verify order exists and is in correct status
+        const order = await Order.findByPk(orderId, { transaction });
+        if (!order) {
+            await transaction.rollback();
+            return res.status(404).json({ success: false, message: 'Order not found' });
+        }
+        if (order.status !== 'Shipped' && order.status !== 'In Transit') {
+            await transaction.rollback();
+            return res.status(400).json({ success: false, message: 'Order is not ready for receipt' });
+        }
+
+        // 2. Create the Goods Receipt record
+        const receiptNumber = `GR-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+        const goodsReceipt = await GoodsReceipt.create({
+            receiptNumber,
+            orderId,
+            dealerId,
+            receivedItems,
+            remarks,
+            costCenterId: costCenterId || null,
+            status: 'pending',
+            receivedAt: new Date()
+        }, { transaction });
+
+        // 3. Update Inventory for each item
+        for (const item of receivedItems) {
+            const { materialId, quantity } = item;
+            const material = await Material.findByPk(materialId, { transaction });
+            if (!material) continue;
+            let inventory = await Inventory.findOne({
+                where: {
+                    materialNumber: material.materialNumber,
+                    plant: order.dealerId
+                },
+                transaction
+            });
+            if (inventory) {
+                inventory.stock = parseInt(inventory.stock) + parseInt(quantity);
+                await inventory.save({ transaction });
+            } else {
+                await Inventory.create({
+                    name: material.name,
+                    materialNumber: material.materialNumber,
+                    plant: order.dealerId,
+                    stock: quantity,
+                    uom: material.uom,
+                    description: material.description
+                }, { transaction });
+            }
+        }
+
+        // 4. Handle Damages (if any)
+        if (damages && Array.isArray(damages) && damages.length > 0) {
+            const { DamageRecord } = require('../models');
+            for (const damage of damages) {
+                await DamageRecord.create({
+                    goodsReceiptId: goodsReceipt.id,
+                    materialCode: damage.materialCode,
+                    quantity: damage.quantity,
+                    reason: damage.reason,
+                    reportedBy: req.user.id,
+                    reportedAt: new Date(),
+                    status: 'pending',
+                    remarks: damage.remarks || null
+                }, { transaction });
+            }
+        }
+
+        // 5. Update Order Status to Delivered
+        order.status = 'Delivered';
+        await order.save({ transaction });
+
+        await transaction.commit();
+        return res.status(201).json({
+            success: true,
+            message: 'Goods Receipt created, inventory updated, damages recorded',
+            data: goodsReceipt
+        });
+    } catch (error) {
+        await transaction.rollback();
+        console.error('Error in createGoodsReceipt:', error);
+        return res.status(500).json({ success: false, message: error.message });
+    }
 }
 
 async function getAllGoodsReceipts(req, res) {
-    return res.status(501).json({ message: 'Not implemented yet' });
+    try {
+        const receipts = await GoodsReceipt.findAll({
+            include: [
+                { model: Order, as: 'order' },
+                // Add associations for dealer, cost center, etc. as needed
+            ],
+            order: [['createdAt', 'DESC']]
+        });
+        return res.status(200).json({ success: true, data: receipts });
+    } catch (error) {
+        console.error('Error in getAllGoodsReceipts:', error);
+        return res.status(500).json({ success: false, message: error.message });
+    }
 }
 
 async function getGoodsReceiptById(req, res) {
-    return res.status(501).json({ message: 'Not implemented yet' });
+    try {
+        const { id } = req.params;
+        const receipt = await GoodsReceipt.findByPk(id, {
+            include: [
+                { model: Order, as: 'order' },
+                // Add associations for dealer, cost center, etc. as needed
+            ]
+        });
+        if (!receipt) {
+            return res.status(404).json({ success: false, message: 'GoodsReceipt not found' });
+        }
+        return res.status(200).json({ success: true, data: receipt });
+    } catch (error) {
+        console.error('Error in getGoodsReceiptById:', error);
+        return res.status(500).json({ success: false, message: error.message });
+    }
 }
 
 async function updateGoodsReceipt(req, res) {
-    return res.status(501).json({ message: 'Not implemented yet' });
+    const transaction = await sequelize.transaction();
+    try {
+        const { id } = req.params;
+        const { receivedItems, remarks, costCenterId, status } = req.body;
+        const receipt = await GoodsReceipt.findByPk(id, { transaction });
+        if (!receipt) {
+            await transaction.rollback();
+            return res.status(404).json({ success: false, message: 'GoodsReceipt not found' });
+        }
+        // Only allow update if status is pending
+        if (receipt.status !== 'pending') {
+            await transaction.rollback();
+            return res.status(400).json({ success: false, message: 'Only pending receipts can be updated' });
+        }
+        // Update fields
+        if (receivedItems) receipt.receivedItems = receivedItems;
+        if (remarks) receipt.remarks = remarks;
+        if (costCenterId) receipt.costCenterId = costCenterId;
+        if (status) receipt.status = status;
+        await receipt.save({ transaction });
+        await transaction.commit();
+        return res.status(200).json({ success: true, data: receipt });
+    } catch (error) {
+        await transaction.rollback();
+        console.error('Error in updateGoodsReceipt:', error);
+        return res.status(500).json({ success: false, message: error.message });
+    }
 }
 
 async function deleteGoodsReceipt(req, res) {
-    return res.status(501).json({ message: 'Not implemented yet' });
+    const transaction = await sequelize.transaction();
+    try {
+        const { id } = req.params;
+        const receipt = await GoodsReceipt.findByPk(id, { transaction });
+        if (!receipt) {
+            await transaction.rollback();
+            return res.status(404).json({ success: false, message: 'GoodsReceipt not found' });
+        }
+        // Only allow delete if status is pending
+        if (receipt.status !== 'pending') {
+            await transaction.rollback();
+            return res.status(400).json({ success: false, message: 'Only pending receipts can be deleted' });
+        }
+        await receipt.destroy({ transaction });
+        await transaction.commit();
+        return res.status(200).json({ success: true, message: 'GoodsReceipt deleted' });
+    } catch (error) {
+        await transaction.rollback();
+        console.error('Error in deleteGoodsReceipt:', error);
+        return res.status(500).json({ success: false, message: error.message });
+    }
 }
 
 async function approveGoodsReceipt(req, res) {
-    return res.status(501).json({ message: 'Not implemented yet' });
+    const transaction = await sequelize.transaction();
+    try {
+        const { id } = req.params;
+        const receipt = await GoodsReceipt.findByPk(id, { transaction });
+        if (!receipt) {
+            await transaction.rollback();
+            return res.status(404).json({ success: false, message: 'GoodsReceipt not found' });
+        }
+        if (receipt.status !== 'pending') {
+            await transaction.rollback();
+            return res.status(400).json({ success: false, message: 'Only pending receipts can be approved' });
+        }
+        receipt.status = 'approved';
+        await receipt.save({ transaction });
+        await transaction.commit();
+        return res.status(200).json({ success: true, data: receipt });
+    } catch (error) {
+        await transaction.rollback();
+        console.error('Error in approveGoodsReceipt:', error);
+        return res.status(500).json({ success: false, message: error.message });
+    }
 }
 
 async function rejectGoodsReceipt(req, res) {
-    return res.status(501).json({ message: 'Not implemented yet' });
+    const transaction = await sequelize.transaction();
+    try {
+        const { id } = req.params;
+        const { remarks } = req.body;
+        const receipt = await GoodsReceipt.findByPk(id, { transaction });
+        if (!receipt) {
+            await transaction.rollback();
+            return res.status(404).json({ success: false, message: 'GoodsReceipt not found' });
+        }
+        if (receipt.status !== 'pending') {
+            await transaction.rollback();
+            return res.status(400).json({ success: false, message: 'Only pending receipts can be rejected' });
+        }
+        receipt.status = 'rejected';
+        if (remarks) receipt.remarks = remarks;
+        await receipt.save({ transaction });
+        await transaction.commit();
+        return res.status(200).json({ success: true, data: receipt });
+    } catch (error) {
+        await transaction.rollback();
+        console.error('Error in rejectGoodsReceipt:', error);
+        return res.status(500).json({ success: false, message: error.message });
+    }
 }
 
 async function postGoodsReceiptToSAP(req, res) {
-    return res.status(501).json({ message: 'Not implemented yet' });
+    // This is a stub for SAP posting. In production, integrate with SAP RFC.
+    try {
+        const { id } = req.params;
+        const receipt = await GoodsReceipt.findByPk(id);
+        if (!receipt) {
+            return res.status(404).json({ success: false, message: 'GoodsReceipt not found' });
+        }
+        if (receipt.status !== 'approved') {
+            return res.status(400).json({ success: false, message: 'Only approved receipts can be posted to SAP' });
+        }
+        // Simulate SAP posting
+        // In real implementation, call SAP RFC and update mblnr/status
+        receipt.status = 'posted';
+        receipt.mblnr = `MBLNR-${Date.now()}`;
+        await receipt.save();
+        return res.status(200).json({ success: true, message: 'Posted to SAP (stub)', data: receipt });
+    } catch (error) {
+        console.error('Error in postGoodsReceiptToSAP:', error);
+        return res.status(500).json({ success: false, message: error.message });
+    }
 }
 
 module.exports = {

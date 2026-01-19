@@ -15,7 +15,7 @@ sap.ui.define([
                 recentActivity: []
             });
             this.getView().setModel(oDashboardModel, "dashboard");
-            
+
             this._loadDashboardData();
         },
 
@@ -24,9 +24,9 @@ sap.ui.define([
             var sApiUrl = oAppModel.getProperty("/apiUrl");
             var sToken = oAppModel.getProperty("/token");
             var oUser = oAppModel.getProperty("/user");
-            
+
             var that = this;
-            
+
             jQuery.ajax({
                 url: sApiUrl + "/invoices?limit=1",
                 method: "GET",
@@ -37,7 +37,7 @@ sap.ui.define([
                     that.getView().getModel("dashboard").setProperty("/invoiceCount", oData.total || 0);
                 }
             });
-            
+
             jQuery.ajax({
                 url: sApiUrl + "/documents?limit=1",
                 method: "GET",
@@ -48,7 +48,7 @@ sap.ui.define([
                     that.getView().getModel("dashboard").setProperty("/documentCount", oData.total || 0);
                 }
             });
-            
+
             jQuery.ajax({
                 url: sApiUrl + "/campaigns?limit=1",
                 method: "GET",
@@ -59,7 +59,7 @@ sap.ui.define([
                     that.getView().getModel("dashboard").setProperty("/campaignCount", oData.total || 0);
                 }
             });
-            
+
             if (oUser.role === "dealer") {
                 jQuery.ajax({
                     url: sApiUrl + "/dealers/profile",
@@ -94,15 +94,27 @@ sap.ui.define([
             this.getOwnerComponent().getRouter().navTo("admin");
         },
 
+        onNavigateToDelivery: function () {
+            this.getOwnerComponent().getRouter().navTo("deliveryOrders");
+        },
+
+        onNavigateToInventory: function () {
+            this.getOwnerComponent().getRouter().navTo("physicalInventory");
+        },
+
+        onNavigateToClaims: function () {
+            this.getOwnerComponent().getRouter().navTo("claims");
+        },
+
         onLogout: function () {
             localStorage.removeItem("token");
             localStorage.removeItem("user");
-            
+
             var oAppModel = this.getOwnerComponent().getModel("app");
             oAppModel.setProperty("/token", null);
             oAppModel.setProperty("/user", null);
             oAppModel.setProperty("/isAuthenticated", false);
-            
+
             MessageToast.show("Logged out successfully");
             this.getOwnerComponent().getRouter().navTo("login");
         }
