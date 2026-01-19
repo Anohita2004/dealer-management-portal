@@ -15,7 +15,7 @@ module.exports = (sequelize, DataTypes) => {
     centroidLat: DataTypes.DOUBLE,
     centroidLng: DataTypes.DOUBLE
   }, {
-    tableName: "territories"
+    tableName: "Territories"
   });
 
   Territory.associate = models => {
