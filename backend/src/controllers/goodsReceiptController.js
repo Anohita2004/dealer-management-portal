@@ -1,5 +1,9 @@
 const { GoodsReceipt, Order, OrderItem, Material, Inventory, sequelize } = require('../models');
 const { v4: uuidv4 } = require('uuid');
+const { User, Role } = require('../models');
+const notificationService = require('../services/notificationService');
+const { Invoice } = require('../models');
+const { autoGenerateInvoiceAfterGR } = require('../controllers/invoiceController');
 
 /**
  * Post a Goods Receipt (GR).
@@ -37,6 +41,9 @@ const postGoodsReceipt = async (req, res) => {
             remarks,
             receivedAt: new Date()
         }, { transaction });
+
+        // Notify sales executive
+        await notifySalesExecutiveForGR(goodsReceipt);
 
         // 3. Update Inventory for each item
         for (const item of receivedItems) {
@@ -145,6 +152,9 @@ async function createGoodsReceipt(req, res) {
             status: 'pending',
             receivedAt: new Date()
         }, { transaction });
+
+        // Notify sales executive
+        await notifySalesExecutiveForGR(goodsReceipt);
 
         // 3. Update Inventory for each item
         for (const item of receivedItems) {
@@ -309,9 +319,42 @@ async function approveGoodsReceipt(req, res) {
             await transaction.rollback();
             return res.status(400).json({ success: false, message: 'Only pending receipts can be approved' });
         }
+        // Restrict approval to sales executive only
+        const dealerAdmin = await User.findByPk(receipt.dealerId);
+        if (!dealerAdmin || !dealerAdmin.reportingTo) {
+            await transaction.rollback();
+            return res.status(403).json({ success: false, message: 'Dealer admin reporting sales executive not found' });
+        }
+        if (req.user.id !== dealerAdmin.reportingTo) {
+            await transaction.rollback();
+            return res.status(403).json({ success: false, message: 'Only the reporting sales executive can approve this GR' });
+        }
         receipt.status = 'approved';
         await receipt.save({ transaction });
         await transaction.commit();
+        // Automate invoice creation after GR approval
+        await autoGenerateInvoiceAfterGR(receipt);
+        // Notify dealer admin and sales executive
+        await notificationService.createUserNotification({
+            userId: dealerAdmin.id,
+            title: 'Invoice Generated',
+            message: `Invoice has been generated for your approved goods receipt (${receipt.receiptNumber}).`,
+            type: 'info',
+            priority: 'high',
+            relatedId: receipt.id,
+            relatedType: 'Invoice',
+            data: { orderId: receipt.orderId }
+        });
+        await notificationService.createUserNotification({
+            userId: req.user.id,
+            title: 'Invoice Generated',
+            message: `Invoice has been generated for approved goods receipt (${receipt.receiptNumber}).`,
+            type: 'info',
+            priority: 'normal',
+            relatedId: receipt.id,
+            relatedType: 'Invoice',
+            data: { orderId: receipt.orderId }
+        });
         return res.status(200).json({ success: true, data: receipt });
     } catch (error) {
         await transaction.rollback();
@@ -367,6 +410,24 @@ async function postGoodsReceiptToSAP(req, res) {
         console.error('Error in postGoodsReceiptToSAP:', error);
         return res.status(500).json({ success: false, message: error.message });
     }
+}
+
+async function notifySalesExecutiveForGR(goodsReceipt) {
+    // Find dealer admin's reporting sales executive
+    const dealerAdmin = await User.findByPk(goodsReceipt.dealerId);
+    if (!dealerAdmin || !dealerAdmin.reportingTo) return;
+    const salesExecutive = await User.findByPk(dealerAdmin.reportingTo);
+    if (!salesExecutive) return;
+    await notificationService.createUserNotification({
+        userId: salesExecutive.id,
+        title: 'New Goods Receipt Created',
+        message: `A new goods receipt (${goodsReceipt.receiptNumber}) requires your approval.`,
+        type: 'info',
+        priority: 'high',
+        relatedId: goodsReceipt.id,
+        relatedType: 'GoodsReceipt',
+        data: { orderId: goodsReceipt.orderId }
+    });
 }
 
 module.exports = {

@@ -397,6 +397,41 @@ class NotificationService {
     return notifications;
   }
 
+  /**
+   * Notify dealer/finance at each workflow step
+   */
+  async notifyWorkflowStep(entityType, entity, step, user, extra = {}) {
+    let title = `${entityType} ${step}`;
+    let message = `Status update for ${entityType}: ${step}`;
+    let relatedId = entity.id;
+    let relatedType = entityType;
+    let recipients = [];
+    if (entityType === 'delivery') {
+      recipients.push(entity.dealerId);
+    } else if (entityType === 'goods_receipt') {
+      recipients.push(entity.dealerId);
+    } else if (entityType === 'invoice') {
+      recipients.push(entity.dealerId);
+      // Add finance team notification
+      recipients = recipients.concat(await RBACEngine.getUsersByRole('finance_admin'));
+    } else if (entityType === 'payment') {
+      recipients.push(entity.dealerId);
+      recipients = recipients.concat(await RBACEngine.getUsersByRole('finance_admin'));
+    }
+    for (const recipientId of recipients) {
+      await this.createUserNotification({
+        userId: recipientId,
+        title,
+        message,
+        type: 'info',
+        priority: 'normal',
+        relatedId,
+        relatedType,
+        data: extra
+      });
+    }
+  }
+
   // ============================================
   // SPECIFIC NOTIFICATION METHODS
   // ============================================

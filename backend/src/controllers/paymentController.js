@@ -8,6 +8,7 @@ const { PaymentRequest, Invoice, Dealer, AuditLog, sequelize } = require("../mod
 const { Op } = require("sequelize");
 const RBACEngine = require("../services/rbacEngine");
 const { WorkflowService } = require("../services/workflow");
+const notificationService = require('../services/notificationService');
 
 // ========================================================================
 // CREATE PAYMENT REQUEST (Dealer Staff)
@@ -287,6 +288,32 @@ const approvePayment = async (req, res) => {
       },
       { transaction: t }
     );
+
+    // Notify dealer admin and sales executive
+    const invoice = await Invoice.findByPk(payment.invoiceId);
+    if (!invoice) return;
+    const dealerAdmin = await User.findByPk(invoice.dealerId);
+    if (!dealerAdmin || !dealerAdmin.reportingTo) return;
+    await notificationService.createUserNotification({
+        userId: dealerAdmin.id,
+        title: 'Payment Status Updated',
+        message: `Payment status for invoice ${invoice.invoiceNumber} has been updated to ${payment.status}.`,
+        type: 'info',
+        priority: 'high',
+        relatedId: payment.id,
+        relatedType: 'PaymentRequest',
+        data: { invoiceId: payment.invoiceId }
+    });
+    await notificationService.createUserNotification({
+        userId: dealerAdmin.reportingTo,
+        title: 'Payment Status Updated',
+        message: `Payment status for invoice ${invoice.invoiceNumber} has been updated to ${payment.status}.`,
+        type: 'info',
+        priority: 'normal',
+        relatedId: payment.id,
+        relatedType: 'PaymentRequest',
+        data: { invoiceId: payment.invoiceId }
+    });
 
     await t.commit();
 
@@ -708,6 +735,36 @@ const bulkRejectPayments = async (req, res) => {
 };
 
 // ========================================================================
+// AUTO-CREATE PAYMENT REQUEST AFTER INVOICE
+// ========================================================================
+const autoCreatePaymentAfterInvoice = async (invoice) => {
+  try {
+    // Only create payment request if not already present
+    const existingPayment = await PaymentRequest.findOne({ where: { invoiceId: invoice.id } });
+    if (existingPayment) return;
+    const payment = await PaymentRequest.create({
+      invoiceId: invoice.id,
+      dealerId: invoice.dealerId,
+      amount: invoice.balanceAmount,
+      paymentMode: 'pending',
+      approvalStage: null,
+      approvalStatus: 'pending',
+      status: 'dealer_pending',
+    });
+    await AuditLog.create({
+      userId: invoice.dealerId,
+      action: 'AUTO_CREATE_PAYMENT_AFTER_INVOICE',
+      entity: 'PaymentRequest',
+      entityId: payment.id,
+      changes: { invoiceId: invoice.id, dealerId: invoice.dealerId, amount: invoice.balanceAmount }
+    });
+    await WorkflowService.startWorkflow('payment', payment, { id: invoice.dealerId });
+  } catch (error) {
+    console.error('Auto payment creation after invoice error:', error);
+  }
+};
+
+// ========================================================================
 // EXPORTS
 // ========================================================================
 module.exports = {
@@ -723,4 +780,5 @@ module.exports = {
   getPaymentById,
   bulkApprovePayments,
   bulkRejectPayments,
+  autoCreatePaymentAfterInvoice,
 };
