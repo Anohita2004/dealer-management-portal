@@ -21,14 +21,10 @@ exports.getTrucks = async (req, res) => {
     }
 
     if (status) where.status = status;
-    // regionId filter removed temporarily - column doesn't exist in database yet
-    // TODO: Uncomment when migration adds regionId column to trucks table
-    // if (regionId) where.regionId = regionId;
-    // isActive filter removed temporarily - column doesn't exist in database yet
-    // TODO: Uncomment when migration adds isActive column to trucks table
-    // if (isActive !== undefined) {
-    //   where.isActive = isActive === "true";
-    // }
+    if (regionId) where.regionId = regionId;
+    if (isActive !== undefined) {
+      where.isActive = isActive === "true";
+    }
 
     // Apply RBAC scoping
     if (req.scope?.truck) {
@@ -44,8 +40,8 @@ exports.getTrucks = async (req, res) => {
 
     const { count, rows } = await Truck.findAndCountAll({
       where,
-      include: [], // Region include removed - column doesn't exist
-      attributes: ["id", "licenseNumber", "truckType", "capacity", "status", "currentLat", "currentLng", "lastLocationUpdate", "createdAt", "updatedAt"], // Explicitly list only columns that exist (truckName, regionId, and isActive removed)
+      include: [{ model: Region, as: "region", attributes: ["id", "name"], required: false }],
+      attributes: ["id", "truckName", "licenseNumber", "truckType", "capacity", "status", "currentLat", "currentLng", "lastLocationUpdate", "isActive", "regionId", "createdAt", "updatedAt"],
       limit: parseInt(limit),
       offset,
       order: [["createdAt", "DESC"]],
@@ -69,11 +65,9 @@ exports.getTrucks = async (req, res) => {
 exports.getTruck = async (req, res) => {
   try {
     const truck = await Truck.findByPk(req.params.id, {
-      attributes: ["id", "licenseNumber", "truckType", "capacity", "status", "currentLat", "currentLng", "lastLocationUpdate", "createdAt", "updatedAt"], // Explicit attributes - truckName, regionId, and isActive removed
+      attributes: ["id", "truckName", "licenseNumber", "truckType", "capacity", "status", "currentLat", "currentLng", "lastLocationUpdate", "isActive", "regionId", "createdAt", "updatedAt"],
       include: [
-        // Region include removed temporarily - regionId column doesn't exist in database yet
-        // TODO: Add back when migration adds regionId column to trucks table
-        // { model: Region, as: "region", required: false },
+        { model: Region, as: "region", required: false },
         {
           model: TruckAssignment,
           as: "assignments",
@@ -106,11 +100,11 @@ exports.getTruck = async (req, res) => {
 exports.createTruck = async (req, res) => {
   try {
     const {
-      truckName, // Not used - column doesn't exist in DB yet
+      truckName,
       licenseNumber,
       truckType,
       capacity,
-      regionId, // Not used - column doesn't exist in DB yet
+      regionId,
     } = req.body;
 
     // Check if license number already exists
@@ -124,13 +118,13 @@ exports.createTruck = async (req, res) => {
     }
 
     const truck = await Truck.create({
-      // truckName removed - column doesn't exist in database yet
+      truckName: truckName || licenseNumber, // Use licenseNumber as fallback if truckName is not provided
       licenseNumber,
       truckType: truckType || "medium",
       capacity,
-      // regionId removed - column doesn't exist in database yet
+      regionId,
       status: "available",
-      // isActive removed - column doesn't exist in database yet
+      isActive: true,
     });
 
     res.status(201).json(truck);
@@ -146,7 +140,7 @@ exports.createTruck = async (req, res) => {
 exports.updateTruck = async (req, res) => {
   try {
     const truck = await Truck.findByPk(req.params.id, {
-      attributes: ["id", "licenseNumber", "truckType", "capacity", "status", "currentLat", "currentLng", "lastLocationUpdate", "createdAt", "updatedAt"], // Explicit attributes - truckName, regionId, and isActive removed
+      attributes: ["id", "truckName", "licenseNumber", "truckType", "capacity", "status", "currentLat", "currentLng", "lastLocationUpdate", "isActive", "regionId", "createdAt", "updatedAt"],
     });
 
     if (!truck) {
@@ -174,7 +168,7 @@ exports.updateTruck = async (req, res) => {
 exports.deleteTruck = async (req, res) => {
   try {
     const truck = await Truck.findByPk(req.params.id, {
-      attributes: ["id", "licenseNumber", "truckType", "capacity", "status", "currentLat", "currentLng", "lastLocationUpdate", "createdAt", "updatedAt"], // Explicit attributes - truckName, regionId, and isActive removed
+      attributes: ["id", "truckName", "licenseNumber", "truckType", "capacity", "status", "currentLat", "currentLng", "lastLocationUpdate", "isActive", "regionId", "createdAt", "updatedAt"],
     });
 
     if (!truck) {
@@ -215,7 +209,7 @@ exports.deleteTruck = async (req, res) => {
 exports.getTruckLocation = async (req, res) => {
   try {
     const truck = await Truck.findByPk(req.params.id, {
-      attributes: ["id", "licenseNumber", "truckType", "currentLat", "currentLng", "lastLocationUpdate"], // truckName removed - column doesn't exist
+      attributes: ["id", "truckName", "licenseNumber", "truckType", "currentLat", "currentLng", "lastLocationUpdate"],
     });
 
     if (!truck) {
@@ -230,7 +224,7 @@ exports.getTruckLocation = async (req, res) => {
 
     res.json({
       truckId: truck.id,
-      truckName: truck.licenseNumber, // Using licenseNumber as identifier since truckName doesn't exist
+      truckName: truck.truckName,
       licenseNumber: truck.licenseNumber,
       truckType: truck.truckType,
       lat: truck.currentLat,
@@ -251,7 +245,7 @@ exports.getTruckHistory = async (req, res) => {
     const { startDate, endDate, limit = 100 } = req.query;
 
     const truck = await Truck.findByPk(req.params.id, {
-      attributes: ["id", "licenseNumber", "truckType", "capacity", "status", "currentLat", "currentLng", "lastLocationUpdate", "createdAt", "updatedAt"], // Explicit attributes - truckName, regionId, and isActive removed
+      attributes: ["id", "truckName", "licenseNumber", "truckType", "capacity", "status", "currentLat", "currentLng", "lastLocationUpdate", "isActive", "regionId", "createdAt", "updatedAt"],
     });
 
     if (!truck) {
