@@ -168,7 +168,7 @@ const ROLE_TO_PERMS = {
     "dashboard.view.regional",
     "messages.view", "messages.send",
     "notifications.view", "notifications.send",
-    "fleet.view", "fleet.assign", "fleet.track", "warehouse.view", "warehouse.manage"
+    "fleet.view", "fleet.assign", "fleet.track", "fleet.manage", "warehouse.view", "warehouse.manage"
   ],
 
   regional_manager: [
@@ -184,7 +184,7 @@ const ROLE_TO_PERMS = {
     "teams.view",
     "messages.view", "messages.send",
     "notifications.view",
-    "fleet.view", "fleet.assign", "fleet.track", "warehouse.view"
+    "fleet.view", "fleet.assign", "fleet.track", "fleet.manage", "warehouse.view"
   ],
 
   sales_executive: [
@@ -314,6 +314,25 @@ async function seed() {
   try {
     await sequelize.authenticate();
     console.log("✅ DB connection OK");
+
+    // FIX: Ensure rolepermissions.id has a sequence (fixing missing auto-increment)
+    try {
+      await sequelize.query(`
+        DO $$ 
+        BEGIN 
+          IF NOT EXISTS (SELECT 1 FROM pg_class WHERE relname = 'rolepermissions_id_seq') THEN
+            CREATE SEQUENCE rolepermissions_id_seq;
+            ALTER TABLE rolepermissions ALTER COLUMN id SET DEFAULT nextval('rolepermissions_id_seq');
+            ALTER SEQUENCE rolepermissions_id_seq OWNED BY rolepermissions.id;
+          END IF;
+          -- Sync sequence value
+          PERFORM setval('rolepermissions_id_seq', COALESCE((SELECT MAX(id) FROM rolepermissions), 0) + 1);
+        END $$;
+      `);
+      console.log("🔧 Fixed rolepermissions id sequence");
+    } catch (e) {
+      console.warn("⚠️ Could not fix sequence (might already exist or permission issue):", e.message);
+    }
 
     // Create permissions
     const createdPermissions = {};
