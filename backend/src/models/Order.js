@@ -89,7 +89,8 @@ module.exports = (sequelize, DataTypes) => {
       },
     },
     {
-      tableName: "orders",
+      tableName: "orders", // Matches actual DB table name
+      freezeTableName: true,
       timestamps: true,
     }
   );
