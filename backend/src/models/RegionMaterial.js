@@ -23,7 +23,7 @@ module.exports = (sequelize, DataTypes) => {
       },
     },
     {
-      tableName: "RegionMaterials",
+      tableName: "region_materials",
       timestamps: true,
       indexes: [
         {

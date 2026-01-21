@@ -30,7 +30,7 @@ module.exports = (sequelize, DataTypes) => {
       defaultValue: 0
     }
   }, {
-    tableName: 'OrderItems',
+    tableName: 'order_items',
     timestamps: true
   });
 
