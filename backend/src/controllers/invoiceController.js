@@ -8,6 +8,7 @@ const RBACEngine = require("../services/rbacEngine");
 const { WorkflowService } = require("../services/workflow");
 const eventBus = require("../services/eventBus");
 const notificationService = require("../services/notificationService");
+const { GoodsReceipt } = require('../models');
 
 /* ============================================================
    Utility Functions
@@ -646,6 +647,46 @@ const bulkRejectInvoices = async (req, res) => {
   });
 };
 
+/* ============================================================
+   AUTO-GENERATE INVOICE AFTER GOODS RECEIPT
+============================================================ */
+const autoGenerateInvoiceAfterGR = async (goodsReceipt) => {
+  try {
+    const order = await Order.findByPk(goodsReceipt.orderId, { include: [{ model: Dealer, as: 'dealer' }] });
+    if (!order) return;
+    // Only generate invoice if not already present
+    const existingInvoice = await Invoice.findOne({ where: { orderId: order.id } });
+    if (existingInvoice) return;
+    const invoiceData = {
+      dealerId: order.dealerId,
+      orderId: order.id,
+      description: order.description,
+      invoiceNumber: `INV-${Date.now()}`,
+      invoiceDate: new Date(),
+      baseAmount: order.totalAmount,
+      taxAmount: 0,
+      paidAmount: 0,
+      ...computeAmounts({ baseAmount: order.totalAmount, taxAmount: 0, paidAmount: 0 })
+    };
+    const invoice = await Invoice.create(invoiceData);
+    await AuditLog.create({
+      userId: goodsReceipt.dealerId,
+      action: 'AUTO_CREATE_INVOICE_AFTER_GR',
+      entity: 'Invoice',
+      entityId: invoice.id,
+      changes: invoiceData
+    });
+    await eventBus.emit('invoice:created', {
+      invoiceId: invoice.id,
+      dealerId: invoice.dealerId,
+      invoiceNumber: invoice.invoiceNumber
+    });
+    await notificationService.notifyInvoiceCreated(invoice);
+  } catch (error) {
+    console.error('Auto invoice generation after GR error:', error);
+  }
+};
+
 module.exports = {
   getAllInvoices,
   getInvoiceById,
@@ -658,4 +699,5 @@ module.exports = {
   getWorkflowStatus,
   bulkApproveInvoices,
   bulkRejectInvoices,
+  autoGenerateInvoiceAfterGR,
 };

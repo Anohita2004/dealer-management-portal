@@ -415,6 +415,26 @@ class WorkflowEngine {
 
     return escalated;
   }
+
+  /**
+   * Log workflow event for delivery, GR, invoice, payment
+   * @param {string} entityType
+   * @param {string} eventType
+   * @param {Object} entity
+   * @param {Object} user
+   * @param {Object} details
+   */
+  static async logWorkflowEvent(entityType, eventType, entity, user, details = {}) {
+    const { AuditLog } = require('../models');
+    await AuditLog.create({
+      userId: user?.id || null,
+      action: eventType,
+      entity: entityType,
+      entityId: entity.id,
+      changes: details,
+      ipAddress: user?.ip || null
+    });
+  }
 }
 
 module.exports = WorkflowEngine;

@@ -1,4 +1,4 @@
-const { DeliveryOrder, StorageLocation, LoadingPoint, DockSchedule } = require('../models');
+const { DeliveryOrder, StorageLocation, LoadingPoint, DockSchedule, GoodsReceipt } = require('../models');
 const sapService = require('../services/sapService');
 
 exports.createDeliveryOrder = async (req, res) => {
@@ -116,5 +116,27 @@ exports.syncWithSAP = async (req, res) => {
     } catch (error) {
         console.error('Error syncing with SAP:', error);
         res.status(500).json({ error: 'Failed to sync with SAP' });
+    }
+};
+
+exports.createGoodsReceiptForDelivery = async (req, res) => {
+    try {
+        const { delivery_order_id, received_by, receivedItems, remarks } = req.body;
+        const deliveryOrder = await DeliveryOrder.findByPk(delivery_order_id);
+        if (!deliveryOrder || deliveryOrder.status !== 'COMPLETED') {
+            return res.status(400).json({ error: 'Delivery order not found or not completed' });
+        }
+        const gr = await GoodsReceipt.create({
+            orderId: delivery_order_id,
+            dealerId: received_by,
+            receivedItems,
+            remarks,
+            status: 'accepted',
+            receivedAt: new Date()
+        });
+        res.status(201).json(gr);
+    } catch (error) {
+        console.error('Error creating goods receipt for delivery:', error);
+        res.status(500).json({ error: 'Failed to create goods receipt for delivery' });
     }
 };
