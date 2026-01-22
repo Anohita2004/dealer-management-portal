@@ -4,6 +4,7 @@ const { User, Role } = require('../models');
 const notificationService = require('../services/notificationService');
 const { Invoice } = require('../models');
 const { autoGenerateInvoiceAfterGR } = require('../controllers/invoiceController');
+const RBACEngine = require('../services/rbacEngine');
 
 /**
  * Post a Goods Receipt (GR).
