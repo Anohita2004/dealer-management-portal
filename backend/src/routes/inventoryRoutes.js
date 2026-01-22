@@ -8,7 +8,7 @@ const checkPermission = require("../middleware/checkPermission");
 router.get(
   "/summary",
   authenticate,
-  authorize("inventory_user", "super_admin", "key_user", "dealer_admin", "dealer_staff", "territory_manager", "area_manager", "regional_manager", "regional_admin", "technical_admin"),
+  authorize("inventory_user", "super_admin", "key_user", "dealer_admin", "dealer_staff", "territory_manager", "area_manager", "regional_manager", "regional_admin", "technical_admin", "sales_executive"),
   checkPermission("inventory.view"),
   inventoryController.getInventorySummary
 );
@@ -17,7 +17,7 @@ router.get(
 router.get(
   "/details",
   authenticate,
-  authorize("inventory_user", "super_admin", "key_user", "dealer_admin", "dealer_staff", "territory_manager", "area_manager", "regional_manager", "regional_admin", "technical_admin"),
+  authorize("inventory_user", "super_admin", "key_user", "dealer_admin", "dealer_staff", "territory_manager", "area_manager", "regional_manager", "regional_admin", "technical_admin", "sales_executive"),
   checkPermission("inventory.view"),
   inventoryController.getInventoryDetails
 );
@@ -53,7 +53,7 @@ router.delete(
 router.get(
   "/export",
   authenticate,
-  authorize("inventory_user", "super_admin", "key_user", "dealer_admin", "dealer_staff", "territory_manager", "area_manager", "regional_manager", "regional_admin", "technical_admin"),
+  authorize("inventory_user", "super_admin", "key_user", "dealer_admin", "dealer_staff", "territory_manager", "area_manager", "regional_manager", "regional_admin", "technical_admin", "sales_executive"),
   checkPermission("inventory.view"),
   inventoryController.exportInventory
 );
@@ -62,7 +62,7 @@ router.get(
 router.get(
   "/alerts/low-stock",
   authenticate,
-  authorize("inventory_user", "super_admin", "key_user", "dealer_admin", "dealer_staff", "territory_manager", "area_manager", "regional_manager", "regional_admin", "technical_admin"),
+  authorize("inventory_user", "super_admin", "key_user", "dealer_admin", "dealer_staff", "territory_manager", "area_manager", "regional_manager", "regional_admin", "technical_admin", "sales_executive"),
   checkPermission("inventory.view"),
   inventoryController.getLowStockAlerts
 );
@@ -72,7 +72,7 @@ router.get(
 router.get(
   "/plant/:plantCode",
   authenticate,
-  authorize("inventory_user", "super_admin", "key_user", "dealer_admin", "dealer_staff", "territory_manager", "area_manager", "regional_manager", "regional_admin", "technical_admin"),
+  authorize("inventory_user", "super_admin", "key_user", "dealer_admin", "dealer_staff", "territory_manager", "area_manager", "regional_manager", "regional_admin", "technical_admin", "sales_executive"),
   checkPermission("inventory.view"),
   inventoryController.getPlantInventory
 );
@@ -80,7 +80,7 @@ router.get(
 router.get(
   "/warehouse/:warehouseCode",
   authenticate,
-  authorize("inventory_user", "super_admin", "key_user", "dealer_admin", "dealer_staff", "territory_manager", "area_manager", "regional_manager", "regional_admin", "technical_admin"),
+  authorize("inventory_user", "super_admin", "key_user", "dealer_admin", "dealer_staff", "territory_manager", "area_manager", "regional_manager", "regional_admin", "technical_admin", "sales_executive"),
   checkPermission("inventory.view"),
   inventoryController.getPlantInventory
 );
