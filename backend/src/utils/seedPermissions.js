@@ -199,6 +199,7 @@ const ROLE_TO_PERMS = {
 
     // Invoices are needed for payment requests
     "invoices.view",
+    "invoices.create",
 
     // Read-only visibility into inventory / material availability
     "inventory.view",

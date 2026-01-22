@@ -9,7 +9,7 @@ router.get('/:id', authenticate, authorize('dealer_admin', 'dealer_staff', 'sale
 router.get('/:id/pdf', authenticate, authorize('dealer_admin', 'dealer_staff', 'sales_executive', 'territory_manager', 'area_manager', 'regional_manager', 'regional_admin', 'super_admin', 'technical_admin', 'finance_admin'), checkPermission('invoices.view'), invoiceController.generateInvoicePDF);
 // Allow dealer_staff to request/create invoices for approved orders;
 // controller will enforce order ownership and approved status checks.
-router.post('/', authenticate, authorize('super_admin', 'technical_admin', 'key_user', 'dealer_admin', 'dealer_staff'), checkPermission('invoices.create'), invoiceController.createInvoice);
+router.post('/', authenticate, authorize('super_admin', 'technical_admin', 'key_user', 'dealer_admin', 'dealer_staff', 'sales_executive'), checkPermission('invoices.create'), invoiceController.createInvoice);
 router.put('/:id', authenticate, authorize('super_admin', 'key_user'), checkPermission('invoices.edit'), invoiceController.updateInvoice);
 
 // Approval routes (support both PATCH and POST for frontend compatibility)
