@@ -5,5 +5,6 @@ const { authenticate, authorize } = require('../middleware/auth');
 
 router.post('/post', authenticate, authorize('dealer_admin', 'dealer_staff', 'sales_executive', 'super_admin'), goodsReceiptController.postGoodsReceipt);
 router.get('/pending', authenticate, authorize('dealer_admin', 'dealer_staff', 'sales_executive', 'super_admin'), goodsReceiptController.getPendingReceipts);
+router.post('/:id/approve', authenticate, authorize('sales_executive', 'super_admin'), goodsReceiptController.approveGoodsReceipt);
 
 module.exports = router;
