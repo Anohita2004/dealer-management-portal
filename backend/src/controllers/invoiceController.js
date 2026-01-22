@@ -346,6 +346,9 @@ const getPendingInvoices = async (req, res) => {
     else if (role === 'area_manager') approvalStage = 'area_manager';
     else if (role === 'regional_manager') approvalStage = 'regional_manager';
     else if (role === 'regional_admin') approvalStage = 'regional_admin';
+    else if (role === 'sales_executive') {
+      return res.json({ invoices: [] });
+    }
     else {
       return res.status(403).json({ error: "Role not authorized for invoice approvals" });
     }
