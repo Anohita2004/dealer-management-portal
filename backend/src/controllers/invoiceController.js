@@ -687,6 +687,28 @@ const autoGenerateInvoiceAfterGR = async (goodsReceipt) => {
   }
 };
 
+const debugInvoices = async (req, res) => {
+  try {
+    const role = req.user.roleDetails?.name || req.user.role;
+    const userId = req.user.id;
+    const scopeWhere = await RBACEngine.buildScopeWhereClause(req.user, "Invoice");
+    const invoices = await Invoice.findAll({ where: scopeWhere });
+    res.json({
+      debug: {
+        userId,
+        role,
+        scopeWhere,
+        invoiceCount: invoices.length,
+        invoiceIds: invoices.map(inv => inv.id)
+      },
+      invoices
+    });
+  } catch (error) {
+    console.error("Debug invoices error:", error);
+    res.status(500).json({ error: "Failed to debug invoices" });
+  }
+};
+
 module.exports = {
   getAllInvoices,
   getInvoiceById,
@@ -700,4 +722,5 @@ module.exports = {
   bulkApproveInvoices,
   bulkRejectInvoices,
   autoGenerateInvoiceAfterGR,
+  debugInvoices
 };
