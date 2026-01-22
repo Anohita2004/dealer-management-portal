@@ -113,12 +113,40 @@ const postGoodsReceipt = async (req, res) => {
  */
 const getPendingReceipts = async (req, res) => {
     try {
+        const roleName = req.user.roleDetails?.name || req.user.role;
+
+        // SALES EXECUTIVE: Needs to see GRs waiting for *their* approval (status: 'pending')
+        if (roleName === 'sales_executive') {
+            // Use RBAC Engine to find all dealers in scope for this SE
+            const dealerIds = await RBACEngine.getDealersInScope(req.user);
+
+            if (dealerIds.length === 0) {
+                return res.status(200).json({ success: true, data: [] });
+            }
+
+            const receipts = await GoodsReceipt.findAll({
+                where: {
+                    dealerId: dealerIds,
+                    status: 'pending' // Only show what needs approval
+                },
+                include: [
+                    {
+                        model: Order,
+                        as: 'order',
+                        include: [{ model: OrderItem, as: 'items', include: ['material'] }]
+                    }
+                ]
+            });
+
+            return res.status(200).json({ success: true, data: receipts });
+        }
+
+        // DEALERS / OTHERS: See orders that are shipped but not yet GR'd
         let dealerIds = [];
-        // If user is a dealer (has dealerId), use that
         if (req.user.dealerId) {
             dealerIds = [req.user.dealerId];
         } else {
-            // Check if user manages dealers (e.g. Sales Executive)
+            // Fallback for admins/others
             const managedDealers = await sequelize.models.Dealer.findAll({
                 where: { managerId: req.user.id },
                 attributes: ['id']
@@ -128,7 +156,6 @@ const getPendingReceipts = async (req, res) => {
             }
         }
 
-        // If no dealers found for this user
         if (dealerIds.length === 0) {
             return res.status(200).json({ success: true, data: [] });
         }
@@ -351,32 +378,40 @@ async function approveGoodsReceipt(req, res) {
             await transaction.rollback();
             return res.status(400).json({ success: false, message: 'Only pending receipts can be approved' });
         }
-        // Restrict approval to sales executive only
-        const dealerAdmin = await User.findByPk(receipt.dealerId);
-        if (!dealerAdmin || !dealerAdmin.reportingTo) {
-            await transaction.rollback();
-            return res.status(403).json({ success: false, message: 'Dealer admin reporting sales executive not found' });
+        // --- approveGoodsReceipt Update ---
+        // Restrict approval to sales executive (or super_admin) who manages this dealer
+        if (req.user.role === 'super_admin') {
+            // Super admin bypass
+        } else {
+            const allowedDealers = await RBACEngine.getDealersInScope(req.user);
+            if (!allowedDealers.includes(receipt.dealerId)) {
+                await transaction.rollback();
+                return res.status(403).json({ success: false, message: 'You are not authorized to approve GRs for this dealer' });
+            }
         }
-        if (req.user.id !== dealerAdmin.reportingTo) {
-            await transaction.rollback();
-            return res.status(403).json({ success: false, message: 'Only the reporting sales executive can approve this GR' });
-        }
+
+
         receipt.status = 'approved';
         await receipt.save({ transaction });
         await transaction.commit();
         // Automate invoice creation after GR approval
         await autoGenerateInvoiceAfterGR(receipt);
+        // Find dealer admin for notification
+        const dealerAdmin = await User.findOne({ where: { dealerId: receipt.dealerId, role: 'dealer_admin' } });
+
         // Notify dealer admin and sales executive
-        await notificationService.createUserNotification({
-            userId: dealerAdmin.id,
-            title: 'Invoice Generated',
-            message: `Invoice has been generated for your approved goods receipt (${receipt.receiptNumber}).`,
-            type: 'info',
-            priority: 'high',
-            relatedId: receipt.id,
-            relatedType: 'Invoice',
-            data: { orderId: receipt.orderId }
-        });
+        if (dealerAdmin) {
+            await notificationService.createUserNotification({
+                userId: dealerAdmin.id,
+                title: 'Invoice Generated',
+                message: `Invoice has been generated for your approved goods receipt (${receipt.receiptNumber}).`,
+                type: 'info',
+                priority: 'high',
+                relatedId: receipt.id,
+                relatedType: 'Invoice',
+                data: { orderId: receipt.orderId }
+            });
+        }
         await notificationService.createUserNotification({
             userId: req.user.id,
             title: 'Invoice Generated',
