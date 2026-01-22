@@ -65,7 +65,7 @@ router.get(
 );
 
 // Get due payments (outstanding invoices)
-router.get("/due", authenticate, authorize("dealer_admin", "dealer_staff", "finance_admin", "super_admin"), checkPermission("payments.view"), getDuePayments);
+router.get("/due", authenticate, authorize("dealer_admin", "dealer_staff", "finance_admin", "super_admin", "sales_executive"), checkPermission("payments.view"), getDuePayments);
 
 // -----------------------
 // DEALER ADMIN ROUTES
@@ -98,6 +98,6 @@ router.get("/reconcile", authenticate, authorize("finance_admin", "super_admin")
 // -----------------------
 // GET SINGLE PAYMENT BY ID (must be last to avoid catching other routes)
 // -----------------------
-router.get("/:id", authenticate, authorize("dealer_admin", "dealer_staff", "finance_admin", "territory_manager", "area_manager", "regional_manager", "regional_admin", "super_admin"), checkPermission("payments.view"), getPaymentById);
+router.get("/:id", authenticate, authorize("dealer_admin", "dealer_staff", "finance_admin", "territory_manager", "area_manager", "regional_manager", "regional_admin", "super_admin", "sales_executive"), checkPermission("payments.view"), getPaymentById);
 
 module.exports = router;

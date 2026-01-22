@@ -56,7 +56,7 @@ router.get(
 router.get(
   "/",
   authenticate,
-  authorize("dealer_admin", "territory_manager", "area_manager", "regional_manager", "regional_admin", "super_admin"),
+  authorize("dealer_admin", "territory_manager", "area_manager", "regional_manager", "regional_admin", "super_admin", "sales_executive"),
   checkPermission("orders.view"),
   applyScope(["Order"]),
   orderController.getAllOrders
