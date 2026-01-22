@@ -27,6 +27,19 @@ const postGoodsReceipt = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Order not found' });
         }
 
+        // Determine correct dealerId
+        const actualDealerId = dealerId || order.dealerId;
+
+        // Security check: If user is not the dealer, ensure they manage this dealer
+        if (!dealerId) {
+            const dealer = await sequelize.models.Dealer.findByPk(actualDealerId, { attributes: ['managerId'], transaction });
+            // Allow if user is the manager OR super_admin (bypass for super_admin usually handled by middleware, but good to be safe)
+            if (dealer && dealer.managerId !== req.user.id && req.user.role !== 'super_admin') {
+                await transaction.rollback();
+                return res.status(403).json({ success: false, message: 'Not authorized to post receipt for this dealer' });
+            }
+        }
+
         if (order.status !== 'Shipped' && order.status !== 'In Transit') {
             // We permit receipt if it was at least shipped
         }
@@ -36,7 +49,7 @@ const postGoodsReceipt = async (req, res) => {
         const goodsReceipt = await GoodsReceipt.create({
             receiptNumber,
             orderId,
-            dealerId,
+            dealerId: actualDealerId,
             receivedItems,
             remarks,
             receivedAt: new Date()
@@ -100,10 +113,29 @@ const postGoodsReceipt = async (req, res) => {
  */
 const getPendingReceipts = async (req, res) => {
     try {
-        const dealerId = req.user.dealerId;
+        let dealerIds = [];
+        // If user is a dealer (has dealerId), use that
+        if (req.user.dealerId) {
+            dealerIds = [req.user.dealerId];
+        } else {
+            // Check if user manages dealers (e.g. Sales Executive)
+            const managedDealers = await sequelize.models.Dealer.findAll({
+                where: { managerId: req.user.id },
+                attributes: ['id']
+            });
+            if (managedDealers.length > 0) {
+                dealerIds = managedDealers.map(d => d.id);
+            }
+        }
+
+        // If no dealers found for this user
+        if (dealerIds.length === 0) {
+            return res.status(200).json({ success: true, data: [] });
+        }
+
         const orders = await Order.findAll({
             where: {
-                dealerId,
+                dealerId: dealerIds,
                 status: ['Shipped', 'In Transit']
             },
             include: [{ model: OrderItem, as: 'items', include: [{ model: Material, as: 'material' }] }]
